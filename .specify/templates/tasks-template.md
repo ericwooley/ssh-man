@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: Include automated verification tasks required by the constitution and feature scope. Do not omit formatting, static analysis, test, smoke-check, or accessibility verification work for user stories or platform-sensitive changes.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -23,6 +23,7 @@ description: "Task list template for feature implementation"
 - **Single project**: `src/`, `tests/` at repository root
 - **Web app**: `backend/src/`, `frontend/src/`
 - **Mobile**: `api/src/`, `ios/src/` or `android/src/`
+- **Desktop app (Go + Wails + Svelte)**: `cmd/`, `internal/`, `frontend/`, `build/`, `tests/`
 - Paths shown below assume single project - adjust based on plan.md structure
 
 <!-- 
@@ -49,8 +50,8 @@ description: "Task list template for feature implementation"
 **Purpose**: Project initialization and basic structure
 
 - [ ] T001 Create project structure per implementation plan
-- [ ] T002 Initialize [language] project with [framework] dependencies
-- [ ] T003 [P] Configure linting and formatting tools
+- [ ] T002 Initialize Go module, Wails application, and plain Svelte frontend dependencies
+- [ ] T003 [P] Configure `gofmt`, `go vet`, configured static analysis, and test commands
 
 ---
 
@@ -62,12 +63,14 @@ description: "Task list template for feature implementation"
 
 Examples of foundational tasks (adjust based on your project):
 
-- [ ] T004 Setup database schema and migrations framework
-- [ ] T005 [P] Implement authentication/authorization framework
-- [ ] T006 [P] Setup API routing and middleware structure
-- [ ] T007 Create base models/entities that all stories depend on
+- [ ] T004 Establish shared application configuration in `internal/app/`
+- [ ] T005 [P] Implement platform abstraction helpers in `internal/platform/`
+- [ ] T006 [P] Setup Wails bindings and plain Svelte frontend service integration in `app.go` and `frontend/src/`
+- [ ] T007 Create shared domain models/services in `internal/domain/`
 - [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T009 Setup Linux and macOS build or smoke-check commands
+- [ ] T010 [P] Document the Go quality gate commands used for local and CI validation
+- [ ] T011 [P] Establish the single shared stylesheet in `frontend/src/app.css` and document its usage rules
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -79,21 +82,22 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 1 ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T012 [P] [US1] Add Go unit tests for [user journey] in `internal/.../*_test.go`
+- [ ] T013 [P] [US1] Add integration or smoke coverage for [user journey] in `tests/integration/` or `tests/smoke/`
+- [ ] T014 [P] [US1] Add accessibility verification for [user journey] in `tests/smoke/` or frontend test coverage
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
-- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
-- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T016 [US1] Add validation and error handling
-- [ ] T017 [US1] Add logging for user story 1 operations
+- [ ] T015 [P] [US1] Create domain types in `internal/domain/`
+- [ ] T016 [P] [US1] Implement supporting service logic in `internal/app/` or `internal/ssh/`
+- [ ] T017 [US1] Expose the Wails binding or application entry point in `app.go`
+- [ ] T018 [US1] Implement the user-facing flow in `frontend/src/` using classes defined in `frontend/src/app.css`
+- [ ] T019 [US1] Add validation, error context, and cancellation handling
+- [ ] T020 [US1] Add platform-specific handling only where Linux/macOS behavior differs
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -105,17 +109,18 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 2 ⚠️
 
-- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T021 [P] [US2] Add Go unit tests for [user journey] in `internal/.../*_test.go`
+- [ ] T022 [P] [US2] Add integration or smoke coverage for [user journey] in `tests/integration/` or `tests/smoke/`
+- [ ] T023 [P] [US2] Add accessibility verification for [user journey] in `tests/smoke/` or frontend test coverage
 
 ### Implementation for User Story 2
 
-- [ ] T020 [P] [US2] Create [Entity] model in src/models/[entity].py
-- [ ] T021 [US2] Implement [Service] in src/services/[service].py
-- [ ] T022 [US2] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T023 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T024 [P] [US2] Create or extend domain types in `internal/domain/`
+- [ ] T025 [US2] Implement supporting service logic in `internal/app/` or `internal/ssh/`
+- [ ] T026 [US2] Implement the user-facing flow in `frontend/src/` and `app.go` as needed using the shared stylesheet only
+- [ ] T027 [US2] Integrate with User Story 1 components without breaking independent verification
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -127,16 +132,17 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 3 ⚠️
 
-- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T028 [P] [US3] Add Go unit tests for [user journey] in `internal/.../*_test.go`
+- [ ] T029 [P] [US3] Add integration or smoke coverage for [user journey] in `tests/integration/` or `tests/smoke/`
+- [ ] T030 [P] [US3] Add accessibility verification for [user journey] in `tests/smoke/` or frontend test coverage
 
 ### Implementation for User Story 3
 
-- [ ] T026 [P] [US3] Create [Entity] model in src/models/[entity].py
-- [ ] T027 [US3] Implement [Service] in src/services/[service].py
-- [ ] T028 [US3] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T031 [P] [US3] Create or extend domain types in `internal/domain/`
+- [ ] T032 [US3] Implement supporting service logic in `internal/app/` or `internal/ssh/`
+- [ ] T033 [US3] Implement the user-facing flow in `frontend/src/` and `app.go` as needed using the shared stylesheet only
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -150,12 +156,14 @@ Examples of foundational tasks (adjust based on your project):
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] TXXX [P] Documentation updates in docs/
+- [ ] TXXX [P] Documentation updates in docs/ or quickstart.md
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
-- [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
+- [ ] TXXX [P] Additional test coverage for shared Go or frontend code
+- [ ] TXXX [P] Verify keyboard accessibility, focus states, and labels across supported UI flows
+- [ ] TXXX [P] Run `gofmt`, `go vet`, configured static analysis, and fix findings
 - [ ] TXXX Security hardening
-- [ ] TXXX Run quickstart.md validation
+- [ ] TXXX Run Linux and macOS validation commands from quickstart.md
 
 ---
 
@@ -178,9 +186,12 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story
 
-- Tests (if included) MUST be written and FAIL before implementation
+- Tests and smoke checks MUST be written or updated before implementation and must fail when they cover new behavior
+- Service and domain logic before Wails bindings and frontend integration
+- Shared stylesheet updates before or alongside the Svelte markup that depends on them
+- Formatting and static analysis before final validation
 - Models before services
-- Services before endpoints
+- Services before bindings or endpoints
 - Core implementation before integration
 - Story complete before moving to next priority
 
@@ -198,13 +209,13 @@ Examples of foundational tasks (adjust based on your project):
 ## Parallel Example: User Story 1
 
 ```bash
-# Launch all tests for User Story 1 together (if tests requested):
-Task: "Contract test for [endpoint] in tests/contract/test_[name].py"
-Task: "Integration test for [user journey] in tests/integration/test_[name].py"
+# Launch all verification for User Story 1 together:
+Task: "Add Go unit tests for [user journey] in internal/.../*_test.go"
+Task: "Add integration or smoke coverage for [user journey] in tests/integration/ or tests/smoke/"
 
-# Launch all models for User Story 1 together:
-Task: "Create [Entity1] model in src/models/[entity1].py"
-Task: "Create [Entity2] model in src/models/[entity2].py"
+# Launch all domain work for User Story 1 together:
+Task: "Create domain types in internal/domain/"
+Task: "Implement supporting service logic in internal/app/ or internal/ssh/"
 ```
 
 ---
@@ -245,7 +256,9 @@ With multiple developers:
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
-- Verify tests fail before implementing
+- Verify tests or smoke checks fail before implementing
+- Verify `gofmt`, `go vet`, and configured static analysis pass before completion
+- Verify frontend work stays within plain Svelte and the single shared CSS file
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence

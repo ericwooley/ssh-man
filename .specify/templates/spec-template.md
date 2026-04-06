@@ -74,6 +74,21 @@
 
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
+- How does behavior change across supported platforms when the feature touches native desktop capabilities?
+- What happens when filesystem paths, permissions, or external commands differ between Linux and macOS?
+- What happens when a long-running operation is cancelled, times out, or is interrupted mid-flow?
+- What happens when concurrent actions try to update the same state or session?
+
+## Platform & Environment Considerations *(include for desktop or device-bound features)*
+
+<!--
+  ACTION REQUIRED: Include this section when the feature depends on operating
+  system behavior, native integrations, packaging, or device capabilities.
+-->
+
+- **Supported Platforms**: [List the platforms that must be supported for this feature, or remove section if not relevant]
+- **Platform Differences**: [Describe any user-visible differences or explicit parity expectations]
+- **Environment Assumptions**: [List assumptions about permissions, filesystems, installed tools, or packaging]
 
 ## Requirements *(mandatory)*
 
@@ -126,3 +141,4 @@
 - [Assumption about scope boundaries, e.g., "Mobile support is out of scope for v1"]
 - [Assumption about data/environment, e.g., "Existing authentication system will be reused"]
 - [Dependency on existing system/service, e.g., "Requires access to the existing user profile API"]
+- [Platform assumption, e.g., "Linux and macOS parity is required for all user-facing flows in scope"]

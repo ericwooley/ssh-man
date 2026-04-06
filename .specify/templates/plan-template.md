@@ -17,12 +17,14 @@
   the iteration process.
 -->
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
+**Language/Version**: [e.g., Go 1.24, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
+**Primary Dependencies**: [e.g., Wails, Svelte (no SvelteKit), FastAPI, UIKit or NEEDS CLARIFICATION]  
 **Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
+**Testing**: [e.g., go test ./..., Vitest, XCTest or NEEDS CLARIFICATION]  
+**Quality Gates**: [e.g., gofmt, go vet, staticcheck, frontend lint/build or NEEDS CLARIFICATION]  
+**Target Platform**: [e.g., Linux, macOS, Linux server, iOS 15+ or NEEDS CLARIFICATION]
+**Project Type**: [e.g., desktop-app (Wails), library, cli, web-service or NEEDS CLARIFICATION]  
+**Frontend Style Rules**: [e.g., Svelte + single global CSS file at frontend/src/app.css, no CSS modules/dynamic styling, or NEEDS CLARIFICATION]  
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
 **Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
 **Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
@@ -31,7 +33,14 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] Runtime stays Go + Wails; any alternate runtime or heavyweight dependency is justified.
+- [ ] Frontend stays on plain Svelte without SvelteKit or alternate UI frameworks.
+- [ ] Linux and macOS behavior, packaging, and platform-specific risks are explicitly addressed.
+- [ ] Core logic lives in small, focused Go packages; Wails bindings and UI adapters remain thin.
+- [ ] Go package boundaries, context usage, error handling, and concurrency behavior are explicit and idiomatic.
+- [ ] UI styling uses one shared CSS file with explicit classes; no CSS modules, scoped component CSS, or runtime-generated styling are introduced.
+- [ ] Verification includes formatting, static analysis, automated tests, plus build or smoke checks for affected platform-sensitive work.
+- [ ] New native integrations, shell-outs, or background services are minimized and documented.
 
 ## Project Structure
 
@@ -89,6 +98,29 @@ api/
 
 ios/ or android/
 └── [platform-specific structure: feature modules, UI flows, platform tests]
+
+# [REMOVE IF UNUSED] Option 4: Desktop app (Go + Wails)
+cmd/
+└── app/
+    └── main.go
+
+internal/
+├── app/
+├── domain/
+├── platform/
+└── ssh/
+
+frontend/
+├── src/
+│   └── app.css
+└── package.json
+
+build/
+└── [packaging assets]
+
+tests/
+├── integration/
+└── smoke/
 ```
 
 **Structure Decision**: [Document the selected structure and reference the real

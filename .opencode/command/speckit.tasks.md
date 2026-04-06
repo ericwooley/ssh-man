@@ -78,7 +78,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Setup tasks (project initialization)
    - Phase 2: Foundational tasks (blocking prerequisites for all user stories)
    - Phase 3+: One phase per user story (in priority order from spec.md)
-   - Each phase includes: story goal, independent test criteria, tests (if requested), implementation tasks
+   - Each phase includes: story goal, independent test criteria, required verification tasks, implementation tasks
    - Final Phase: Polish & cross-cutting concerns
    - All tasks must follow the strict checklist format (see Task Generation Rules below)
    - Clear file paths for each task
@@ -131,7 +131,7 @@ The tasks.md should be immediately executable - each task must be specific enoug
 
 **CRITICAL**: Tasks MUST be organized by user story to enable independent implementation and testing.
 
-**Tests are OPTIONAL**: Only generate test tasks if explicitly requested in the feature specification or if user requests TDD approach.
+**Tests are REQUIRED when mandated by the constitution or feature scope**: Generate the verification tasks needed to prove each story and any platform-sensitive behavior. Do not omit baseline formatting, static analysis, tests, smoke checks, accessibility verification, or shared stylesheet validation just because the feature request did not explicitly ask for them.
 
 ### Checklist Format (REQUIRED)
 
@@ -173,12 +173,12 @@ Every task MUST strictly follow this format:
      - Models needed for that story
      - Services needed for that story
      - Interfaces/UI needed for that story
-     - If tests requested: Tests specific to that story
+     - Tests or smoke checks specific to that story
    - Mark story dependencies (most stories should be independent)
 
 2. **From Contracts**:
    - Map each interface contract → to the user story it serves
-   - If tests requested: Each interface contract → contract test task [P] before implementation in that story's phase
+   - Each interface contract or platform-sensitive behavior → verification task [P] before implementation in that story's phase when applicable
 
 3. **From Data Model**:
    - Map each entity to the user story(ies) that need it
@@ -195,6 +195,7 @@ Every task MUST strictly follow this format:
 - **Phase 1**: Setup (project initialization)
 - **Phase 2**: Foundational (blocking prerequisites - MUST complete before user stories)
 - **Phase 3+**: User Stories in priority order (P1, P2, P3...)
-  - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
+  - Within each story: Verification → Models → Services → Bindings/UI → Integration
+  - When frontend work is present, tasks MUST keep the UI in plain Svelte and route all class-based styling changes through the single shared CSS file rather than per-component or dynamic styling patterns
   - Each phase should be a complete, independently testable increment
 - **Final Phase**: Polish & Cross-Cutting Concerns
