@@ -1,0 +1,345 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1420;
+  --bg-soft: #151d2c;
+  --bg-elevated: rgba(21, 29, 44, 0.88);
+  --border: rgba(149, 171, 214, 0.18);
+  --text: #edf3ff;
+  --muted: #95a4c3;
+  --accent: #76b7ff;
+  --accent-strong: #2d8cff;
+  --danger: #ff7c8f;
+  --shadow: 0 20px 50px rgba(3, 8, 18, 0.35);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --bg-soft: #ffffff;
+  --bg-elevated: rgba(255, 255, 255, 0.96);
+  --border: rgba(54, 74, 118, 0.14);
+  --text: #172033;
+  --muted: #55627d;
+  --accent: #1768ff;
+  --accent-strong: #0c4fd6;
+  --danger: #d83852;
+  --shadow: 0 18px 42px rgba(68, 94, 138, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(118, 183, 255, 0.16), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.12), transparent 24%),
+    var(--bg);
+  color: var(--text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(118, 183, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  display: grid;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.hero,
+.panel,
+.editor-card,
+.banner {
+  backdrop-filter: blur(20px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.hero h1,
+.panel h2,
+.editor-card h2,
+.empty-state h3 {
+  margin: 0;
+}
+
+.hero-copy,
+.muted,
+.status-copy,
+.empty-state p,
+.list-row small {
+  color: var(--muted);
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.banner {
+  padding: 0.9rem 1rem;
+}
+
+.banner-info {
+  border-color: rgba(118, 183, 255, 0.35);
+}
+
+.banner-warning {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.banner-danger {
+  border-color: rgba(255, 124, 143, 0.45);
+}
+
+.banner-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.75rem;
+}
+
+.workspace-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 280px 320px minmax(0, 1fr);
+}
+
+.detail-column {
+  display: grid;
+  gap: 1rem;
+}
+
+.panel,
+.editor-card {
+  padding: 1rem;
+}
+
+.panel-header,
+.editor-header,
+.row-actions,
+.editor-actions,
+.button-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.stack-list {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.stack-list li {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+}
+
+.list-row.selected {
+  border-color: rgba(118, 183, 255, 0.48);
+  background: rgba(118, 183, 255, 0.12);
+}
+
+.list-row span,
+.row-actions,
+.field-grid,
+.unlock-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.field-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.button,
+.theme-toggle {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0.7rem 1rem;
+}
+
+.button-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: white;
+}
+
+.button-ghost,
+.theme-toggle {
+  background: transparent;
+  border-color: var(--border);
+  color: inherit;
+}
+
+.button-ghost.danger {
+  color: var(--danger);
+}
+
+.pill,
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  text-transform: capitalize;
+}
+
+.pill {
+  background: rgba(118, 183, 255, 0.12);
+  color: var(--accent);
+}
+
+.status-pill.connected { background: rgba(16, 185, 129, 0.18); color: #34d399; }
+.status-pill.reconnecting { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.status-pill.failed,
+.status-pill.needs_attention { background: rgba(255, 124, 143, 0.18); color: var(--danger); }
+.status-pill.starting { background: rgba(118, 183, 255, 0.18); color: var(--accent); }
+.status-pill.stopped { background: rgba(149, 164, 195, 0.16); color: var(--muted); }
+
+label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+}
+
+.checkbox-row {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.empty-state {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1.2rem 0.25rem 0.25rem;
+}
+
+.compact {
+  padding-top: 0.75rem;
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(7, 10, 18, 0.55);
+}
+
+.dialog-card {
+  width: min(32rem, calc(100vw - 2rem));
+  padding: 1.25rem;
+  border-radius: 1.25rem;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+
+@media (max-width: 1080px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 1rem;
+  }
+
+  .hero,
+  .panel-header,
+  .editor-header,
+  .row-actions,
+  .editor-actions,
+  .button-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+}
