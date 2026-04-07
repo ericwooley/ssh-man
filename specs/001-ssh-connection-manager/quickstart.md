@@ -39,6 +39,7 @@ If frontend type or accessibility checks are added during implementation, includ
 ## Project Scripts
 
 - `./scripts/build-current-os.sh`: bootstrap-from-clone build for the current host OS. It downloads Go modules, installs frontend dependencies, selects the correct Wails build invocation for the host platform, and writes the packaged binary to `build/bin/`.
+- `./scripts/dev-current-os.sh`: starts Wails in dev mode for the current host OS and opens the inspector on startup in debug builds.
 - `./scripts/validate.sh`: runs `gofmt`, `go vet`, `go test`, `frontend` tests, and the frontend production build from the repo root.
 - `./scripts/wails-build-linux.sh`: runs the Linux Wails package build with the required `webkit2_41` tag.
 - `npm run validate --prefix frontend`: runs the frontend test and build steps only.
@@ -61,7 +62,7 @@ If frontend type or accessibility checks are added during implementation, includ
 1. Run `go mod tidy` from the repository root after dependency changes.
 2. Run `npm install` from `frontend/` before starting the UI locally.
 3. Start the frontend shell with `npm run dev` from `frontend/` for UI iteration.
-4. Install the Wails CLI before desktop packaging or `wails dev` workflows.
+4. Use `./scripts/dev-current-os.sh` when you want a Wails debug session with the inspector opened on startup.
 5. From a fresh clone, run `./scripts/build-current-os.sh` to install project dependencies and produce the current platform binary in `build/bin/`.
 6. On Linux, use `./scripts/wails-build-linux.sh` when you specifically want the raw Wails command with the required `webkit2_41` build tag.
 7. If `wails doctor` is used as an environment check, install the GTK/WebKit development packages that match the target distro.
