@@ -37,10 +37,10 @@
     <ul class="stack-list" aria-label="Saved servers">
       {#each servers as item}
         <li>
-          <div class="list-item-shell">
+          <div class:selected={selectedServerId === item.server.id} class="list-item-shell">
+            <div class="list-card-topline">
             <button
-              class:selected={selectedServerId === item.server.id}
-              class="list-row list-row-main"
+              class="list-card-main"
               type="button"
               aria-pressed={selectedServerId === item.server.id}
               aria-label={`Select server ${item.server.name}`}
@@ -50,24 +50,28 @@
                 <strong>{item.server.name}</strong>
                 <small>{item.server.username}@{item.server.host}:{item.server.port}</small>
               </span>
-              <span class="pill">{item.configurations.length}</span>
             </button>
 
-            <div class:open={openMenuId === item.server.id} class="row-menu">
-              <button
-                class="button button-ghost button-small row-menu-trigger"
-                type="button"
-                aria-label={`More actions for ${item.server.name}`}
-                aria-expanded={openMenuId === item.server.id}
-                aria-haspopup="menu"
-                on:click={() => toggleMenu(item.server.id)}
-              >...</button>
-              {#if openMenuId === item.server.id}
-                <div class="row-menu-popover" role="menu" aria-label={`Actions for ${item.server.name}`}>
-                  <button class="button button-ghost button-small" type="button" aria-label={`Edit ${item.server.name}`} on:click={() => { closeMenu(); onEdit(item.server) }}>Edit</button>
-                  <button class="button button-ghost button-small danger" type="button" aria-label={`Delete ${item.server.name}`} on:click={() => { closeMenu(); onDelete(item.server.id) }}>Delete</button>
+              <div class="list-card-tools">
+                <span class="pill">{item.configurations.length}</span>
+
+                <div class:open={openMenuId === item.server.id} class="row-menu">
+                  <button
+                    class="button button-ghost button-small row-menu-trigger"
+                    type="button"
+                    aria-label={`More actions for ${item.server.name}`}
+                    aria-expanded={openMenuId === item.server.id}
+                    aria-haspopup="menu"
+                    on:click={() => toggleMenu(item.server.id)}
+                  >...</button>
+                  {#if openMenuId === item.server.id}
+                    <div class="row-menu-popover" role="menu" aria-label={`Actions for ${item.server.name}`}>
+                      <button class="button button-ghost button-small" type="button" aria-label={`Edit ${item.server.name}`} on:click={() => { closeMenu(); onEdit(item.server) }}>Edit</button>
+                      <button class="button button-ghost button-small danger" type="button" aria-label={`Delete ${item.server.name}`} on:click={() => { closeMenu(); onDelete(item.server.id) }}>Delete</button>
+                    </div>
+                  {/if}
                 </div>
-              {/if}
+              </div>
             </div>
           </div>
         </li>

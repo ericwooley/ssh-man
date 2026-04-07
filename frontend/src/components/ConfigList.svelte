@@ -54,10 +54,10 @@
       {#each configurations as configuration}
         {@const runtime = sessionFor(configuration.id)}
         <li>
-          <div class="list-item-shell">
+          <div class:selected={selectedConfigurationId === configuration.id} class="list-item-shell">
+            <div class="list-card-topline">
             <button
-              class:selected={selectedConfigurationId === configuration.id}
-              class="list-row list-row-main"
+              class="list-card-main"
               type="button"
               aria-pressed={selectedConfigurationId === configuration.id}
               aria-label={`Select tunnel ${configuration.label}`}
@@ -73,25 +73,29 @@
                   {/if}
                 </small>
               </span>
-               <span class={`status-pill ${runtime?.status || 'stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
             </button>
 
-             <div class:open={openMenuId === configuration.id} class="row-menu">
-               <button
-                 class="button button-ghost button-small row-menu-trigger"
-                 type="button"
-                 aria-label={`More actions for ${configuration.label}`}
-                 aria-expanded={openMenuId === configuration.id}
-                 aria-haspopup="menu"
-                 on:click={() => toggleMenu(configuration.id)}
-               >...</button>
-               {#if openMenuId === configuration.id}
-                 <div class="row-menu-popover" role="menu" aria-label={`Actions for ${configuration.label}`}>
-                   <button class="button button-ghost button-small" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => { closeMenu(); onEdit(configuration) }}>Edit</button>
-                   <button class="button button-ghost button-small danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => { closeMenu(); onDelete(configuration.id) }}>Delete</button>
-                 </div>
-               {/if}
-             </div>
+              <div class="list-card-tools">
+                <span class={`status-pill ${runtime?.status || 'stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
+
+                <div class:open={openMenuId === configuration.id} class="row-menu">
+                  <button
+                    class="button button-ghost button-small row-menu-trigger"
+                    type="button"
+                    aria-label={`More actions for ${configuration.label}`}
+                    aria-expanded={openMenuId === configuration.id}
+                    aria-haspopup="menu"
+                    on:click={() => toggleMenu(configuration.id)}
+                  >...</button>
+                  {#if openMenuId === configuration.id}
+                    <div class="row-menu-popover" role="menu" aria-label={`Actions for ${configuration.label}`}>
+                      <button class="button button-ghost button-small" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => { closeMenu(); onEdit(configuration) }}>Edit</button>
+                      <button class="button button-ghost button-small danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => { closeMenu(); onDelete(configuration.id) }}>Delete</button>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            </div>
           </div>
         </li>
       {/each}
