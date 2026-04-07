@@ -1,4 +1,9 @@
-const hasWailsRuntime = () => typeof window !== 'undefined' && typeof window.go?.main?.AppBindings !== 'undefined'
+function getRuntimeBindings() {
+  if (typeof window === 'undefined') return null
+  return window.go?.bindings?.AppBindings || window.go?.main?.AppBindings || null
+}
+
+const hasWailsRuntime = () => getRuntimeBindings() !== null
 
 const memoryState = {
   servers: [],
@@ -17,15 +22,22 @@ function syncSession(session) {
   return session
 }
 
+function cloneState(value) {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value)
+  }
+  return JSON.parse(JSON.stringify(value))
+}
+
 function appBindings() {
-  return window.go.main.AppBindings
+  return getRuntimeBindings()
 }
 
 export async function loadInitialState() {
   if (hasWailsRuntime()) {
     return appBindings().LoadInitialState()
   }
-  return { ...structuredClone(memoryState), recoverable: false, message: '' }
+  return { ...cloneState(memoryState), recoverable: false, message: '' }
 }
 
 export async function saveServer(server) {
