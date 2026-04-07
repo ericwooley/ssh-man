@@ -29,11 +29,13 @@
 
   {#if !enabled}
     <div class="empty-state compact">
+      <span class="empty-mark" aria-hidden="true">01</span>
       <h3>Select a target first</h3>
       <p>Choose a saved server in the targets lane before viewing or editing tunnels.</p>
     </div>
   {:else if configurations.length === 0}
     <div class="empty-state compact">
+      <span class="empty-mark" aria-hidden="true">::</span>
       <h3>No saved tunnels</h3>
       <p>Store a local forward or SOCKS proxy under the selected server.</p>
     </div>
@@ -42,29 +44,32 @@
       {#each configurations as configuration}
         {@const runtime = sessionFor(configuration.id)}
         <li>
-          <button
-            class:selected={selectedConfigurationId === configuration.id}
-            class="list-row"
-            type="button"
-            aria-pressed={selectedConfigurationId === configuration.id}
-            aria-label={`Select tunnel ${configuration.label}`}
-            on:click={() => onSelect(configuration.id)}
-          >
-            <span>
-              <strong>{configuration.label}</strong>
-              <small>
-                {#if configuration.connectionType === 'socks_proxy'}
-                  SOCKS :{configuration.socksPort}
-                {:else}
-                  {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
-                {/if}
-              </small>
-            </span>
-             <span class={`status-pill ${runtime?.status || 'stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
-          </button>
-          <div class="row-actions">
-            <button class="button button-ghost" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => onEdit(configuration)}>Edit</button>
-            <button class="button button-ghost danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => onDelete(configuration.id)}>Delete</button>
+          <div class="list-item-shell">
+            <button
+              class:selected={selectedConfigurationId === configuration.id}
+              class="list-row list-row-main"
+              type="button"
+              aria-pressed={selectedConfigurationId === configuration.id}
+              aria-label={`Select tunnel ${configuration.label}`}
+              on:click={() => onSelect(configuration.id)}
+            >
+              <span class="list-primary">
+                <strong>{configuration.label}</strong>
+                <small>
+                  {#if configuration.connectionType === 'socks_proxy'}
+                    SOCKS :{configuration.socksPort}
+                  {:else}
+                    {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
+                  {/if}
+                </small>
+              </span>
+               <span class={`status-pill ${runtime?.status || 'stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
+            </button>
+
+            <div class="row-actions row-actions-inline">
+              <button class="button button-ghost" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => onEdit(configuration)}>Edit</button>
+              <button class="button button-ghost danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => onDelete(configuration.id)}>Delete</button>
+            </div>
           </div>
         </li>
       {/each}

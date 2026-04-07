@@ -21,10 +21,18 @@
   function handleSubmit() {
     onSubmit(secret)
   }
+
+  function handleKeydown(event) {
+    if (open && event.key === 'Escape') {
+      onClose()
+    }
+  }
 </script>
 
+<svelte:window on:keydown={handleKeydown} />
+
 {#if open}
-  <div class="dialog-backdrop" role="presentation">
+  <div class="dialog-backdrop" role="presentation" on:click|self={onClose}>
     <div class="dialog-card" aria-modal="true" role="dialog" aria-labelledby="unlock-dialog-heading">
       <form class="dialog-form" on:submit|preventDefault={handleSubmit}>
         <div class="dialog-header">

@@ -16,6 +16,7 @@
 
   {#if connections.length === 0}
     <div class="empty-state compact">
+      <span class="empty-mark" aria-hidden="true">ON</span>
       <h3>No active tunnels</h3>
       <p>Connected, reconnecting, and unlock-pending tunnels will appear here.</p>
     </div>
@@ -23,16 +24,19 @@
     <ul class="stack-list" aria-label="Active tunnels">
       {#each connections as connection}
         <li>
-          <button class="list-row" type="button" aria-label={`Show ${connection.configurationLabel}`} on:click={() => onSelect(connection.configurationId)}>
-            <span>
-              <strong>{connection.configurationLabel}</strong>
-              <small>{connection.serverName}</small>
-              <small>{connection.statusDetail || connection.status}</small>
-            </span>
-            <span class={`status-pill ${connection.status}`}>{connection.status}</span>
-          </button>
-          <div class="row-actions">
-            <button class="button button-ghost danger" type="button" aria-label={`Disconnect ${connection.configurationLabel}`} on:click={() => onStop(connection.configurationId)}>Disconnect</button>
+          <div class="list-item-shell">
+            <button class="list-row list-row-main" type="button" aria-label={`Show ${connection.configurationLabel}`} on:click={() => onSelect(connection.configurationId)}>
+              <span class="list-primary">
+                <strong>{connection.configurationLabel}</strong>
+                <small>{connection.serverName}</small>
+                <small>{connection.statusDetail || connection.status}</small>
+              </span>
+              <span class={`status-pill ${connection.status}`}>{connection.status}</span>
+            </button>
+
+            <div class="row-actions row-actions-inline">
+              <button class="button button-ghost danger" type="button" aria-label={`Disconnect ${connection.configurationLabel}`} on:click={() => onStop(connection.configurationId)}>Disconnect</button>
+            </div>
           </div>
         </li>
       {/each}

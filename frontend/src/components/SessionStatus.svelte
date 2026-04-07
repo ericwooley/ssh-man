@@ -17,12 +17,26 @@
   </div>
 
   {#if configuration}
-    <p class="status-copy" role="status">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
+    <div class="runtime-summary">
+      <div>
+        <span class="runtime-label">Selected tunnel</span>
+        <strong>{configuration.label}</strong>
+      </div>
+      <small>
+        {#if configuration.connectionType === 'socks_proxy'}
+          SOCKS proxy on :{configuration.socksPort}
+        {:else}
+          Local {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
+        {/if}
+      </small>
+    </div>
 
-    <div class="button-row">
-      <button class="button button-primary" type="button" on:click={() => onStart(configuration.id)}>Start</button>
-      <button class="button button-ghost" type="button" on:click={() => onStop(configuration.id)}>Stop</button>
-      <button class="button button-ghost" type="button" on:click={() => onRetry(configuration.id)}>Retry</button>
+    <p class="status-copy status-callout" role="status">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
+
+    <div class="runtime-actions-grid">
+      <button class="button button-primary" type="button" on:click={() => onStart(configuration.id)}>Start tunnel</button>
+      <button class="button button-ghost" type="button" on:click={() => onRetry(configuration.id)}>Retry session</button>
+      <button class="button button-ghost danger" type="button" on:click={() => onStop(configuration.id)}>Stop tunnel</button>
     </div>
   {:else}
     <div class="empty-state compact">

@@ -19,6 +19,7 @@
 
   {#if servers.length === 0}
     <div class="empty-state">
+      <span class="empty-mark" aria-hidden="true">SSH</span>
       <h3>No servers yet</h3>
       <p>Create a server to start saving SSH tunnels.</p>
     </div>
@@ -26,23 +27,26 @@
     <ul class="stack-list" aria-label="Saved servers">
       {#each servers as item}
         <li>
-          <button
-            class:selected={selectedServerId === item.server.id}
-            class="list-row"
-            type="button"
-            aria-pressed={selectedServerId === item.server.id}
-            aria-label={`Select server ${item.server.name}`}
-            on:click={() => onSelect(item.server.id)}
-          >
-            <span>
-              <strong>{item.server.name}</strong>
-              <small>{item.server.username}@{item.server.host}:{item.server.port}</small>
-            </span>
-            <span class="pill">{item.configurations.length}</span>
-          </button>
-          <div class="row-actions">
-            <button class="button button-ghost" type="button" aria-label={`Edit ${item.server.name}`} on:click={() => onEdit(item.server)}>Edit</button>
-            <button class="button button-ghost danger" type="button" aria-label={`Delete ${item.server.name}`} on:click={() => onDelete(item.server.id)}>Delete</button>
+          <div class="list-item-shell">
+            <button
+              class:selected={selectedServerId === item.server.id}
+              class="list-row list-row-main"
+              type="button"
+              aria-pressed={selectedServerId === item.server.id}
+              aria-label={`Select server ${item.server.name}`}
+              on:click={() => onSelect(item.server.id)}
+            >
+              <span class="list-primary">
+                <strong>{item.server.name}</strong>
+                <small>{item.server.username}@{item.server.host}:{item.server.port}</small>
+              </span>
+              <span class="pill">{item.configurations.length}</span>
+            </button>
+
+            <div class="row-actions row-actions-inline">
+              <button class="button button-ghost" type="button" aria-label={`Edit ${item.server.name}`} on:click={() => onEdit(item.server)}>Edit</button>
+              <button class="button button-ghost danger" type="button" aria-label={`Delete ${item.server.name}`} on:click={() => onDelete(item.server.id)}>Delete</button>
+            </div>
           </div>
         </li>
       {/each}

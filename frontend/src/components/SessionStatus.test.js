@@ -11,7 +11,7 @@ describe('SessionStatus', () => {
 
     render(SessionStatus, {
       props: {
-        configuration: { id: 'config-1', label: 'SOCKS' },
+        configuration: { id: 'config-1', label: 'SOCKS', connectionType: 'socks_proxy', socksPort: 1080 },
         session: { status: 'connected', statusDetail: 'Listening on localhost:1080' },
         onStart,
         onStop,
@@ -21,10 +21,11 @@ describe('SessionStatus', () => {
 
     expect(screen.getByLabelText('Session status connected')).toBeTruthy()
     expect(screen.getByRole('status').textContent).toContain('Listening on localhost:1080')
+    expect(screen.getByText('Selected tunnel')).toBeTruthy()
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Start' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Start tunnel' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop tunnel' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry session' }))
 
     expect(onStart).toHaveBeenCalledWith('config-1')
     expect(onStop).toHaveBeenCalledWith('config-1')

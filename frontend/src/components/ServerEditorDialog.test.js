@@ -56,4 +56,20 @@ describe('ServerEditorDialog', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onSubmit.mock.calls[0][0].name).toBe('Primary')
   })
+
+  it('closes on escape and backdrop clicks', async () => {
+    const onCancel = vi.fn()
+
+    const { container } = render(ServerEditorDialog, {
+      props: {
+        open: true,
+        onCancel,
+      },
+    })
+
+    await fireEvent.keyDown(window, { key: 'Escape' })
+    await fireEvent.click(container.querySelector('.dialog-backdrop'))
+
+    expect(onCancel).toHaveBeenCalledTimes(2)
+  })
 })

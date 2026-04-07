@@ -230,6 +230,20 @@
     editorValue = { ...emptyConfig(), serverId: selectedServerId }
   }
 
+  function handleGlobalKeydown(event) {
+    if (event.key !== 'Escape') return
+
+    if (unlockDialogOpen) {
+      closeUnlockDialog()
+      return
+    }
+
+    if (tunnelDialogOpen) {
+      closeTunnelDialog()
+      return
+    }
+  }
+
   async function handleDeleteServer(serverId) {
     try {
       await deleteServer(serverId)
@@ -467,6 +481,21 @@
     }
   }
 
+  async function handleCopyPath(label, value) {
+    if (!value) return
+
+    try {
+      await navigator.clipboard.writeText(value)
+      banner = `${label} copied.`
+      diagnosticDetails = ''
+      bannerKind = 'info'
+    } catch (error) {
+      banner = error.message || `${label} could not be copied.`
+      diagnosticDetails = error.message || ''
+      bannerKind = 'warning'
+    }
+  }
+
   async function handleReloadState() {
     banner = ''
     diagnosticDetails = ''
@@ -503,6 +532,8 @@
 <svelte:head>
   <title>SSH Man</title>
 </svelte:head>
+
+<svelte:window on:keydown={handleGlobalKeydown} />
 
 <main class="app-shell" aria-busy={isHydrating}>
   <header class="hero">
@@ -584,6 +615,7 @@
         hasWarning={loadRecoverable || bannerKind !== 'info'}
         onReload={handleReloadState}
         onOpenDevTools={handleOpenDevTools}
+        onCopyPath={handleCopyPath}
       />
     </aside>
 
@@ -651,7 +683,7 @@
   />
 
   {#if tunnelDialogOpen}
-    <div class="dialog-backdrop" role="presentation">
+    <div class="dialog-backdrop" role="presentation" on:click|self={closeTunnelDialog}>
       <div class="dialog-card" aria-modal="true" role="dialog" aria-labelledby="tunnel-dialog-heading">
         <div class="sr-only" id="tunnel-dialog-heading">Tunnel editor</div>
         <ConfigEditor

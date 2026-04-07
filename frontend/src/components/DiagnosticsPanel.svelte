@@ -4,6 +4,7 @@
   export let hasWarning = false
   export let onReload = () => {}
   export let onOpenDevTools = () => {}
+  export let onCopyPath = () => {}
 </script>
 
 <section class="panel diagnostics-panel" aria-labelledby="diagnostics-heading">
@@ -16,12 +17,18 @@
   </div>
 
   <div class="diagnostics-block">
-    <span class="diagnostics-label">App data</span>
+    <div class="diagnostics-row">
+      <span class="diagnostics-label">App data</span>
+      <button class="button button-ghost button-small" type="button" disabled={!diagnostics.appDataPath} on:click={() => onCopyPath('App data path', diagnostics.appDataPath)}>Copy path</button>
+    </div>
     <code>{diagnostics.appDataPath || 'Unavailable'}</code>
   </div>
 
   <div class="diagnostics-block">
-    <span class="diagnostics-label">Database</span>
+    <div class="diagnostics-row">
+      <span class="diagnostics-label">Database</span>
+      <button class="button button-ghost button-small" type="button" disabled={!diagnostics.databasePath} on:click={() => onCopyPath('Database path', diagnostics.databasePath)}>Copy path</button>
+    </div>
     <code>{diagnostics.databasePath || 'Unavailable'}</code>
   </div>
 

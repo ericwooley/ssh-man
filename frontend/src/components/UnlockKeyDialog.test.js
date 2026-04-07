@@ -35,4 +35,20 @@ describe('UnlockKeyDialog', () => {
 
     expect(screen.getByRole('button', { name: 'Unlock key' }).hasAttribute('disabled')).toBe(true)
   })
+
+  it('closes on escape and backdrop clicks', async () => {
+    const onClose = vi.fn()
+
+    const { container } = render(UnlockKeyDialog, {
+      props: {
+        open: true,
+        onClose,
+      },
+    })
+
+    await fireEvent.keyDown(window, { key: 'Escape' })
+    await fireEvent.click(container.querySelector('.dialog-backdrop'))
+
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
 })
