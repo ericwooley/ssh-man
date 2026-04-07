@@ -6,6 +6,7 @@
     discoverBrowsers,
     launchBrowserThroughSocks,
     loadInitialState,
+    openDevTools,
     retryConfiguration,
     saveConnectionConfiguration,
     savePreferences,
@@ -66,6 +67,7 @@
   let isHydrating = false
   let unlockDialogOpen = false
   let unlockConfigurationId = ''
+  let diagnosticDetails = ''
 
   const selectedServer = () => servers.find((item) => item.server.id === selectedServerId)?.server || null
   const selectedConfigurations = () => servers.find((item) => item.server.id === selectedServerId)?.configurations || []
@@ -109,10 +111,12 @@
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
       document.documentElement.dataset.theme = preferences.theme
       banner = state.message || ''
+      diagnosticDetails = state.message || ''
       bannerKind = state.recoverable ? 'warning' : 'info'
       loadRecoverable = Boolean(state.recoverable)
     } catch (error) {
       banner = error.message || 'The configuration store could not be loaded.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
       loadRecoverable = true
     } finally {
@@ -192,9 +196,11 @@
       serverErrors = {}
       await selectServer(saved.id)
       banner = `Saved ${saved.name}.`
+      diagnosticDetails = ''
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'The server could not be saved.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -225,9 +231,11 @@
         selectedConfigurationId = ''
       }
       banner = 'Server deleted.'
+      diagnosticDetails = ''
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'The server could not be deleted.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -253,9 +261,11 @@
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
       editorErrors = {}
       banner = ''
+      diagnosticDetails = ''
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'The tunnel could not be saved.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -271,9 +281,11 @@
         selectedConfigurationId = selectedConfigurations()[0]?.id || ''
       }
       banner = 'Tunnel deleted.'
+      diagnosticDetails = ''
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'The tunnel could not be deleted.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -284,8 +296,10 @@
     editorValue = { ...emptyConfig(), serverId }
     try {
       preferences = await savePreferences({ ...preferences, lastSelectedServerId: serverId })
+      diagnosticDetails = ''
     } catch (error) {
       banner = error.message || 'The current server selection could not be saved.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'warning'
     }
   }
@@ -300,8 +314,10 @@
 
     try {
       preferences = await savePreferences({ ...preferences, lastSelectedServerId: record.server.id })
+      diagnosticDetails = ''
     } catch (error) {
       banner = error.message || 'The current server selection could not be saved.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'warning'
     }
   }
@@ -311,8 +327,10 @@
     try {
       preferences = await savePreferences({ ...preferences, theme: nextTheme })
       document.documentElement.dataset.theme = nextTheme
+      diagnosticDetails = ''
     } catch (error) {
       banner = error.message || 'The theme preference could not be saved.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'warning'
     }
   }
@@ -322,9 +340,11 @@
       const session = await startConfiguration(configurationId)
       upsertSession(session)
       banner = session.statusDetail || ''
+      diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
     } catch (error) {
       banner = error.message || 'The tunnel could not be started.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -349,9 +369,11 @@
         attentionCount ? `${attentionCount} need${attentionCount === 1 ? 's' : ''} a passphrase.` : '',
         failedCount ? `${failedCount} failed to start.` : '',
       ].filter(Boolean).join(' ') || 'No tunnels were started.'
+      diagnosticDetails = ''
       bannerKind = failedCount > 0 || attentionCount > 0 ? 'warning' : 'info'
     } catch (error) {
       banner = error.message || 'The selected server tunnels could not be started.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -361,9 +383,11 @@
       const session = await stopConfiguration(configurationId)
       upsertSession(session)
       banner = session.statusDetail || ''
+      diagnosticDetails = ''
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'The tunnel could not be stopped.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -373,9 +397,11 @@
       const session = await retryConfiguration(configurationId)
       upsertSession(session)
       banner = session.statusDetail || ''
+      diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
     } catch (error) {
       banner = error.message || 'The tunnel could not be retried.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -385,9 +411,11 @@
       const session = await submitKeyUnlock(configurationId, secret)
       upsertSession(session)
       banner = session.statusDetail || ''
+      diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
     } catch (error) {
       banner = error.message || 'The SSH key could not be unlocked.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -396,9 +424,11 @@
     try {
       browsers = await discoverBrowsers()
       banner = browsers.length === 0 ? 'No supported browsers were found.' : ''
+      diagnosticDetails = ''
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'Installed browsers could not be discovered.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
     }
   }
@@ -407,15 +437,31 @@
     try {
       await launchBrowserThroughSocks(configurationId, browserId)
       banner = 'Browser launch request sent.'
+      diagnosticDetails = ''
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'Browser launch failed.'
+      diagnosticDetails = error.message || ''
       bannerKind = 'danger'
+    }
+  }
+
+  async function handleOpenDevTools() {
+    try {
+      await openDevTools()
+      banner = 'Requested frontend devtools.'
+      diagnosticDetails = ''
+      bannerKind = 'info'
+    } catch (error) {
+      banner = error.message || 'Frontend devtools could not be opened.'
+      diagnosticDetails = error.message || ''
+      bannerKind = 'warning'
     }
   }
 
   async function handleReloadState() {
     banner = ''
+    diagnosticDetails = ''
     bannerKind = 'info'
     await hydrate()
   }
@@ -461,10 +507,18 @@
   </header>
 
   {#if banner}
-    <div class={`banner banner-${bannerKind}`} aria-live={bannerKind === 'danger' ? 'assertive' : 'polite'} role={bannerKind === 'danger' ? 'alert' : 'status'}>{banner}</div>
-    {#if loadRecoverable}
+    <div class={`banner banner-${bannerKind}`} aria-live={bannerKind === 'danger' ? 'assertive' : 'polite'} role={bannerKind === 'danger' ? 'alert' : 'status'}>
+      <div class="banner-content">
+        <span>{banner}</span>
+        {#if diagnosticDetails && diagnosticDetails !== banner}
+          <pre class="banner-detail">{diagnosticDetails}</pre>
+        {/if}
+      </div>
+    </div>
+    {#if loadRecoverable || bannerKind !== 'info'}
       <div class="banner-actions">
         <button class="button button-ghost" type="button" on:click={handleReloadState}>Retry loading saved data</button>
+        <button class="button button-ghost" type="button" on:click={handleOpenDevTools}>Open frontend devtools</button>
       </div>
     {/if}
   {/if}

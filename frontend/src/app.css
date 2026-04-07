@@ -114,6 +114,24 @@ textarea:focus-visible {
   padding: 0.75rem 0.9rem;
 }
 
+.banner-content {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.banner-detail {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: rgba(0, 0, 0, 0.16);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
 .banner-info {
   border-color: rgba(118, 183, 255, 0.35);
 }
@@ -129,6 +147,7 @@ textarea:focus-visible {
 .banner-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
   margin-top: -0.75rem;
 }
 

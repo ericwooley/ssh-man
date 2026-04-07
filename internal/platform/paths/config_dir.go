@@ -7,6 +7,7 @@ import (
 )
 
 const appDirName = "ssh-man"
+const databaseFileName = "ssh-man.db"
 
 func ConfigDir() (string, error) {
 	base, err := os.UserConfigDir()
@@ -20,4 +21,8 @@ func ConfigDir() (string, error) {
 	}
 
 	return dir, nil
+}
+
+func DatabasePath(configDir string) string {
+	return filepath.Join(configDir, databaseFileName)
 }

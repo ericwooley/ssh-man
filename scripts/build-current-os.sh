@@ -39,19 +39,19 @@ printf '==> Installing frontend dependencies\n'
 npm install --prefix frontend
 
 case "$OS" in
-  Linux)
-    if ! pkg-config --exists gtk+-3.0 webkit2gtk-4.1; then
-      print_linux_dependency_help
-      exit 1
-    fi
+	Linux)
+	    if ! pkg-config --exists gtk+-3.0 webkit2gtk-4.1; then
+	      print_linux_dependency_help
+	      exit 1
+	    fi
 
-    printf '==> Building Linux desktop app with webkit2_41 tag\n'
-    go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -clean -tags webkit2_41 "$@"
-    ;;
-  Darwin)
-    printf '==> Building macOS desktop app\n'
-    go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -clean "$@"
-    ;;
+	    printf '==> Building Linux desktop app with webkit2_41 tag and production devtools\n'
+	    go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -clean -devtools -tags webkit2_41 "$@"
+	    ;;
+	Darwin)
+	    printf '==> Building macOS desktop app with production devtools\n'
+	    go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -clean -devtools "$@"
+	    ;;
   *)
     printf 'Unsupported OS for this project build script: %s\n' "$OS" >&2
     exit 1

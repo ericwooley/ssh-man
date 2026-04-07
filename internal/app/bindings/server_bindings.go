@@ -8,7 +8,11 @@ import (
 )
 
 func (a *AppBindings) SaveServer(input serverdomain.Server) (serverdomain.Server, error) {
-	return a.app.ServerService.Save(context.Background(), input)
+	item, err := a.app.ServerService.Save(context.Background(), input)
+	if err != nil {
+		return serverdomain.Server{}, a.storageError("The server could not be saved", err)
+	}
+	return item, nil
 }
 
 func (a *AppBindings) DeleteServer(serverID string) error {
@@ -22,5 +26,8 @@ func (a *AppBindings) DeleteServer(serverID string) error {
 			return fmt.Errorf("stop %q before deleting the server", item.Label)
 		}
 	}
-	return a.app.ServerService.Delete(context.Background(), serverID)
+	if err := a.app.ServerService.Delete(context.Background(), serverID); err != nil {
+		return a.storageError("The server could not be deleted", err)
+	}
+	return nil
 }

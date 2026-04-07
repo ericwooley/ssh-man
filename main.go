@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
 	"ssh-man/internal/app/bindings"
+	appmenu "ssh-man/internal/app/menu"
 )
 
 //go:embed all:frontend/dist
@@ -24,12 +26,22 @@ func main() {
 		Title:  "SSH Man",
 		Width:  1280,
 		Height: 840,
+		Menu:   appmenu.Build(context.Background(), app),
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		Bind: []interface{}{
 			app,
 		},
+		OnStartup: func(ctx context.Context) {
+			app.SetContext(ctx)
+		},
+		OnShutdown: func(ctx context.Context) {
+			if err := app.Shutdown(ctx); err != nil {
+				log.Printf("shutdown application: %v", err)
+			}
+		},
+		EnableDefaultContextMenu: true,
 		Debug: options.Debug{
 			OpenInspectorOnStartup: true,
 		},

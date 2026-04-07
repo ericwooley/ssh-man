@@ -12,6 +12,7 @@ import (
 
 type AppBindings struct {
 	app *bootstrap.Application
+	ctx context.Context
 }
 
 type ServerWithConfigurations struct {
@@ -35,13 +36,28 @@ func NewAppBindings() (*AppBindings, error) {
 	return &AppBindings{app: app}, nil
 }
 
+func (a *AppBindings) SetContext(ctx context.Context) {
+	a.ctx = ctx
+}
+
+func (a *AppBindings) Shutdown(ctx context.Context) error {
+	return a.app.Shutdown(ctx)
+}
+
+func (a *AppBindings) storageError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s. App data: %s. Database: %s. %w", action, a.app.ConfigDir, a.app.DatabasePath, err)
+}
+
 func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 	ctx := context.Background()
 	result := LoadInitialStateResult{Preferences: preferencesdomain.Default(), Sessions: []any{}}
 
 	servers, err := a.app.ServerService.List(ctx)
 	if err != nil {
-		result.Message = fmt.Sprintf("Saved data could not be loaded. Check that the app data directory is writable and that the SQLite database is healthy. %v", err)
+		result.Message = a.storageError("Saved data could not be loaded", err).Error()
 		result.Recoverable = true
 		return result, nil
 	}
@@ -54,7 +70,7 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 	for _, item := range servers {
 		configs, err := a.app.ConfigService.ListByServer(ctx, item.ID)
 		if err != nil {
-			result.Message = fmt.Sprintf("Some saved tunnel details could not be loaded for %q. Check the local database and retry. %v", item.Name, err)
+			result.Message = a.storageError(fmt.Sprintf("Some saved tunnel details could not be loaded for %q", item.Name), err).Error()
 			result.Recoverable = true
 			result.Servers = items
 			result.Preferences = pref
@@ -71,7 +87,7 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 
 	message := ""
 	if prefErr != nil {
-		message = "Preferences could not be loaded; defaults are in use."
+		message = a.storageError("Preferences could not be loaded; defaults are in use", prefErr).Error()
 	}
 
 	return LoadInitialStateResult{Servers: items, Preferences: pref, Sessions: sessions, Message: message, Recoverable: prefErr != nil}, nil

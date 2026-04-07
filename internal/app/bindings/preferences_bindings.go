@@ -7,5 +7,9 @@ import (
 )
 
 func (a *AppBindings) SavePreferences(input preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
-	return a.app.PreferencesService.Save(context.Background(), input)
+	pref, err := a.app.PreferencesService.Save(context.Background(), input)
+	if err != nil {
+		return preferencesdomain.UserPreference{}, a.storageError("The preference could not be saved", err)
+	}
+	return pref, nil
 }

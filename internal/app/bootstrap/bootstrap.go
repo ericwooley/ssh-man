@@ -15,6 +15,8 @@ import (
 )
 
 type Application struct {
+	ConfigDir          string
+	DatabasePath       string
 	DB                 *sql.DB
 	ServerService      *serverdomain.Service
 	ConfigService      *configdomain.Service
@@ -46,6 +48,8 @@ func New(context.Context) (*Application, error) {
 	browserService := browser.NewService(configStore, runtimeStore)
 
 	return &Application{
+		ConfigDir:          configDir,
+		DatabasePath:       paths.DatabasePath(configDir),
 		DB:                 db,
 		ServerService:      serverService,
 		ConfigService:      configService,
@@ -53,4 +57,25 @@ func New(context.Context) (*Application, error) {
 		SessionService:     sessionService,
 		BrowserService:     browserService,
 	}, nil
+}
+
+func (a *Application) Shutdown(ctx context.Context) error {
+	if a == nil {
+		return nil
+	}
+
+	for _, state := range a.SessionService.List() {
+		if state.Status == sessiondomain.StatusStopped {
+			continue
+		}
+		_, _ = a.SessionService.Stop(ctx, state.ConfigurationID)
+	}
+
+	if a.DB != nil {
+		if err := a.DB.Close(); err != nil {
+			return fmt.Errorf("close database %q: %w", a.DatabasePath, err)
+		}
+	}
+
+	return nil
 }

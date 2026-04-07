@@ -143,3 +143,9 @@ export async function launchBrowserThroughSocks(configurationId, browserId) {
   }
   return { configurationId, browserId, success: true }
 }
+
+export async function openDevTools() {
+  if (hasWailsRuntime()) {
+    return appBindings().OpenDevTools()
+  }
+}

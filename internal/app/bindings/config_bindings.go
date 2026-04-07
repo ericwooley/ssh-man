@@ -8,7 +8,11 @@ import (
 )
 
 func (a *AppBindings) SaveConnectionConfiguration(input configdomain.ConnectionConfiguration) (configdomain.ConnectionConfiguration, error) {
-	return a.app.ConfigService.Save(context.Background(), input)
+	item, err := a.app.ConfigService.Save(context.Background(), input)
+	if err != nil {
+		return configdomain.ConnectionConfiguration{}, a.storageError("The tunnel could not be saved", err)
+	}
+	return item, nil
 }
 
 func (a *AppBindings) DeleteConnectionConfiguration(configurationID string) error {
@@ -16,5 +20,8 @@ func (a *AppBindings) DeleteConnectionConfiguration(configurationID string) erro
 	if ok && state.Status != "stopped" {
 		return fmt.Errorf("stop the configuration before deleting it")
 	}
-	return a.app.ConfigService.Delete(context.Background(), configurationID)
+	if err := a.app.ConfigService.Delete(context.Background(), configurationID); err != nil {
+		return a.storageError("The tunnel could not be deleted", err)
+	}
+	return nil
 }
