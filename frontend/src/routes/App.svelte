@@ -64,11 +64,14 @@
   let loadRecoverable = false
   let isHydrating = false
   let unlockDialogOpen = false
+  let unlockConfigurationId = ''
 
   const selectedServer = () => servers.find((item) => item.server.id === selectedServerId)?.server || null
   const selectedConfigurations = () => servers.find((item) => item.server.id === selectedServerId)?.configurations || []
   const selectedConfiguration = () => selectedConfigurations().find((item) => item.id === selectedConfigurationId) || null
   const selectedSession = () => sessions.find((item) => item.configurationId === selectedConfigurationId) || null
+  const unlockConfiguration = () => configurationRecord(unlockConfigurationId)?.configuration || null
+  const unlockSession = () => sessions.find((item) => item.configurationId === unlockConfigurationId) || null
 
   function configurationRecord(configurationId) {
     for (const item of servers) {
@@ -118,7 +121,21 @@
 
   function upsertSession(session) {
     sessions = sessions.filter((item) => item.configurationId !== session.configurationId).concat(session)
-    unlockDialogOpen = session.status === 'needs_attention'
+    if (session.status === 'needs_attention') {
+      unlockConfigurationId = session.configurationId
+      unlockDialogOpen = true
+      return
+    }
+
+    if (unlockConfigurationId === session.configurationId) {
+      unlockDialogOpen = false
+      unlockConfigurationId = ''
+    }
+  }
+
+  function closeUnlockDialog() {
+    unlockDialogOpen = false
+    unlockConfigurationId = ''
   }
 
   function validateConfig(configuration) {
@@ -454,7 +471,6 @@
         onStart={handleStart}
         onStop={handleStop}
         onRetry={handleRetry}
-        onUnlock={handleUnlock}
       />
 
       <BrowserLauncher
@@ -492,5 +508,11 @@
     </div>
   {/if}
 
-  <UnlockKeyDialog open={unlockDialogOpen} onClose={() => (unlockDialogOpen = false)} />
+  <UnlockKeyDialog
+    open={unlockDialogOpen}
+    configurationLabel={unlockConfiguration()?.label || ''}
+    detail={unlockSession()?.statusDetail || ''}
+    onSubmit={(secret) => handleUnlock(unlockConfigurationId, secret)}
+    onClose={closeUnlockDialog}
+  />
 </main>

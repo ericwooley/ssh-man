@@ -33,6 +33,7 @@ describe('BrowserLauncher', () => {
       },
     })
 
+    expect(screen.getByRole('option', { name: 'Firefox (unsupported)' })).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('cannot launch it through a SOCKS proxy')
     expect(screen.getByRole('button', { name: 'Launch through SOCKS' }).hasAttribute('disabled')).toBe(true)
 

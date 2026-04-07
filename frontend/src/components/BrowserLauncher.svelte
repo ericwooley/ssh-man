@@ -8,6 +8,8 @@
   export let onLaunch = () => {}
 
   $: canLaunch = configuration && configuration.connectionType === 'socks_proxy' && session?.status === 'connected'
+  $: selectedBrowser = browsers.find((browser) => browser.id === selectedBrowserId) || null
+  $: canLaunchSelectedBrowser = Boolean(selectedBrowser?.supportsProxyLaunch)
 </script>
 
 <section class="panel browser-panel" aria-labelledby="browser-launch-heading">
@@ -22,25 +24,24 @@
   {#if !canLaunch}
     <p class="muted">Start a SOCKS tunnel to enable browser launch.</p>
   {:else}
-    <label>
-      <span>Installed browser</span>
-      <select bind:value={selectedBrowserId} on:change={(event) => onSelect(event.currentTarget.value)}>
-        <option value="">Select a browser</option>
-        {#each browsers as browser}
-          <option disabled={!browser.supportsProxyLaunch} value={browser.id}>{browser.displayName}</option>
-        {/each}
-      </select>
-    </label>
+    <div class="compact-form-grid">
+      <label>
+        <span>Installed browser</span>
+        <select bind:value={selectedBrowserId} on:change={(event) => onSelect(event.currentTarget.value)}>
+          <option value="">Select a browser</option>
+          {#each browsers as browser}
+            <option value={browser.id}>{browser.displayName}{browser.supportsProxyLaunch ? '' : ' (unsupported)'}</option>
+          {/each}
+        </select>
+      </label>
 
-    {#if selectedBrowserId}
-      {@const selectedBrowser = browsers.find((browser) => browser.id === selectedBrowserId)}
-      {#if selectedBrowser && !selectedBrowser.supportsProxyLaunch}
-        <p class="error-text" role="alert">This browser was found, but this MVP cannot launch it through a SOCKS proxy on this platform.</p>
-      {/if}
+      <button class="button button-primary" disabled={!selectedBrowserId || !canLaunchSelectedBrowser} type="button" on:click={() => onLaunch(configuration.id, selectedBrowserId)}>
+        Launch through SOCKS
+      </button>
+    </div>
+
+    {#if selectedBrowser && !selectedBrowser.supportsProxyLaunch}
+      <p class="error-text" role="alert">{selectedBrowser.displayName} was found, but this app cannot launch it through a SOCKS proxy on this platform yet.</p>
     {/if}
-
-    <button class="button button-primary" disabled={!selectedBrowserId || !browsers.find((browser) => browser.id === selectedBrowserId)?.supportsProxyLaunch} type="button" on:click={() => onLaunch(configuration.id, selectedBrowserId)}>
-      Launch through SOCKS
-    </button>
   {/if}
 </section>

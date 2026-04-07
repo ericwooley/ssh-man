@@ -4,9 +4,6 @@
   export let onStart = () => {}
   export let onStop = () => {}
   export let onRetry = () => {}
-  export let onUnlock = () => {}
-
-  let secret = ''
 </script>
 
 <section class="panel status-panel" aria-labelledby="session-status-heading">
@@ -26,16 +23,6 @@
       <button class="button button-ghost" type="button" on:click={() => onStop(configuration.id)}>Stop</button>
       <button class="button button-ghost" type="button" on:click={() => onRetry(configuration.id)}>Retry</button>
     </div>
-
-    {#if session?.status === 'needs_attention'}
-      <form class="unlock-form" on:submit|preventDefault={() => { onUnlock(configuration.id, secret); secret = '' }}>
-        <label>
-          <span>SSH key passphrase</span>
-          <input bind:value={secret} type="password" />
-        </label>
-        <button class="button button-primary" type="submit">Unlock key</button>
-      </form>
-    {/if}
   {:else}
     <div class="empty-state compact">
       <h3>No tunnel selected</h3>

@@ -31,20 +31,15 @@ describe('SessionStatus', () => {
     expect(onRetry).toHaveBeenCalledWith('config-1')
   })
 
-  it('submits an unlock secret when attention is required', async () => {
-    const onUnlock = vi.fn()
-
+  it('shows attention state without duplicating the unlock form', async () => {
     render(SessionStatus, {
       props: {
         configuration: { id: 'config-1', label: 'SOCKS' },
         session: { status: 'needs_attention', statusDetail: 'Unlock the SSH key to continue' },
-        onUnlock,
       },
     })
 
-    await fireEvent.input(screen.getByLabelText('SSH key passphrase'), { target: { value: 'hunter2' } })
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlock key' }))
-
-    expect(onUnlock).toHaveBeenCalledWith('config-1', 'hunter2')
+    expect(screen.queryByLabelText('SSH key passphrase')).toBeNull()
+    expect(screen.getByRole('status').textContent).toContain('Unlock the SSH key to continue')
   })
 })
