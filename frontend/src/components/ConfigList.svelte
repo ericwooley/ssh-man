@@ -5,6 +5,7 @@
   export let enabled = true
   export let onSelect = () => {}
   export let onCreate = () => {}
+  export let onStartAll = () => {}
   export let onEdit = () => {}
   export let onDelete = () => {}
 
@@ -19,7 +20,10 @@
       <p class="eyebrow">Configurations</p>
       <h2 id="config-list-heading">Tunnels</h2>
     </div>
-    <button class="button button-primary" disabled={!enabled} type="button" on:click={onCreate}>Add tunnel</button>
+    <div class="panel-actions">
+      <button class="button button-ghost" disabled={!enabled || configurations.length === 0} type="button" on:click={onStartAll}>Start all</button>
+      <button class="button button-primary" disabled={!enabled} type="button" on:click={onCreate}>Add tunnel</button>
+    </div>
   </div>
 
   {#if !enabled}

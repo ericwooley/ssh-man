@@ -17,6 +17,7 @@ import (
 
 type ConfigStore interface {
 	Get(ctx context.Context, id string) (configdomain.ConnectionConfiguration, error)
+	ListByServer(ctx context.Context, serverID string) ([]configdomain.ConnectionConfiguration, error)
 }
 
 type ServerStore interface {
@@ -70,6 +71,23 @@ func (s *Service) Start(ctx context.Context, configurationID string) (RuntimeSes
 func (s *Service) Retry(ctx context.Context, configurationID string) (RuntimeSession, error) {
 	_, passphrase, _ := s.runtimes.Runner(configurationID)
 	return s.start(ctx, configurationID, passphrase)
+}
+
+func (s *Service) StartAll(ctx context.Context, serverID string) ([]RuntimeSession, error) {
+	configurations, err := s.configs.ListByServer(ctx, serverID)
+	if err != nil {
+		return nil, fmt.Errorf("load server configurations: %w", err)
+	}
+
+	states := make([]RuntimeSession, 0, len(configurations))
+	for _, configuration := range configurations {
+		state, err := s.Start(ctx, configuration.ID)
+		if err != nil {
+			return nil, err
+		}
+		states = append(states, state)
+	}
+	return states, nil
 }
 
 func (s *Service) SubmitKeyUnlock(ctx context.Context, configurationID string, passphrase string) (RuntimeSession, error) {

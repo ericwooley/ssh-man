@@ -96,6 +96,15 @@ export async function startConfiguration(configurationId) {
   return syncSession({ configurationId, status: 'connected', statusDetail: 'Mock tunnel connected' })
 }
 
+export async function startServerConfigurations(serverId) {
+  if (hasWailsRuntime()) {
+    return appBindings().StartServerConfigurations(serverId)
+  }
+  const server = memoryState.servers.find((item) => item.server.id === serverId)
+  if (!server) return []
+  return server.configurations.map((configuration) => syncSession({ configurationId: configuration.id, status: 'connected', statusDetail: 'Mock tunnel connected' }))
+}
+
 export async function stopConfiguration(configurationId) {
   if (hasWailsRuntime()) {
     return appBindings().StopConfiguration(configurationId)
@@ -124,6 +133,7 @@ export async function discoverBrowsers() {
   return [
     { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
     { id: 'chromium', displayName: 'Chromium', supportsProxyLaunch: true },
+    { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: true },
   ]
 }
 

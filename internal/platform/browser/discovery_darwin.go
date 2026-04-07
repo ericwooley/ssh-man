@@ -19,7 +19,7 @@ func discoverDarwinBrowsers() []BrowserOption {
 		if _, err := os.Stat(candidate.AppPath); err != nil {
 			continue
 		}
-		options = append(options, BrowserOption{ID: candidate.ID, DisplayName: candidate.DisplayName, LaunchReference: candidate.AppPath, SupportsProxyLaunch: candidate.ID != "firefox"})
+		options = append(options, BrowserOption{ID: candidate.ID, DisplayName: candidate.DisplayName, LaunchReference: candidate.AppPath, SupportsProxyLaunch: true})
 	}
 	return options
 }

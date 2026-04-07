@@ -15,6 +15,30 @@ describe('BrowserLauncher', () => {
     expect(screen.getByText('Start a SOCKS tunnel to enable browser launch.')).toBeTruthy()
   })
 
+  it('launches Firefox when it is supported', async () => {
+    const onLaunch = vi.fn()
+    const onSelect = vi.fn()
+
+    render(BrowserLauncher, {
+      props: {
+        configuration: { id: 'config-1', connectionType: 'socks_proxy' },
+        session: { status: 'connected' },
+        browsers: [
+          { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: true },
+          { id: 'chromium', displayName: 'Chromium', supportsProxyLaunch: true },
+        ],
+        selectedBrowserId: 'firefox',
+        onLaunch,
+        onSelect,
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Launch through SOCKS' }))
+
+    expect(onLaunch).toHaveBeenCalledWith('config-1', 'firefox')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('shows unsupported browser messaging and launches supported selections', async () => {
     const onLaunch = vi.fn()
     const onSelect = vi.fn()
@@ -24,16 +48,16 @@ describe('BrowserLauncher', () => {
         configuration: { id: 'config-1', connectionType: 'socks_proxy' },
         session: { status: 'connected' },
         browsers: [
-          { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: false },
+          { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
           { id: 'chromium', displayName: 'Chromium', supportsProxyLaunch: true },
         ],
-        selectedBrowserId: 'firefox',
+        selectedBrowserId: 'safari',
         onLaunch,
         onSelect,
       },
     })
 
-    expect(screen.getByRole('option', { name: 'Firefox (unsupported)' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Safari (unsupported)' })).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('cannot launch it through a SOCKS proxy')
     expect(screen.getByRole('button', { name: 'Launch through SOCKS' }).hasAttribute('disabled')).toBe(true)
 
@@ -41,7 +65,7 @@ describe('BrowserLauncher', () => {
       configuration: { id: 'config-1', connectionType: 'socks_proxy' },
       session: { status: 'connected' },
       browsers: [
-        { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: false },
+        { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
         { id: 'chromium', displayName: 'Chromium', supportsProxyLaunch: true },
       ],
       selectedBrowserId: 'chromium',

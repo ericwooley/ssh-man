@@ -13,6 +13,18 @@ func (a *AppBindings) StartConfiguration(configurationID string) (any, error) {
 	return state, nil
 }
 
+func (a *AppBindings) StartServerConfigurations(serverID string) (any, error) {
+	states, err := a.app.SessionService.StartAll(context.Background(), serverID)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't start all tunnels for this server. %w", err)
+	}
+	results := make([]any, 0, len(states))
+	for _, state := range states {
+		results = append(results, state)
+	}
+	return results, nil
+}
+
 func (a *AppBindings) StopConfiguration(configurationID string) (any, error) {
 	state, err := a.app.SessionService.Stop(context.Background(), configurationID)
 	if err != nil {

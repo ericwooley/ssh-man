@@ -6,6 +6,7 @@ import ConfigList from './ConfigList.svelte'
 describe('ConfigList', () => {
   it('renders tunnel runtime status and actions', async () => {
     const onCreate = vi.fn()
+    const onStartAll = vi.fn()
     const onSelect = vi.fn()
     const onEdit = vi.fn()
     const onDelete = vi.fn()
@@ -21,6 +22,7 @@ describe('ConfigList', () => {
         }],
         sessions: [{ configurationId: 'config-1', status: 'connected' }],
         onCreate,
+        onStartAll,
         onSelect,
         onEdit,
         onDelete,
@@ -29,11 +31,13 @@ describe('ConfigList', () => {
 
     expect(screen.getByLabelText('Tunnel status connected')).toBeTruthy()
 
+    await fireEvent.click(screen.getByRole('button', { name: 'Start all' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Select tunnel SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Edit SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete SOCKS' }))
 
+    expect(onStartAll).toHaveBeenCalledTimes(1)
     expect(onCreate).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith('config-1')
     expect(onEdit).toHaveBeenCalledTimes(1)
@@ -51,5 +55,6 @@ describe('ConfigList', () => {
 
     expect(screen.getByText('Select a target first')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add tunnel' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Start all' }).hasAttribute('disabled')).toBe(true)
   })
 })

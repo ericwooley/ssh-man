@@ -11,6 +11,7 @@
     savePreferences,
     saveServer,
     startConfiguration,
+    startServerConfigurations,
     stopConfiguration,
     submitKeyUnlock,
   } from '../lib/api'
@@ -328,6 +329,33 @@
     }
   }
 
+  async function handleStartAll() {
+    if (!selectedServerId) {
+      banner = 'Select a server before starting its tunnels.'
+      bannerKind = 'warning'
+      return
+    }
+
+    try {
+      const nextSessions = await startServerConfigurations(selectedServerId)
+      nextSessions.forEach((session) => upsertSession(session))
+
+      const connectedCount = nextSessions.filter((session) => session.status === 'connected').length
+      const attentionCount = nextSessions.filter((session) => session.status === 'needs_attention').length
+      const failedCount = nextSessions.filter((session) => session.status === 'failed').length
+
+      banner = [
+        connectedCount ? `Started ${connectedCount} tunnel${connectedCount === 1 ? '' : 's'}.` : '',
+        attentionCount ? `${attentionCount} need${attentionCount === 1 ? 's' : ''} a passphrase.` : '',
+        failedCount ? `${failedCount} failed to start.` : '',
+      ].filter(Boolean).join(' ') || 'No tunnels were started.'
+      bannerKind = failedCount > 0 || attentionCount > 0 ? 'warning' : 'info'
+    } catch (error) {
+      banner = error.message || 'The selected server tunnels could not be started.'
+      bannerKind = 'danger'
+    }
+  }
+
   async function handleStop(configurationId) {
     try {
       const session = await stopConfiguration(configurationId)
@@ -456,11 +484,12 @@
       configurations={selectedConfigurations()}
       {selectedConfigurationId}
       {sessions}
-        onSelect={focusConfiguration}
-        onCreate={openCreateTunnelDialog}
-        onEdit={editConfiguration}
-        onDelete={handleDeleteConfiguration}
-      />
+      onSelect={focusConfiguration}
+      onCreate={openCreateTunnelDialog}
+      onStartAll={handleStartAll}
+      onEdit={editConfiguration}
+      onDelete={handleDeleteConfiguration}
+    />
 
       <div class="detail-column">
         <ActiveConnections connections={activeConnections()} onSelect={focusConfiguration} onStop={handleStop} />

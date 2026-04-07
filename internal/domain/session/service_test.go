@@ -14,11 +14,22 @@ import (
 )
 
 type stubConfigStore struct {
-	item configdomain.ConnectionConfiguration
+	item  configdomain.ConnectionConfiguration
+	items []configdomain.ConnectionConfiguration
 }
 
 func (s stubConfigStore) Get(context.Context, string) (configdomain.ConnectionConfiguration, error) {
 	return s.item, nil
+}
+
+func (s stubConfigStore) ListByServer(context.Context, string) ([]configdomain.ConnectionConfiguration, error) {
+	if s.items != nil {
+		return s.items, nil
+	}
+	if s.item.ID == "" {
+		return nil, nil
+	}
+	return []configdomain.ConnectionConfiguration{s.item}, nil
 }
 
 type stubServerStore struct {
@@ -251,5 +262,32 @@ func TestStartUsesActionableRuntimeErrorMessage(t *testing.T) {
 	}
 	if !strings.Contains(state.StatusDetail, "Another app may already be using that port") {
 		t.Fatalf("unexpected status detail: %q", state.StatusDetail)
+	}
+}
+
+func TestStartAllStartsEachConfigurationForServer(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{items: []configdomain.ConnectionConfiguration{
+			{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080},
+			{ID: "config-2", ServerID: "server-1", Label: "Docs", ConnectionType: configdomain.ConnectionTypeLocalForward, LocalPort: 9000, RemoteHost: "127.0.0.1", RemotePort: 3000},
+		}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	service.factory = &stubFactory{runners: []*stubRunner{{}, {}}}
+
+	states, err := service.StartAll(context.Background(), "server-1")
+	if err != nil {
+		t.Fatalf("start all tunnels: %v", err)
+	}
+	if len(states) != 2 {
+		t.Fatalf("expected 2 states, got %d", len(states))
+	}
+	for _, state := range states {
+		if state.Status != StatusConnected {
+			t.Fatalf("expected connected state, got %+v", state)
+		}
 	}
 }

@@ -20,7 +20,7 @@ func discoverLinuxBrowsers() []BrowserOption {
 		if err != nil {
 			continue
 		}
-		options = append(options, BrowserOption{ID: candidate.ID, DisplayName: candidate.DisplayName, LaunchReference: path, SupportsProxyLaunch: candidate.ID != "firefox"})
+		options = append(options, BrowserOption{ID: candidate.ID, DisplayName: candidate.DisplayName, LaunchReference: path, SupportsProxyLaunch: true})
 	}
 	return options
 }
