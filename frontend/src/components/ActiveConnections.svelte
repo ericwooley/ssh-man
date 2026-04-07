@@ -9,6 +9,7 @@
     <div>
       <p class="eyebrow">Connections</p>
       <h2 id="active-connections-heading">Active tunnels</h2>
+      <p class="panel-copy">Sessions that are live, reconnecting, or waiting for a passphrase stay visible here.</p>
     </div>
     <span class="pill">{connections.length}</span>
   </div>

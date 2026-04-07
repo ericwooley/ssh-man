@@ -11,6 +11,7 @@
     <div>
       <p class="eyebrow">Runtime</p>
       <h2 id="session-status-heading">Session status</h2>
+      <p class="panel-copy">Operate the selected tunnel here and watch its current runtime state.</p>
     </div>
     <span class={`status-pill ${session?.status || 'stopped'}`} aria-live="polite" aria-label={`Session status ${session?.status || 'stopped'}`}>{session?.status || 'stopped'}</span>
   </div>

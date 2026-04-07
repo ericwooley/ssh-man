@@ -12,6 +12,7 @@
     <div>
       <p class="eyebrow">Saved servers</p>
       <h2 id="server-list-heading">Targets</h2>
+      <p class="panel-copy">Choose where new tunnels should be saved and which host you want to work in.</p>
     </div>
     <button class="button button-primary" type="button" on:click={onCreate}>Add server</button>
   </div>

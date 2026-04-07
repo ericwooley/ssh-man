@@ -20,10 +20,16 @@ type ServerWithConfigurations struct {
 	Configurations []configdomain.ConnectionConfiguration `json:"configurations"`
 }
 
+type Diagnostics struct {
+	AppDataPath  string `json:"appDataPath"`
+	DatabasePath string `json:"databasePath"`
+}
+
 type LoadInitialStateResult struct {
 	Servers     []ServerWithConfigurations       `json:"servers"`
 	Preferences preferencesdomain.UserPreference `json:"preferences"`
 	Sessions    []any                            `json:"sessions"`
+	Diagnostics Diagnostics                      `json:"diagnostics"`
 	Message     string                           `json:"message,omitempty"`
 	Recoverable bool                             `json:"recoverable,omitempty"`
 }
@@ -53,7 +59,11 @@ func (a *AppBindings) storageError(action string, err error) error {
 
 func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 	ctx := context.Background()
-	result := LoadInitialStateResult{Preferences: preferencesdomain.Default(), Sessions: []any{}}
+	result := LoadInitialStateResult{
+		Preferences: preferencesdomain.Default(),
+		Sessions:    []any{},
+		Diagnostics: Diagnostics{AppDataPath: a.app.ConfigDir, DatabasePath: a.app.DatabasePath},
+	}
 
 	servers, err := a.app.ServerService.List(ctx)
 	if err != nil {
@@ -90,5 +100,12 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 		message = a.storageError("Preferences could not be loaded; defaults are in use", prefErr).Error()
 	}
 
-	return LoadInitialStateResult{Servers: items, Preferences: pref, Sessions: sessions, Message: message, Recoverable: prefErr != nil}, nil
+	return LoadInitialStateResult{
+		Servers:     items,
+		Preferences: pref,
+		Sessions:    sessions,
+		Diagnostics: result.Diagnostics,
+		Message:     message,
+		Recoverable: prefErr != nil,
+	}, nil
 }

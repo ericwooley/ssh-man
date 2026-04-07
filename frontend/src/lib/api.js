@@ -37,7 +37,15 @@ export async function loadInitialState() {
   if (hasWailsRuntime()) {
     return appBindings().LoadInitialState()
   }
-  return { ...cloneState(memoryState), recoverable: false, message: '' }
+  return {
+    ...cloneState(memoryState),
+    diagnostics: {
+      appDataPath: '~/.config/ssh-man',
+      databasePath: '~/.config/ssh-man/ssh-man.db',
+    },
+    recoverable: false,
+    message: '',
+  }
 }
 
 export async function saveServer(server) {

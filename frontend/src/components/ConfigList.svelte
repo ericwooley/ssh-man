@@ -19,6 +19,7 @@
     <div>
       <p class="eyebrow">Configurations</p>
       <h2 id="config-list-heading">Tunnels</h2>
+      <p class="panel-copy">Keep SOCKS proxies and forwards attached to the selected server so they are easy to restart.</p>
     </div>
     <div class="panel-actions">
       <button class="button button-ghost" disabled={!enabled || configurations.length === 0} type="button" on:click={onStartAll}>Start all</button>

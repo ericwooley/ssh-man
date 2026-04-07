@@ -20,6 +20,7 @@
   import ConfigList from '../components/ConfigList.svelte'
   import ActiveConnections from '../components/ActiveConnections.svelte'
   import ConfigEditor from '../components/ConfigEditor.svelte'
+  import DiagnosticsPanel from '../components/DiagnosticsPanel.svelte'
   import ServerEditorDialog from '../components/ServerEditorDialog.svelte'
   import SessionStatus from '../components/SessionStatus.svelte'
   import UnlockKeyDialog from '../components/UnlockKeyDialog.svelte'
@@ -68,6 +69,7 @@
   let unlockDialogOpen = false
   let unlockConfigurationId = ''
   let diagnosticDetails = ''
+  let diagnostics = { appDataPath: '', databasePath: '' }
 
   const selectedServer = () => servers.find((item) => item.server.id === selectedServerId)?.server || null
   const selectedConfigurations = () => servers.find((item) => item.server.id === selectedServerId)?.configurations || []
@@ -75,6 +77,11 @@
   const selectedSession = () => sessions.find((item) => item.configurationId === selectedConfigurationId) || null
   const unlockConfiguration = () => configurationRecord(unlockConfigurationId)?.configuration || null
   const unlockSession = () => sessions.find((item) => item.configurationId === unlockConfigurationId) || null
+  const totalTunnelCount = () => servers.reduce((count, item) => count + item.configurations.length, 0)
+  const connectedSessionCount = () => sessions.filter((item) => item.status === 'connected').length
+  const attentionSessionCount = () => sessions.filter((item) => item.status === 'needs_attention').length
+  const selectedServerActiveCount = () => activeConnections().filter((item) => configurationRecord(item.configurationId)?.server.id === selectedServerId).length
+  const currentIssue = () => bannerKind === 'info' && !loadRecoverable ? '' : diagnosticDetails || banner || ''
 
   function configurationRecord(configurationId) {
     for (const item of servers) {
@@ -106,6 +113,7 @@
       servers = state.servers || []
       preferences = state.preferences || preferences
       sessions = state.sessions || []
+      diagnostics = state.diagnostics || diagnostics
       selectedServerId = servers.some((item) => item.server.id === preferences.lastSelectedServerId) ? preferences.lastSelectedServerId : ''
       selectedConfigurationId = selectedConfigurations()[0]?.id || ''
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
@@ -509,21 +517,58 @@
   {#if banner}
     <div class={`banner banner-${bannerKind}`} aria-live={bannerKind === 'danger' ? 'assertive' : 'polite'} role={bannerKind === 'danger' ? 'alert' : 'status'}>
       <div class="banner-content">
-        <span>{banner}</span>
-        {#if diagnosticDetails && diagnosticDetails !== banner}
-          <pre class="banner-detail">{diagnosticDetails}</pre>
-        {/if}
+        <strong>{banner}</strong>
       </div>
     </div>
-    {#if loadRecoverable || bannerKind !== 'info'}
-      <div class="banner-actions">
-        <button class="button button-ghost" type="button" on:click={handleReloadState}>Retry loading saved data</button>
-        <button class="button button-ghost" type="button" on:click={handleOpenDevTools}>Open frontend devtools</button>
-      </div>
-    {/if}
   {/if}
 
-  <section class="workspace-grid">
+  <section class="dashboard-shell">
+    <aside class="dashboard-sidebar">
+      <section class="panel summary-panel" aria-labelledby="summary-heading">
+        <div class="panel-header panel-header-stack">
+          <div>
+            <p class="eyebrow">Workspace</p>
+            <h2 id="summary-heading">Current snapshot</h2>
+            <p class="panel-copy">Use the left rail to move between servers. The main workspace stays focused on the selected target.</p>
+          </div>
+        </div>
+
+        <div class="metric-grid" aria-label="Workspace summary">
+          <div class="metric-card">
+            <span class="metric-label">Servers</span>
+            <strong>{servers.length}</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Saved tunnels</span>
+            <strong>{totalTunnelCount()}</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Connected</span>
+            <strong>{connectedSessionCount()}</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Need attention</span>
+            <strong>{attentionSessionCount()}</strong>
+          </div>
+        </div>
+
+        {#if selectedServer()}
+          <div class="selection-card" aria-label="Selected server summary">
+            <div>
+              <span class="selection-label">Selected server</span>
+              <strong>{selectedServer().name}</strong>
+            </div>
+            <small>{selectedServer().username}@{selectedServer().host}:{selectedServer().port}</small>
+            <small>{selectedConfigurations().length} saved tunnel{selectedConfigurations().length === 1 ? '' : 's'} and {selectedServerActiveCount()} active.</small>
+          </div>
+        {:else}
+          <div class="empty-state compact">
+            <h3>No server selected</h3>
+            <p>Create or select a server to unlock the main workspace.</p>
+          </div>
+        {/if}
+      </section>
+
       <ServerList
         {servers}
         {selectedServerId}
@@ -533,38 +578,67 @@
         onDelete={handleDeleteServer}
       />
 
-    <ConfigList
-      enabled={Boolean(selectedServerId)}
-      configurations={selectedConfigurations()}
-      {selectedConfigurationId}
-      {sessions}
-      onSelect={focusConfiguration}
-      onCreate={openCreateTunnelDialog}
-      onStartAll={handleStartAll}
-      onEdit={editConfiguration}
-      onDelete={handleDeleteConfiguration}
-    />
-
-      <div class="detail-column">
-        <ActiveConnections connections={activeConnections()} onSelect={focusConfiguration} onStop={handleStop} />
-
-        <SessionStatus
-          configuration={selectedConfiguration()}
-          session={selectedSession()}
-        onStart={handleStart}
-        onStop={handleStop}
-        onRetry={handleRetry}
+      <DiagnosticsPanel
+        {diagnostics}
+        issue={currentIssue()}
+        hasWarning={loadRecoverable || bannerKind !== 'info'}
+        onReload={handleReloadState}
+        onOpenDevTools={handleOpenDevTools}
       />
+    </aside>
 
-      <BrowserLauncher
-        configuration={selectedConfiguration()}
-        session={selectedSession()}
-        {browsers}
-        {selectedBrowserId}
-        onSelect={(id) => (selectedBrowserId = id)}
-        onRefresh={handleDiscoverBrowsers}
-        onLaunch={handleLaunchBrowser}
-      />
+    <div class="workspace-main">
+      <section class="panel workspace-header" aria-labelledby="workspace-heading">
+        <div class="workspace-header-copy">
+          <p class="eyebrow">Primary workspace</p>
+          <h2 id="workspace-heading">{selectedServer()?.name || 'Select a server to continue'}</h2>
+          <p class="panel-copy">
+            {#if selectedServer()}
+              Save, start, and troubleshoot tunnels for one host without losing track of runtime state.
+            {:else}
+              Choose a saved server from the sidebar to manage its tunnels and launch browsers through SOCKS.
+            {/if}
+          </p>
+        </div>
+      </section>
+
+      <div class="workspace-main-grid">
+        <div class="workspace-primary-column">
+          <ConfigList
+            enabled={Boolean(selectedServerId)}
+            configurations={selectedConfigurations()}
+            {selectedConfigurationId}
+            {sessions}
+            onSelect={focusConfiguration}
+            onCreate={openCreateTunnelDialog}
+            onStartAll={handleStartAll}
+            onEdit={editConfiguration}
+            onDelete={handleDeleteConfiguration}
+          />
+
+          <ActiveConnections connections={activeConnections()} onSelect={focusConfiguration} onStop={handleStop} />
+        </div>
+
+        <div class="workspace-secondary-column">
+          <SessionStatus
+            configuration={selectedConfiguration()}
+            session={selectedSession()}
+            onStart={handleStart}
+            onStop={handleStop}
+            onRetry={handleRetry}
+          />
+
+          <BrowserLauncher
+            configuration={selectedConfiguration()}
+            session={selectedSession()}
+            {browsers}
+            {selectedBrowserId}
+            onSelect={(id) => (selectedBrowserId = id)}
+            onRefresh={handleDiscoverBrowsers}
+            onLaunch={handleLaunchBrowser}
+          />
+        </div>
+      </div>
     </div>
   </section>
 

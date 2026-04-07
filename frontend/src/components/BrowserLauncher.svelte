@@ -17,6 +17,7 @@
     <div>
       <p class="eyebrow">Browser launch</p>
       <h2 id="browser-launch-heading">SOCKS-aware browser</h2>
+      <p class="panel-copy">Open a browser that is isolated to the selected SOCKS tunnel without changing system proxy settings.</p>
     </div>
     <button class="button button-ghost" type="button" on:click={onRefresh}>Refresh browsers</button>
   </div>
