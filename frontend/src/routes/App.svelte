@@ -70,6 +70,11 @@
   let unlockConfigurationId = ''
   let diagnosticDetails = ''
   let diagnostics = { appDataPath: '', databasePath: '' }
+  let selectedServerRecord = null
+  let selectedServer = null
+  let selectedConfigurations = []
+  let selectedConfiguration = null
+  let selectedSession = null
 
   function normalizeSession(session) {
     if (!session) return null
@@ -114,10 +119,6 @@
     return runtimeSessions().find((item) => item.configurationId === configurationId) || null
   }
 
-  const selectedServer = () => servers.find((item) => item.server.id === selectedServerId)?.server || null
-  const selectedConfigurations = () => servers.find((item) => item.server.id === selectedServerId)?.configurations || []
-  const selectedConfiguration = () => selectedConfigurations().find((item) => item.id === selectedConfigurationId) || null
-  const selectedSession = () => runtimeSessionFor(selectedConfigurationId)
   const unlockConfiguration = () => configurationRecord(unlockConfigurationId)?.configuration || null
   const unlockSession = () => runtimeSessionFor(unlockConfigurationId)
   const totalTunnelCount = () => servers.reduce((count, item) => count + item.configurations.length, 0)
@@ -161,7 +162,7 @@
       sessions = state.sessions || []
       diagnostics = state.diagnostics || diagnostics
       selectedServerId = servers.some((item) => item.server.id === preferences.lastSelectedServerId) ? preferences.lastSelectedServerId : ''
-      selectedConfigurationId = selectedConfigurations()[0]?.id || ''
+      selectedConfigurationId = selectedConfigurations[0]?.id || ''
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
       document.documentElement.dataset.theme = preferences.theme
       banner = state.message || ''
@@ -349,7 +350,7 @@
         configurations: item.configurations.filter((entry) => entry.id !== configurationId),
       }))
       if (selectedConfigurationId === configurationId) {
-        selectedConfigurationId = selectedConfigurations()[0]?.id || ''
+        selectedConfigurationId = selectedConfigurations[0]?.id || ''
       }
       banner = 'Tunnel deleted.'
       diagnosticDetails = ''
@@ -363,7 +364,7 @@
 
   async function selectServer(serverId) {
     selectedServerId = serverId
-    selectedConfigurationId = selectedConfigurations()[0]?.id || ''
+    selectedConfigurationId = selectedConfigurations[0]?.id || ''
     editorValue = { ...emptyConfig(), serverId }
     try {
       preferences = await savePreferences({ ...preferences, lastSelectedServerId: serverId })
@@ -577,6 +578,12 @@
     hydrate()
   })
 
+  $: selectedServerRecord = servers.find((item) => item.server.id === selectedServerId) || null
+  $: selectedServer = selectedServerRecord?.server || null
+  $: selectedConfigurations = selectedServerRecord?.configurations || []
+  $: selectedConfiguration = selectedConfigurations.find((item) => item.id === selectedConfigurationId) || null
+  $: selectedSession = runtimeSessionFor(selectedConfigurationId)
+
   $: if (typeof document !== 'undefined') {
     document.body.style.overflow = modalOpen() ? 'hidden' : ''
   }
@@ -642,14 +649,14 @@
           </div>
         </div>
 
-        {#if selectedServer()}
+        {#if selectedServer}
           <div class="selection-card" aria-label="Selected server summary">
             <div>
               <span class="selection-label">Selected server</span>
-              <strong>{selectedServer().name}</strong>
+              <strong>{selectedServer.name}</strong>
             </div>
-            <small>{selectedServer().username}@{selectedServer().host}:{selectedServer().port}</small>
-            <small>{selectedConfigurations().length} saved tunnel{selectedConfigurations().length === 1 ? '' : 's'} and {selectedServerActiveCount()} active.</small>
+            <small>{selectedServer.username}@{selectedServer.host}:{selectedServer.port}</small>
+            <small>{selectedConfigurations.length} saved tunnel{selectedConfigurations.length === 1 ? '' : 's'} and {selectedServerActiveCount()} active.</small>
           </div>
         {:else}
           <div class="empty-state compact">
@@ -682,9 +689,9 @@
       <section class="panel workspace-header" aria-labelledby="workspace-heading">
         <div class="workspace-header-copy">
           <p class="eyebrow">Primary workspace</p>
-          <h2 id="workspace-heading">{selectedServer()?.name || 'Select a server to continue'}</h2>
+          <h2 id="workspace-heading">{selectedServer?.name || 'Select a server to continue'}</h2>
           <p class="panel-copy">
-            {#if selectedServer()}
+            {#if selectedServer}
               Save, start, and troubleshoot tunnels for one host without losing track of runtime state.
             {:else}
               Choose a saved server from the sidebar to manage its tunnels and launch browsers through SOCKS.
@@ -697,7 +704,7 @@
         <div class="workspace-primary-column">
           <ConfigList
             enabled={Boolean(selectedServerId)}
-            configurations={selectedConfigurations()}
+            {selectedConfigurations}
             {selectedConfigurationId}
             sessions={runtimeSessions()}
             onSelect={focusConfiguration}
@@ -712,17 +719,17 @@
 
         <div class="workspace-secondary-column">
           <SessionStatus
-            configuration={selectedConfiguration()}
-            session={selectedSession()}
+            configuration={selectedConfiguration}
+            session={selectedSession}
             onStart={handleStart}
             onStop={handleStop}
             onRetry={handleRetry}
           />
 
-          {#if selectedConfiguration()?.connectionType === 'socks_proxy'}
+          {#if selectedConfiguration?.connectionType === 'socks_proxy'}
             <BrowserLauncher
-              configuration={selectedConfiguration()}
-              session={selectedSession()}
+              configuration={selectedConfiguration}
+              session={selectedSession}
               {browsers}
               {selectedBrowserId}
               onSelect={(id) => (selectedBrowserId = id)}
@@ -748,7 +755,7 @@
       <div class="dialog-card" aria-modal="true" role="dialog" aria-labelledby="tunnel-dialog-heading">
         <div class="sr-only" id="tunnel-dialog-heading">Tunnel editor</div>
         <ConfigEditor
-          server={selectedServer()}
+          server={selectedServer}
           value={editorValue}
           errors={editorErrors}
           onSubmit={handleSaveConfiguration}
