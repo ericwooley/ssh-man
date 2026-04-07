@@ -34,7 +34,9 @@ describe('ConfigList', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Start all' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Select tunnel SOCKS' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Edit SOCKS' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete SOCKS' }))
 
     expect(onStartAll).toHaveBeenCalledTimes(1)

@@ -36,7 +36,9 @@ describe('ServerList', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
     await fireEvent.click(primaryButton)
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Edit Primary' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete Primary' }))
 
     expect(onCreate).toHaveBeenCalledTimes(1)

@@ -5,6 +5,16 @@
   export let onCreate = () => {}
   export let onEdit = () => {}
   export let onDelete = () => {}
+
+  let openMenuId = ''
+
+  function toggleMenu(serverId) {
+    openMenuId = openMenuId === serverId ? '' : serverId
+  }
+
+  function closeMenu() {
+    openMenuId = ''
+  }
 </script>
 
 <section class="panel server-panel" aria-labelledby="server-list-heading">
@@ -43,9 +53,21 @@
               <span class="pill">{item.configurations.length}</span>
             </button>
 
-            <div class="row-actions row-actions-inline">
-              <button class="button button-ghost" type="button" aria-label={`Edit ${item.server.name}`} on:click={() => onEdit(item.server)}>Edit</button>
-              <button class="button button-ghost danger" type="button" aria-label={`Delete ${item.server.name}`} on:click={() => onDelete(item.server.id)}>Delete</button>
+            <div class:open={openMenuId === item.server.id} class="row-menu">
+              <button
+                class="button button-ghost button-small row-menu-trigger"
+                type="button"
+                aria-label={`More actions for ${item.server.name}`}
+                aria-expanded={openMenuId === item.server.id}
+                aria-haspopup="menu"
+                on:click={() => toggleMenu(item.server.id)}
+              >...</button>
+              {#if openMenuId === item.server.id}
+                <div class="row-menu-popover" role="menu" aria-label={`Actions for ${item.server.name}`}>
+                  <button class="button button-ghost button-small" type="button" aria-label={`Edit ${item.server.name}`} on:click={() => { closeMenu(); onEdit(item.server) }}>Edit</button>
+                  <button class="button button-ghost button-small danger" type="button" aria-label={`Delete ${item.server.name}`} on:click={() => { closeMenu(); onDelete(item.server.id) }}>Delete</button>
+                </div>
+              {/if}
             </div>
           </div>
         </li>

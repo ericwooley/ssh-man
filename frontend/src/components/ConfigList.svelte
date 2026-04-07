@@ -9,8 +9,18 @@
   export let onEdit = () => {}
   export let onDelete = () => {}
 
+  let openMenuId = ''
+
   function sessionFor(id) {
     return sessions.findLast ? sessions.findLast((item) => item.configurationId === id) : [...sessions].reverse().find((item) => item.configurationId === id)
+  }
+
+  function toggleMenu(configurationId) {
+    openMenuId = openMenuId === configurationId ? '' : configurationId
+  }
+
+  function closeMenu() {
+    openMenuId = ''
   }
 </script>
 
@@ -66,10 +76,22 @@
                <span class={`status-pill ${runtime?.status || 'stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
             </button>
 
-            <div class="row-actions row-actions-inline">
-              <button class="button button-ghost" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => onEdit(configuration)}>Edit</button>
-              <button class="button button-ghost danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => onDelete(configuration.id)}>Delete</button>
-            </div>
+             <div class:open={openMenuId === configuration.id} class="row-menu">
+               <button
+                 class="button button-ghost button-small row-menu-trigger"
+                 type="button"
+                 aria-label={`More actions for ${configuration.label}`}
+                 aria-expanded={openMenuId === configuration.id}
+                 aria-haspopup="menu"
+                 on:click={() => toggleMenu(configuration.id)}
+               >...</button>
+               {#if openMenuId === configuration.id}
+                 <div class="row-menu-popover" role="menu" aria-label={`Actions for ${configuration.label}`}>
+                   <button class="button button-ghost button-small" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => { closeMenu(); onEdit(configuration) }}>Edit</button>
+                   <button class="button button-ghost button-small danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => { closeMenu(); onDelete(configuration.id) }}>Delete</button>
+                 </div>
+               {/if}
+             </div>
           </div>
         </li>
       {/each}

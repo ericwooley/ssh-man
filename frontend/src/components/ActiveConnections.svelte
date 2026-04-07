@@ -2,6 +2,16 @@
   export let connections = []
   export let onSelect = () => {}
   export let onStop = () => {}
+
+  let openMenuId = ''
+
+  function toggleMenu(configurationId) {
+    openMenuId = openMenuId === configurationId ? '' : configurationId
+  }
+
+  function closeMenu() {
+    openMenuId = ''
+  }
 </script>
 
 <section class="panel active-connections-panel" aria-labelledby="active-connections-heading">
@@ -34,8 +44,20 @@
               <span class={`status-pill ${connection.status}`}>{connection.status}</span>
             </button>
 
-            <div class="row-actions row-actions-inline">
-              <button class="button button-ghost danger" type="button" aria-label={`Disconnect ${connection.configurationLabel}`} on:click={() => onStop(connection.configurationId)}>Disconnect</button>
+            <div class:open={openMenuId === connection.configurationId} class="row-menu">
+              <button
+                class="button button-ghost button-small row-menu-trigger"
+                type="button"
+                aria-label={`More actions for ${connection.configurationLabel}`}
+                aria-expanded={openMenuId === connection.configurationId}
+                aria-haspopup="menu"
+                on:click={() => toggleMenu(connection.configurationId)}
+              >...</button>
+              {#if openMenuId === connection.configurationId}
+                <div class="row-menu-popover" role="menu" aria-label={`Actions for ${connection.configurationLabel}`}>
+                  <button class="button button-ghost button-small danger" type="button" aria-label={`Disconnect ${connection.configurationLabel}`} on:click={() => { closeMenu(); onStop(connection.configurationId) }}>Disconnect</button>
+                </div>
+              {/if}
             </div>
           </div>
         </li>

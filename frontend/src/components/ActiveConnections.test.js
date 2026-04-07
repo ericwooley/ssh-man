@@ -25,6 +25,7 @@ describe('ActiveConnections', () => {
     expect(screen.getByText('Listening on localhost:1080')).toBeTruthy()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Show SOCKS' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Disconnect SOCKS' }))
 
     expect(onSelect).toHaveBeenCalledWith('config-1')
