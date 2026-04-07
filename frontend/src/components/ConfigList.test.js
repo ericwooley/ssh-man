@@ -57,4 +57,24 @@ describe('ConfigList', () => {
     expect(screen.getByRole('button', { name: 'Add tunnel' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: 'Start all' }).hasAttribute('disabled')).toBe(true)
   })
+
+  it('prefers the latest session when stale entries exist', () => {
+    render(ConfigList, {
+      props: {
+        selectedConfigurationId: 'config-1',
+        configurations: [{
+          id: 'config-1',
+          label: 'SOCKS',
+          connectionType: 'socks_proxy',
+          socksPort: 1080,
+        }],
+        sessions: [
+          { configurationId: 'config-1', status: 'stopped' },
+          { configurationId: 'config-1', status: 'connected' },
+        ],
+      },
+    })
+
+    expect(screen.getByLabelText('Tunnel status connected')).toBeTruthy()
+  })
 })

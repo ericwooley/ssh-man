@@ -71,15 +71,58 @@
   let diagnosticDetails = ''
   let diagnostics = { appDataPath: '', databasePath: '' }
 
+  function normalizeSession(session) {
+    if (!session) return null
+
+    const configurationId = session.configurationId || session.ConfigurationID || ''
+    if (!configurationId) return null
+
+    return {
+      configurationId,
+      status: session.status || session.Status || 'stopped',
+      statusDetail: session.statusDetail || session.StatusDetail || '',
+      startedAt: session.startedAt || session.StartedAt || '',
+      lastStateChangeAt: session.lastStateChangeAt || session.LastStateChangeAt || '',
+      reconnectAttemptCount: session.reconnectAttemptCount || session.ReconnectAttemptCount || 0,
+      lastError: session.lastError || session.LastError || '',
+      needsUserInput: session.needsUserInput ?? session.NeedsUserInput ?? false,
+    }
+  }
+
+  function sessionTimestamp(session) {
+    const value = Date.parse(session?.lastStateChangeAt || '')
+    return Number.isNaN(value) ? 0 : value
+  }
+
+  function runtimeSessions() {
+    const latestByConfiguration = new Map()
+
+    for (const item of sessions) {
+      const normalized = normalizeSession(item)
+      if (!normalized) continue
+
+      const existing = latestByConfiguration.get(normalized.configurationId)
+      if (!existing || sessionTimestamp(normalized) >= sessionTimestamp(existing)) {
+        latestByConfiguration.set(normalized.configurationId, normalized)
+      }
+    }
+
+    return Array.from(latestByConfiguration.values())
+  }
+
+  function runtimeSessionFor(configurationId) {
+    return runtimeSessions().find((item) => item.configurationId === configurationId) || null
+  }
+
   const selectedServer = () => servers.find((item) => item.server.id === selectedServerId)?.server || null
   const selectedConfigurations = () => servers.find((item) => item.server.id === selectedServerId)?.configurations || []
   const selectedConfiguration = () => selectedConfigurations().find((item) => item.id === selectedConfigurationId) || null
-  const selectedSession = () => sessions.find((item) => item.configurationId === selectedConfigurationId) || null
+  const selectedSession = () => runtimeSessionFor(selectedConfigurationId)
   const unlockConfiguration = () => configurationRecord(unlockConfigurationId)?.configuration || null
-  const unlockSession = () => sessions.find((item) => item.configurationId === unlockConfigurationId) || null
+  const unlockSession = () => runtimeSessionFor(unlockConfigurationId)
   const totalTunnelCount = () => servers.reduce((count, item) => count + item.configurations.length, 0)
-  const connectedSessionCount = () => sessions.filter((item) => item.status === 'connected').length
-  const attentionSessionCount = () => sessions.filter((item) => item.status === 'needs_attention').length
+  const connectedSessionCount = () => runtimeSessions().filter((item) => item.status === 'connected').length
+  const attentionSessionCount = () => runtimeSessions().filter((item) => item.status === 'needs_attention').length
   const selectedServerActiveCount = () => activeConnections().filter((item) => configurationRecord(item.configurationId)?.server.id === selectedServerId).length
   const currentIssue = () => bannerKind === 'info' && !loadRecoverable ? '' : diagnosticDetails || banner || ''
   const modalOpen = () => serverDialogOpen || tunnelDialogOpen || unlockDialogOpen
@@ -95,6 +138,8 @@
   }
 
   const activeConnections = () => sessions
+    .map((session) => normalizeSession(session))
+    .filter(Boolean)
     .filter((session) => !['stopped', 'failed'].includes(session.status))
     .map((session) => {
       const record = configurationRecord(session.configurationId)
@@ -134,14 +179,17 @@
   }
 
   function upsertSession(session) {
-    sessions = sessions.filter((item) => item.configurationId !== session.configurationId).concat(session)
-    if (session.status === 'needs_attention') {
-      unlockConfigurationId = session.configurationId
+    const normalized = normalizeSession(session)
+    if (!normalized) return
+
+    sessions = runtimeSessions().filter((item) => item.configurationId !== normalized.configurationId).concat(normalized)
+    if (normalized.status === 'needs_attention') {
+      unlockConfigurationId = normalized.configurationId
       unlockDialogOpen = true
       return
     }
 
-    if (unlockConfigurationId === session.configurationId) {
+    if (unlockConfigurationId === normalized.configurationId) {
       unlockDialogOpen = false
       unlockConfigurationId = ''
     }
@@ -651,7 +699,7 @@
             enabled={Boolean(selectedServerId)}
             configurations={selectedConfigurations()}
             {selectedConfigurationId}
-            {sessions}
+            sessions={runtimeSessions()}
             onSelect={focusConfiguration}
             onCreate={openCreateTunnelDialog}
             onStartAll={handleStartAll}

@@ -10,7 +10,7 @@
   export let onDelete = () => {}
 
   function sessionFor(id) {
-    return sessions.find((item) => item.configurationId === id)
+    return sessions.findLast ? sessions.findLast((item) => item.configurationId === id) : [...sessions].reverse().find((item) => item.configurationId === id)
   }
 </script>
 
