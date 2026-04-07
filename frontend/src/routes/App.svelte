@@ -17,6 +17,7 @@
   import ServerList from '../components/ServerList.svelte'
   import ConfigList from '../components/ConfigList.svelte'
   import ConfigEditor from '../components/ConfigEditor.svelte'
+  import ServerEditorDialog from '../components/ServerEditorDialog.svelte'
   import SessionStatus from '../components/SessionStatus.svelte'
   import UnlockKeyDialog from '../components/UnlockKeyDialog.svelte'
   import BrowserLauncher from '../components/BrowserLauncher.svelte'
@@ -34,6 +35,16 @@
     notes: '',
   })
 
+  const emptyServer = () => ({
+    id: '',
+    name: '',
+    host: '',
+    port: '22',
+    username: '',
+    authMode: 'private_key',
+    keyReference: '',
+  })
+
   let servers = []
   let preferences = { theme: 'dark', lastSelectedServerId: '' }
   let sessions = []
@@ -41,6 +52,10 @@
   let selectedConfigurationId = ''
   let editorValue = emptyConfig()
   let editorErrors = {}
+  let serverDialogOpen = false
+  let serverValue = emptyServer()
+  let serverErrors = {}
+  let tunnelDialogOpen = false
   let browsers = []
   let selectedBrowserId = ''
   let banner = ''
@@ -94,23 +109,69 @@
     return errors
   }
 
-  async function handleCreateServer() {
+  function validateServer(server) {
+    const errors = {}
+    if (!server.name?.trim()) errors.name = 'A server name is required.'
+    if (!server.host?.trim()) errors.host = 'A server host is required.'
+    if (!server.username?.trim()) errors.username = 'An SSH username is required.'
+    const port = Number(server.port || 0)
+    if (!Number.isInteger(port) || port < 1 || port > 65535) errors.port = 'Port must be between 1 and 65535.'
+    if (server.authMode === 'private_key' && !server.keyReference?.trim()) errors.keyReference = 'A private key path is required.'
+    return errors
+  }
+
+  function openCreateServerDialog() {
+    serverValue = emptyServer()
+    serverErrors = {}
+    serverDialogOpen = true
+  }
+
+  function closeServerDialog() {
+    serverDialogOpen = false
+    serverErrors = {}
+  }
+
+  async function handleSaveServer(server) {
+    serverErrors = validateServer(server)
+    if (Object.keys(serverErrors).length > 0) return
+
     try {
-      const name = prompt('Server name')
-      if (!name) return
-      const host = prompt('SSH host')
-      const username = prompt('SSH username')
-      const keyReference = prompt('SSH private key path')
-      const port = Number(prompt('SSH port', '22') || '22')
-      const server = await saveServer({ name, host, username, keyReference, port, authMode: 'private_key' })
-      servers = servers.concat({ server, configurations: [] })
-      await selectServer(server.id)
-      banner = `Saved ${server.name}.`
+      const saved = await saveServer({
+        ...server,
+        port: Number(server.port || 22),
+      })
+      const existing = servers.find((item) => item.server.id === saved.id)
+      if (existing) {
+        servers = servers.map((item) => item.server.id === saved.id ? { ...item, server: { ...item.server, ...saved } } : item)
+      } else {
+        servers = servers.concat({ server: saved, configurations: [] })
+      }
+      serverDialogOpen = false
+      serverErrors = {}
+      await selectServer(saved.id)
+      banner = `Saved ${saved.name}.`
       bannerKind = 'info'
     } catch (error) {
       banner = error.message || 'The server could not be saved.'
       bannerKind = 'danger'
     }
+  }
+
+  function openCreateTunnelDialog() {
+    if (!selectedServerId) {
+      banner = 'Select a server before adding a tunnel.'
+      bannerKind = 'warning'
+      return
+    }
+    editorValue = { ...emptyConfig(), serverId: selectedServerId }
+    editorErrors = {}
+    tunnelDialogOpen = true
+  }
+
+  function closeTunnelDialog() {
+    tunnelDialogOpen = false
+    editorErrors = {}
+    editorValue = { ...emptyConfig(), serverId: selectedServerId }
   }
 
   async function handleDeleteServer(serverId) {
@@ -146,7 +207,9 @@
         return { ...item, configurations }
       })
       selectedConfigurationId = saved.id
+      tunnelDialogOpen = false
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
+      editorErrors = {}
       banner = ''
       bannerKind = 'info'
     } catch (error) {
@@ -275,11 +338,22 @@
   function editConfiguration(configuration) {
     selectedConfigurationId = configuration.id
     editorValue = { ...configuration }
+    editorErrors = {}
+    tunnelDialogOpen = true
   }
 
   function editServer(server) {
-    banner = `Editing ${server.name} is supported by selecting and resaving its details.`
-    bannerKind = 'info'
+    serverValue = {
+      id: server.id,
+      name: server.name,
+      host: server.host,
+      port: String(server.port),
+      username: server.username,
+      authMode: server.authMode,
+      keyReference: server.keyReference || '',
+    }
+    serverErrors = {}
+    serverDialogOpen = true
   }
 
   onMount(() => {
@@ -311,41 +385,33 @@
   {/if}
 
   <section class="workspace-grid">
-    <ServerList
-      {servers}
-      {selectedServerId}
-      onSelect={selectServer}
-      onCreate={handleCreateServer}
-      onEdit={editServer}
-      onDelete={handleDeleteServer}
-    />
+      <ServerList
+        {servers}
+        {selectedServerId}
+        onSelect={selectServer}
+        onCreate={openCreateServerDialog}
+        onEdit={editServer}
+        onDelete={handleDeleteServer}
+      />
 
     <ConfigList
       configurations={selectedConfigurations()}
       {selectedConfigurationId}
       {sessions}
-      onSelect={(id) => {
-        selectedConfigurationId = id
-        const configuration = selectedConfigurations().find((item) => item.id === id)
-        if (configuration) editorValue = { ...configuration }
-      }}
-      onCreate={() => { editorValue = { ...emptyConfig(), serverId: selectedServerId } }}
-      onEdit={editConfiguration}
-      onDelete={handleDeleteConfiguration}
-    />
-
-    <div class="detail-column">
-      <ConfigEditor
-        server={selectedServer()}
-        value={editorValue}
-        errors={editorErrors}
-        onSubmit={handleSaveConfiguration}
-        onCancel={() => { editorValue = { ...emptyConfig(), serverId: selectedServerId }; editorErrors = {} }}
+        onSelect={(id) => {
+          selectedConfigurationId = id
+          const configuration = selectedConfigurations().find((item) => item.id === id)
+          if (configuration) editorValue = { ...configuration }
+        }}
+        onCreate={openCreateTunnelDialog}
+        onEdit={editConfiguration}
+        onDelete={handleDeleteConfiguration}
       />
 
-      <SessionStatus
-        configuration={selectedConfiguration()}
-        session={selectedSession()}
+      <div class="detail-column">
+        <SessionStatus
+          configuration={selectedConfiguration()}
+          session={selectedSession()}
         onStart={handleStart}
         onStop={handleStop}
         onRetry={handleRetry}
@@ -363,6 +429,29 @@
       />
     </div>
   </section>
+
+  <ServerEditorDialog
+    open={serverDialogOpen}
+    value={serverValue}
+    errors={serverErrors}
+    onSubmit={handleSaveServer}
+    onCancel={closeServerDialog}
+  />
+
+  {#if tunnelDialogOpen}
+    <div class="dialog-backdrop" role="presentation">
+      <div class="dialog-card" aria-modal="true" role="dialog" aria-labelledby="tunnel-dialog-heading">
+        <div class="sr-only" id="tunnel-dialog-heading">Tunnel editor</div>
+        <ConfigEditor
+          server={selectedServer()}
+          value={editorValue}
+          errors={editorErrors}
+          onSubmit={handleSaveConfiguration}
+          onCancel={closeTunnelDialog}
+        />
+      </div>
+    </div>
+  {/if}
 
   <UnlockKeyDialog open={unlockDialogOpen} onClose={() => (unlockDialogOpen = false)} />
 </main>

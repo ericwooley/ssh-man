@@ -12,6 +12,7 @@ describe('ServerList', () => {
   })
 
   it('selects and exposes labeled actions for saved servers', async () => {
+    const onCreate = vi.fn()
     const onSelect = vi.fn()
     const onEdit = vi.fn()
     const onDelete = vi.fn()
@@ -23,6 +24,7 @@ describe('ServerList', () => {
           server: { id: 'server-1', name: 'Primary', username: 'eric', host: 'example.com', port: 22 },
           configurations: [{ id: 'config-1' }],
         }],
+        onCreate,
         onSelect,
         onEdit,
         onDelete,
@@ -32,10 +34,12 @@ describe('ServerList', () => {
     const primaryButton = screen.getByRole('button', { name: 'Select server Primary' })
     expect(primaryButton.getAttribute('aria-pressed')).toBe('true')
 
+    await fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
     await fireEvent.click(primaryButton)
     await fireEvent.click(screen.getByRole('button', { name: 'Edit Primary' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete Primary' }))
 
+    expect(onCreate).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith('server-1')
     expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledWith('server-1')

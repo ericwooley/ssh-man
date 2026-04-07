@@ -5,6 +5,7 @@ import ConfigList from './ConfigList.svelte'
 
 describe('ConfigList', () => {
   it('renders tunnel runtime status and actions', async () => {
+    const onCreate = vi.fn()
     const onSelect = vi.fn()
     const onEdit = vi.fn()
     const onDelete = vi.fn()
@@ -19,6 +20,7 @@ describe('ConfigList', () => {
           socksPort: 1080,
         }],
         sessions: [{ configurationId: 'config-1', status: 'connected' }],
+        onCreate,
         onSelect,
         onEdit,
         onDelete,
@@ -27,10 +29,12 @@ describe('ConfigList', () => {
 
     expect(screen.getByLabelText('Tunnel status connected')).toBeTruthy()
 
+    await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Select tunnel SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Edit SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete SOCKS' }))
 
+    expect(onCreate).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith('config-1')
     expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledWith('config-1')
