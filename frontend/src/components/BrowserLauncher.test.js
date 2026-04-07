@@ -4,10 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import BrowserLauncher from './BrowserLauncher.svelte'
 
 describe('BrowserLauncher', () => {
-  it('keeps launch disabled until a running socks session is available', () => {
+  it('shows guidance when a SOCKS tunnel is selected but not connected', () => {
     render(BrowserLauncher, {
       props: {
-        configuration: { id: 'config-1', connectionType: 'local_forward' },
+        configuration: { id: 'config-1', connectionType: 'socks_proxy' },
         session: { status: 'stopped' },
       },
     })

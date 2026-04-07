@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import {
     deleteConnectionConfiguration,
     deleteServer,
@@ -82,6 +82,7 @@
   const attentionSessionCount = () => sessions.filter((item) => item.status === 'needs_attention').length
   const selectedServerActiveCount = () => activeConnections().filter((item) => configurationRecord(item.configurationId)?.server.id === selectedServerId).length
   const currentIssue = () => bannerKind === 'info' && !loadRecoverable ? '' : diagnosticDetails || banner || ''
+  const modalOpen = () => serverDialogOpen || tunnelDialogOpen || unlockDialogOpen
 
   function configurationRecord(configurationId) {
     for (const item of servers) {
@@ -527,6 +528,16 @@
   onMount(() => {
     hydrate()
   })
+
+  $: if (typeof document !== 'undefined') {
+    document.body.style.overflow = modalOpen() ? 'hidden' : ''
+  }
+
+  onDestroy(() => {
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = ''
+    }
+  })
 </script>
 
 <svelte:head>
@@ -660,15 +671,17 @@
             onRetry={handleRetry}
           />
 
-          <BrowserLauncher
-            configuration={selectedConfiguration()}
-            session={selectedSession()}
-            {browsers}
-            {selectedBrowserId}
-            onSelect={(id) => (selectedBrowserId = id)}
-            onRefresh={handleDiscoverBrowsers}
-            onLaunch={handleLaunchBrowser}
-          />
+          {#if selectedConfiguration()?.connectionType === 'socks_proxy'}
+            <BrowserLauncher
+              configuration={selectedConfiguration()}
+              session={selectedSession()}
+              {browsers}
+              {selectedBrowserId}
+              onSelect={(id) => (selectedBrowserId = id)}
+              onRefresh={handleDiscoverBrowsers}
+              onLaunch={handleLaunchBrowser}
+            />
+          {/if}
         </div>
       </div>
     </div>

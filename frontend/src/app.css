@@ -228,6 +228,8 @@ textarea:focus-visible {
 
 .panel,
 .editor-card {
+  display: grid;
+  gap: 1rem;
   padding: 1rem;
   background: var(--bg-panel);
 }
@@ -326,6 +328,14 @@ textarea:focus-visible {
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+.row-actions-inline .button,
+.editor-actions .button,
+.button-row .button,
+.runtime-actions-grid .button,
+.panel-actions .button {
+  margin-top: 0;
 }
 
 .field-grid {
@@ -609,13 +619,16 @@ textarea:hover {
   display: grid;
   place-items: center;
   padding: 1rem;
+  overflow: hidden;
   background: rgba(7, 10, 18, 0.55);
   z-index: 30;
 }
 
 .dialog-card {
   width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
   padding: 1rem;
+  overflow: auto;
   border-radius: 1.5rem;
   background: var(--bg-soft);
   border: 1px solid var(--border);
@@ -635,6 +648,12 @@ textarea:hover {
   border: 0;
   box-shadow: none;
   background: transparent;
+}
+
+.dialog-form,
+.modal-editor-card {
+  display: grid;
+  gap: 1rem;
 }
 
 .server-field-grid {
