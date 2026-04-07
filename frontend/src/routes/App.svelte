@@ -16,6 +16,7 @@
   } from '../lib/api'
   import ServerList from '../components/ServerList.svelte'
   import ConfigList from '../components/ConfigList.svelte'
+  import ActiveConnections from '../components/ActiveConnections.svelte'
   import ConfigEditor from '../components/ConfigEditor.svelte'
   import ServerEditorDialog from '../components/ServerEditorDialog.svelte'
   import SessionStatus from '../components/SessionStatus.svelte'
@@ -69,6 +70,29 @@
   const selectedConfiguration = () => selectedConfigurations().find((item) => item.id === selectedConfigurationId) || null
   const selectedSession = () => sessions.find((item) => item.configurationId === selectedConfigurationId) || null
 
+  function configurationRecord(configurationId) {
+    for (const item of servers) {
+      const configuration = item.configurations.find((entry) => entry.id === configurationId)
+      if (configuration) {
+        return { server: item.server, configuration }
+      }
+    }
+    return null
+  }
+
+  const activeConnections = () => sessions
+    .filter((session) => !['stopped', 'failed'].includes(session.status))
+    .map((session) => {
+      const record = configurationRecord(session.configurationId)
+      return {
+        configurationId: session.configurationId,
+        configurationLabel: record?.configuration.label || 'Unknown tunnel',
+        serverName: record?.server.name || 'Unknown server',
+        status: session.status,
+        statusDetail: session.statusDetail,
+      }
+    })
+
   async function hydrate() {
     isHydrating = true
     try {
@@ -76,7 +100,7 @@
       servers = state.servers || []
       preferences = state.preferences || preferences
       sessions = state.sessions || []
-      selectedServerId = preferences.lastSelectedServerId || servers[0]?.server.id || ''
+      selectedServerId = servers.some((item) => item.server.id === preferences.lastSelectedServerId) ? preferences.lastSelectedServerId : ''
       selectedConfigurationId = selectedConfigurations()[0]?.id || ''
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
       document.documentElement.dataset.theme = preferences.theme
@@ -179,8 +203,8 @@
       await deleteServer(serverId)
       servers = servers.filter((item) => item.server.id !== serverId)
       if (selectedServerId === serverId) {
-        selectedServerId = servers[0]?.server.id || ''
-        selectedConfigurationId = selectedConfigurations()[0]?.id || ''
+        selectedServerId = ''
+        selectedConfigurationId = ''
       }
       banner = 'Server deleted.'
       bannerKind = 'info'
@@ -242,6 +266,22 @@
     editorValue = { ...emptyConfig(), serverId }
     try {
       preferences = await savePreferences({ ...preferences, lastSelectedServerId: serverId })
+    } catch (error) {
+      banner = error.message || 'The current server selection could not be saved.'
+      bannerKind = 'warning'
+    }
+  }
+
+  async function focusConfiguration(configurationId) {
+    const record = configurationRecord(configurationId)
+    if (!record) return
+
+    selectedServerId = record.server.id
+    selectedConfigurationId = configurationId
+    editorValue = { ...record.configuration }
+
+    try {
+      preferences = await savePreferences({ ...preferences, lastSelectedServerId: record.server.id })
     } catch (error) {
       banner = error.message || 'The current server selection could not be saved.'
       bannerKind = 'warning'
@@ -395,20 +435,19 @@
       />
 
     <ConfigList
+      enabled={Boolean(selectedServerId)}
       configurations={selectedConfigurations()}
       {selectedConfigurationId}
       {sessions}
-        onSelect={(id) => {
-          selectedConfigurationId = id
-          const configuration = selectedConfigurations().find((item) => item.id === id)
-          if (configuration) editorValue = { ...configuration }
-        }}
+        onSelect={focusConfiguration}
         onCreate={openCreateTunnelDialog}
         onEdit={editConfiguration}
         onDelete={handleDeleteConfiguration}
       />
 
       <div class="detail-column">
+        <ActiveConnections connections={activeConnections()} onSelect={focusConfiguration} onStop={handleStop} />
+
         <SessionStatus
           configuration={selectedConfiguration()}
           session={selectedSession()}

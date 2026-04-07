@@ -47,11 +47,12 @@ func (s *stubHistoryStore) Add(_ context.Context, entry SessionHistoryEntry) err
 }
 
 type stubRunner struct {
-	startErr error
-	stopErr  error
-	started  bool
-	stopped  bool
-	onDisc   func(error)
+	startErr  error
+	stopErr   error
+	started   bool
+	stopped   bool
+	stopCalls int
+	onDisc    func(error)
 }
 
 func (s *stubRunner) Start() error {
@@ -61,6 +62,7 @@ func (s *stubRunner) Start() error {
 
 func (s *stubRunner) Stop() error {
 	s.stopped = true
+	s.stopCalls++
 	return s.stopErr
 }
 
@@ -182,6 +184,33 @@ func TestHandleDisconnectReconnectsWhenEnabled(t *testing.T) {
 	}
 	if state.Status != StatusConnected {
 		t.Fatalf("expected reconnect to recover connection, got %+v", state)
+	}
+	if !initialRunner.stopped {
+		t.Fatal("expected disconnected runner to be stopped before reconnect")
+	}
+}
+
+func TestStartStopsExistingRunnerBeforeRestart(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	existingRunner := &stubRunner{}
+	runtimes.Set(RuntimeSession{ConfigurationID: "config-1", Status: StatusConnected}, existingRunner, "")
+	service.factory = &stubFactory{runners: []*stubRunner{{}}}
+
+	state, err := service.Start(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("restart tunnel: %v", err)
+	}
+	if state.Status != StatusConnected {
+		t.Fatalf("expected connected state, got %s", state.Status)
+	}
+	if existingRunner.stopCalls != 1 {
+		t.Fatalf("expected existing runner to be stopped once, got %d", existingRunner.stopCalls)
 	}
 }
 

@@ -2,6 +2,7 @@
   export let configurations = []
   export let selectedConfigurationId = ''
   export let sessions = []
+  export let enabled = true
   export let onSelect = () => {}
   export let onCreate = () => {}
   export let onEdit = () => {}
@@ -12,16 +13,21 @@
   }
 </script>
 
-<section class="panel config-panel" aria-labelledby="config-list-heading">
+<section class:is-disabled={!enabled} class="panel config-panel" aria-labelledby="config-list-heading">
   <div class="panel-header">
     <div>
       <p class="eyebrow">Configurations</p>
       <h2 id="config-list-heading">Tunnels</h2>
     </div>
-    <button class="button button-primary" type="button" on:click={onCreate}>Add tunnel</button>
+    <button class="button button-primary" disabled={!enabled} type="button" on:click={onCreate}>Add tunnel</button>
   </div>
 
-  {#if configurations.length === 0}
+  {#if !enabled}
+    <div class="empty-state compact">
+      <h3>Select a target first</h3>
+      <p>Choose a saved server in the targets lane before viewing or editing tunnels.</p>
+    </div>
+  {:else if configurations.length === 0}
     <div class="empty-state compact">
       <h3>No saved tunnels</h3>
       <p>Store a local forward or SOCKS proxy under the selected server.</p>

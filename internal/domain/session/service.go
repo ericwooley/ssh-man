@@ -96,6 +96,14 @@ func (s *Service) Stop(ctx context.Context, configurationID string) (RuntimeSess
 	return state, nil
 }
 
+func (s *Service) stopExistingRunner(configurationID string) error {
+	runner, _, ok := s.runtimes.Runner(configurationID)
+	if !ok || runner == nil {
+		return nil
+	}
+	return runner.Stop()
+}
+
 func (s *Service) start(ctx context.Context, configurationID string, passphrase string) (RuntimeSession, error) {
 	configuration, err := s.configs.Get(ctx, configurationID)
 	if err != nil {
@@ -110,6 +118,9 @@ func (s *Service) start(ctx context.Context, configurationID string, passphrase 
 			return RuntimeSession{}, fmt.Errorf("server no longer exists")
 		}
 		return RuntimeSession{}, fmt.Errorf("load server: %w", err)
+	}
+	if err := s.stopExistingRunner(configurationID); err != nil {
+		return RuntimeSession{}, fmt.Errorf("stop existing tunnel: %w", err)
 	}
 
 	starting := RuntimeSession{ConfigurationID: configurationID, Status: StatusStarting, StatusDetail: "Starting tunnel", StartedAt: time.Now().UTC(), LastStateChangeAt: time.Now().UTC()}
@@ -140,6 +151,7 @@ func (s *Service) start(ctx context.Context, configurationID string, passphrase 
 
 func (s *Service) handleDisconnect(configuration configdomain.ConnectionConfiguration, passphrase string, disconnectErr error) {
 	detail := tunnel.DescribeDisconnectError(disconnectErr)
+	_ = s.stopExistingRunner(configuration.ID)
 	if !configuration.AutoReconnectEnabled {
 		state := RuntimeSession{ConfigurationID: configuration.ID, Status: StatusFailed, StatusDetail: detail, LastStateChangeAt: time.Now().UTC(), LastError: disconnectErr.Error()}
 		s.runtimes.Set(state, nil, passphrase)

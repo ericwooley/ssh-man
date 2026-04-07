@@ -148,6 +148,10 @@ textarea:focus-visible {
   padding: 1rem;
 }
 
+.panel.is-disabled {
+  opacity: 0.72;
+}
+
 .panel-header,
 .editor-header,
 .row-actions,

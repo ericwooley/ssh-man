@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	configdomain "ssh-man/internal/domain/config"
@@ -22,6 +23,7 @@ type Session struct {
 	listener     net.Listener
 	stopCh       chan struct{}
 	stopped      bool
+	stopOnce     sync.Once
 }
 
 func NewSession(server serverdomain.Server, config configdomain.ConnectionConfiguration, passphrase string, onDisconnect func(error)) *Session {
@@ -59,15 +61,18 @@ func (s *Session) Start() error {
 }
 
 func (s *Session) Stop() error {
-	s.stopped = true
-	close(s.stopCh)
-	if s.listener != nil {
-		_ = s.listener.Close()
-	}
-	if s.client != nil {
-		return s.client.Close()
-	}
-	return nil
+	var stopErr error
+	s.stopOnce.Do(func() {
+		s.stopped = true
+		close(s.stopCh)
+		if s.listener != nil {
+			_ = s.listener.Close()
+		}
+		if s.client != nil {
+			stopErr = s.client.Close()
+		}
+	})
+	return stopErr
 }
 
 func (s *Session) serve() {

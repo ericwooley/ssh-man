@@ -39,4 +39,17 @@ describe('ConfigList', () => {
     expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledWith('config-1')
   })
+
+  it('disables tunnel management until a server is selected', () => {
+    render(ConfigList, {
+      props: {
+        enabled: false,
+        configurations: [],
+        sessions: [],
+      },
+    })
+
+    expect(screen.getByText('Select a target first')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add tunnel' }).hasAttribute('disabled')).toBe(true)
+  })
 })
