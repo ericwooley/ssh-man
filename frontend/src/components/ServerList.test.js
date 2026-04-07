@@ -46,4 +46,25 @@ describe('ServerList', () => {
     expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledWith('server-1')
   })
+
+  it('closes the action menu on outside click and escape', async () => {
+    render(ServerList, {
+      props: {
+        servers: [{
+          server: { id: 'server-1', name: 'Primary', username: 'eric', host: 'example.com', port: 22 },
+          configurations: [],
+        }],
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
+    expect(screen.getByRole('menu', { name: 'Actions for Primary' })).toBeTruthy()
+
+    await fireEvent.click(window)
+    expect(screen.queryByRole('menu', { name: 'Actions for Primary' })).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
+    await fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('menu', { name: 'Actions for Primary' })).toBeNull()
+  })
 })

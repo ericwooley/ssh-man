@@ -31,4 +31,28 @@ describe('ActiveConnections', () => {
     expect(onSelect).toHaveBeenCalledWith('config-1')
     expect(onStop).toHaveBeenCalledWith('config-1')
   })
+
+  it('closes the action menu on outside click and escape', async () => {
+    render(ActiveConnections, {
+      props: {
+        connections: [{
+          configurationId: 'config-1',
+          configurationLabel: 'SOCKS',
+          serverName: 'Primary',
+          status: 'connected',
+          statusDetail: 'Listening on localhost:1080',
+        }],
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
+    expect(screen.getByRole('menu', { name: 'Actions for SOCKS' })).toBeTruthy()
+
+    await fireEvent.click(window)
+    expect(screen.queryByRole('menu', { name: 'Actions for SOCKS' })).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
+    await fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('menu', { name: 'Actions for SOCKS' })).toBeNull()
+  })
 })

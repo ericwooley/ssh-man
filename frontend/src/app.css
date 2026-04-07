@@ -280,6 +280,7 @@ textarea:focus-visible {
   border: 1px solid var(--border);
   border-radius: 1.1rem;
   background: rgba(255, 255, 255, 0.025);
+  position: relative;
   transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
 }
 
@@ -293,6 +294,10 @@ textarea:focus-visible {
   border-color: rgba(118, 183, 255, 0.5);
   background: rgba(118, 183, 255, 0.12);
   box-shadow: inset 0 0 0 1px rgba(118, 183, 255, 0.08);
+}
+
+.list-item-shell.menu-open {
+  z-index: 6;
 }
 
 .list-card-topline {
@@ -397,7 +402,7 @@ textarea:focus-visible {
   border-radius: 0.9rem;
   background: var(--bg-soft);
   box-shadow: var(--shadow);
-  z-index: 4;
+  z-index: 8;
 }
 
 .row-menu-popover .button {

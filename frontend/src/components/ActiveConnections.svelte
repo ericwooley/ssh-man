@@ -12,7 +12,19 @@
   function closeMenu() {
     openMenuId = ''
   }
+
+  function handleWindowClick() {
+    closeMenu()
+  }
+
+  function handleWindowKeydown(event) {
+    if (event.key === 'Escape') {
+      closeMenu()
+    }
+  }
 </script>
+
+<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
 <section class="panel active-connections-panel" aria-labelledby="active-connections-heading">
   <div class="panel-header">
@@ -34,7 +46,7 @@
     <ul class="stack-list" aria-label="Active tunnels">
       {#each connections as connection}
         <li>
-          <div class="list-item-shell">
+          <div class:menu-open={openMenuId === connection.configurationId} class="list-item-shell">
             <div class="list-card-topline">
             <button class="list-card-main" type="button" aria-label={`Show ${connection.configurationLabel}`} on:click={() => onSelect(connection.configurationId)}>
               <span class="list-primary">

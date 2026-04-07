@@ -15,7 +15,19 @@
   function closeMenu() {
     openMenuId = ''
   }
+
+  function handleWindowClick() {
+    closeMenu()
+  }
+
+  function handleWindowKeydown(event) {
+    if (event.key === 'Escape') {
+      closeMenu()
+    }
+  }
 </script>
+
+<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
 <section class="panel server-panel" aria-labelledby="server-list-heading">
   <div class="panel-header">
@@ -37,7 +49,7 @@
     <ul class="stack-list" aria-label="Saved servers">
       {#each servers as item}
         <li>
-          <div class:selected={selectedServerId === item.server.id} class="list-item-shell">
+          <div class:selected={selectedServerId === item.server.id} class:menu-open={openMenuId === item.server.id} class="list-item-shell">
             <div class="list-card-topline">
             <button
               class="list-card-main"

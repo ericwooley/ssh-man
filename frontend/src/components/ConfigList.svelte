@@ -22,7 +22,19 @@
   function closeMenu() {
     openMenuId = ''
   }
+
+  function handleWindowClick() {
+    closeMenu()
+  }
+
+  function handleWindowKeydown(event) {
+    if (event.key === 'Escape') {
+      closeMenu()
+    }
+  }
 </script>
+
+<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
 <section class:is-disabled={!enabled} class="panel config-panel" aria-labelledby="config-list-heading">
   <div class="panel-header">
@@ -54,7 +66,7 @@
       {#each configurations as configuration}
         {@const runtime = sessionFor(configuration.id)}
         <li>
-          <div class:selected={selectedConfigurationId === configuration.id} class="list-item-shell">
+          <div class:selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id} class="list-item-shell">
             <div class="list-card-topline">
             <button
               class="list-card-main"
