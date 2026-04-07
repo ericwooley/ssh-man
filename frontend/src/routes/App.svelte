@@ -704,7 +704,7 @@
         <div class="workspace-primary-column">
           <ConfigList
             enabled={Boolean(selectedServerId)}
-            {selectedConfigurations}
+            configurations={selectedConfigurations}
             {selectedConfigurationId}
             sessions={runtimeSessions()}
             onSelect={focusConfiguration}
