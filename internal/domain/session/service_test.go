@@ -64,6 +64,7 @@ type stubRunner struct {
 	stopped   bool
 	stopCalls int
 	onDisc    func(error)
+	boundPort int
 }
 
 func (s *stubRunner) Start() error {
@@ -75,6 +76,13 @@ func (s *stubRunner) Stop() error {
 	s.stopped = true
 	s.stopCalls++
 	return s.stopErr
+}
+
+func (s *stubRunner) BoundPort() int {
+	if s.boundPort != 0 {
+		return s.boundPort
+	}
+	return 1080
 }
 
 func (s *stubRunner) Disconnect(err error) {
@@ -290,6 +298,31 @@ func TestStartAllStartsEachConfigurationForServer(t *testing.T) {
 		if state.Status != StatusConnected {
 			t.Fatalf("expected connected state, got %+v", state)
 		}
+	}
+}
+
+func TestStartUsesAssignedSOCKSPortWhenAutoIsConfigured(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 0}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	service.factory = &stubFactory{runners: []*stubRunner{{boundPort: 43123}}}
+
+	state, err := service.Start(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("start tunnel: %v", err)
+	}
+	if state.Status != StatusConnected {
+		t.Fatalf("expected connected state, got %s", state.Status)
+	}
+	if state.BoundPort != 43123 {
+		t.Fatalf("expected assigned bound port, got %d", state.BoundPort)
+	}
+	if state.StatusDetail != "Listening on localhost:43123" {
+		t.Fatalf("unexpected status detail: %q", state.StatusDetail)
 	}
 }
 

@@ -18,6 +18,7 @@ const (
 type RuntimeSession struct {
 	ConfigurationID       string    `json:"configurationId"`
 	Status                Status    `json:"status"`
+	BoundPort             int       `json:"boundPort,omitempty"`
 	StatusDetail          string    `json:"statusDetail,omitempty"`
 	StartedAt             time.Time `json:"startedAt,omitempty"`
 	LastStateChangeAt     time.Time `json:"lastStateChangeAt"`

@@ -58,7 +58,10 @@ func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string
 		if option.ID != browserID {
 			continue
 		}
-		return launchBrowser(option, configuration.SocksPort)
+		if runtimeState.BoundPort < 1 {
+			return fmt.Errorf("the SOCKS tunnel is connected, but its local port is unavailable")
+		}
+		return launchBrowser(option, runtimeState.BoundPort)
 	}
 
 	return fmt.Errorf("the selected browser is no longer available")

@@ -22,9 +22,9 @@
         <span class="runtime-label">Selected tunnel</span>
         <strong>{configuration.label}</strong>
       </div>
-      <small>
-        {#if configuration.connectionType === 'socks_proxy'}
-          SOCKS proxy on :{configuration.socksPort}
+        <small>
+          {#if configuration.connectionType === 'socks_proxy'}
+          SOCKS proxy on {session?.boundPort ? `:${session.boundPort}` : configuration.socksPort > 0 ? `:${configuration.socksPort}` : 'Auto'}
         {:else}
           Local {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
         {/if}

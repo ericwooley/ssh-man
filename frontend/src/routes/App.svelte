@@ -96,6 +96,7 @@
     return {
       configurationId,
       status: session.status || session.Status || 'stopped',
+      boundPort: session.boundPort || session.BoundPort || 0,
       statusDetail: session.statusDetail || session.StatusDetail || '',
       startedAt: session.startedAt || session.StartedAt || '',
       lastStateChangeAt: session.lastStateChangeAt || session.LastStateChangeAt || '',
@@ -243,7 +244,12 @@
       if (!configuration.remoteHost?.trim()) errors.remoteHost = 'Remote host is required.'
       if (!configuration.remotePort) errors.remotePort = 'Remote port is required.'
     }
-    if (configuration.connectionType === 'socks_proxy' && !configuration.socksPort) errors.socksPort = 'SOCKS port is required.'
+    if (configuration.connectionType === 'socks_proxy' && configuration.socksPort !== '' && configuration.socksPort !== 'auto') {
+      const socksPort = Number(configuration.socksPort)
+      if (!Number.isInteger(socksPort) || socksPort < 1 || socksPort > 65535) {
+        errors.socksPort = 'SOCKS port must be Auto or between 1 and 65535.'
+      }
+    }
     return errors
   }
 
@@ -355,7 +361,9 @@
         serverId: selectedServerId,
         localPort: Number(configuration.localPort || 0),
         remotePort: Number(configuration.remotePort || 0),
-        socksPort: Number(configuration.socksPort || 0),
+        socksPort: configuration.connectionType === 'socks_proxy'
+          ? (configuration.socksPort === '' || configuration.socksPort === 'auto' ? 0 : Number(configuration.socksPort || 0))
+          : 0,
       })
       servers = servers.map((item) => {
         if (item.server.id !== selectedServerId) return item

@@ -63,6 +63,9 @@ func (s *Service) validateConflict(ctx context.Context, item ConnectionConfigura
 		if candidate.ID == item.ID {
 			continue
 		}
+		if candidate.UsesAutomaticSOCKSPort() || item.UsesAutomaticSOCKSPort() {
+			continue
+		}
 		if candidate.BoundPort() == item.BoundPort() {
 			return fmt.Errorf("port %d already belongs to configuration %q", item.BoundPort(), candidate.Label)
 		}

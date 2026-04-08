@@ -55,4 +55,31 @@ describe('ConfigEditor', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onSubmit.mock.calls[0][0].label).toBe('Docs tunnel')
   })
+
+  it('supports auto SOCKS port mode', async () => {
+    const onSubmit = vi.fn()
+
+    render(ConfigEditor, {
+      props: {
+        server: { id: 'server-1', name: 'Primary' },
+        value: {
+          serverId: 'server-1',
+          label: 'Auto SOCKS',
+          connectionType: 'socks_proxy',
+          socksPort: 'auto',
+          notes: '',
+          autoReconnectEnabled: true,
+        },
+        onSubmit,
+      },
+    })
+
+    expect(screen.getByLabelText('SOCKS port mode').value).toBe('auto')
+    expect(screen.queryByLabelText('SOCKS port')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save tunnel' }))
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit.mock.calls[0][0].socksPort).toBe('auto')
+  })
 })

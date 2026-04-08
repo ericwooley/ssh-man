@@ -101,7 +101,9 @@ export async function startConfiguration(configurationId) {
   if (hasWailsRuntime()) {
     return appBindings().StartConfiguration(configurationId)
   }
-  return syncSession({ configurationId, status: 'connected', statusDetail: 'Mock tunnel connected' })
+  const configuration = memoryState.servers.flatMap((item) => item.configurations).find((item) => item.id === configurationId)
+  const boundPort = configuration?.connectionType === 'socks_proxy' ? (configuration.socksPort || 43123) : (configuration?.localPort || 0)
+  return syncSession({ configurationId, status: 'connected', boundPort, statusDetail: configuration?.connectionType === 'socks_proxy' ? `Listening on localhost:${boundPort}` : 'Mock tunnel connected' })
 }
 
 export async function startServerConfigurations(serverId) {
@@ -110,7 +112,10 @@ export async function startServerConfigurations(serverId) {
   }
   const server = memoryState.servers.find((item) => item.server.id === serverId)
   if (!server) return []
-  return server.configurations.map((configuration) => syncSession({ configurationId: configuration.id, status: 'connected', statusDetail: 'Mock tunnel connected' }))
+  return server.configurations.map((configuration, index) => {
+    const boundPort = configuration.connectionType === 'socks_proxy' ? (configuration.socksPort || 43123 + index) : (configuration.localPort || 0)
+    return syncSession({ configurationId: configuration.id, status: 'connected', boundPort, statusDetail: configuration.connectionType === 'socks_proxy' ? `Listening on localhost:${boundPort}` : 'Mock tunnel connected' })
+  })
 }
 
 export async function stopConfiguration(configurationId) {
@@ -124,14 +129,18 @@ export async function retryConfiguration(configurationId) {
   if (hasWailsRuntime()) {
     return appBindings().RetryConfiguration(configurationId)
   }
-  return syncSession({ configurationId, status: 'connected', statusDetail: 'Mock tunnel reconnected' })
+  const configuration = memoryState.servers.flatMap((item) => item.configurations).find((item) => item.id === configurationId)
+  const boundPort = configuration?.connectionType === 'socks_proxy' ? (configuration.socksPort || 43123) : (configuration?.localPort || 0)
+  return syncSession({ configurationId, status: 'connected', boundPort, statusDetail: configuration?.connectionType === 'socks_proxy' ? `Listening on localhost:${boundPort}` : 'Mock tunnel reconnected' })
 }
 
 export async function submitKeyUnlock(configurationId, secret) {
   if (hasWailsRuntime()) {
     return appBindings().SubmitKeyUnlock(configurationId, secret)
   }
-  return syncSession({ configurationId, status: secret ? 'connected' : 'needs_attention', statusDetail: secret ? 'Mock key unlocked' : 'Unlock required' })
+  const configuration = memoryState.servers.flatMap((item) => item.configurations).find((item) => item.id === configurationId)
+  const boundPort = configuration?.connectionType === 'socks_proxy' ? (configuration.socksPort || 43123) : (configuration?.localPort || 0)
+  return syncSession({ configurationId, status: secret ? 'connected' : 'needs_attention', boundPort: secret ? boundPort : 0, statusDetail: secret ? (configuration?.connectionType === 'socks_proxy' ? `Listening on localhost:${boundPort}` : 'Mock key unlocked') : 'Unlock required' })
 }
 
 export async function discoverBrowsers() {

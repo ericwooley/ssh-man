@@ -48,8 +48,8 @@ func (c ConnectionConfiguration) Validate() error {
 			return fmt.Errorf("remote port must be between 1 and 65535")
 		}
 	case ConnectionTypeSOCKSProxy:
-		if c.SocksPort < 1 || c.SocksPort > 65535 {
-			return fmt.Errorf("socks port must be between 1 and 65535")
+		if c.SocksPort < 0 || c.SocksPort > 65535 {
+			return fmt.Errorf("socks port must be 0 (auto) or between 1 and 65535")
 		}
 	default:
 		return fmt.Errorf("configuration type must be local_forward or socks_proxy")
@@ -63,6 +63,10 @@ func (c ConnectionConfiguration) BoundPort() int {
 		return c.SocksPort
 	}
 	return c.LocalPort
+}
+
+func (c ConnectionConfiguration) UsesAutomaticSOCKSPort() bool {
+	return c.ConnectionType == ConnectionTypeSOCKSProxy && c.SocksPort == 0
 }
 
 type Summary struct {

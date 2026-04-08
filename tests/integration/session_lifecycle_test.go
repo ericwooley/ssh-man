@@ -15,15 +15,23 @@ import (
 )
 
 type integrationRunner struct {
-	startErr error
-	stopErr  error
-	stopped  bool
+	startErr  error
+	stopErr   error
+	stopped   bool
+	boundPort int
 }
 
 func (r *integrationRunner) Start() error { return r.startErr }
 func (r *integrationRunner) Stop() error {
 	r.stopped = true
 	return r.stopErr
+}
+
+func (r *integrationRunner) BoundPort() int {
+	if r.boundPort != 0 {
+		return r.boundPort
+	}
+	return 1080
 }
 
 type integrationFactory struct {

@@ -79,7 +79,7 @@
                 <strong>{configuration.label}</strong>
                 <small>
                   {#if configuration.connectionType === 'socks_proxy'}
-                    SOCKS :{configuration.socksPort}
+                    SOCKS {configuration.socksPort > 0 ? `:${configuration.socksPort}` : 'Auto'}
                   {:else}
                     {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
                   {/if}

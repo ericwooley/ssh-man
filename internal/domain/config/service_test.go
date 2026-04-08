@@ -60,3 +60,16 @@ func TestSavePersistsValidConfiguration(t *testing.T) {
 		t.Fatal("expected configuration to be stored")
 	}
 }
+
+func TestSaveAllowsAutomaticSOCKSPortAlongsideFixedPorts(t *testing.T) {
+	store := &stubStore{items: []ConnectionConfiguration{{ID: "existing", Label: "Existing SOCKS", ServerID: "server-1", ConnectionType: ConnectionTypeSOCKSProxy, SocksPort: 1080}}}
+	service := NewService(store)
+
+	item, err := service.Save(context.Background(), ConnectionConfiguration{ServerID: "server-1", Label: "Auto SOCKS", ConnectionType: ConnectionTypeSOCKSProxy, SocksPort: 0})
+	if err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+	if item.SocksPort != 0 {
+		t.Fatalf("expected auto socks port to be preserved, got %d", item.SocksPort)
+	}
+}

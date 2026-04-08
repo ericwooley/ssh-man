@@ -18,6 +18,23 @@
   export let onCancel = () => {}
 
   let labelInput
+  let socksPortModeValue = socksPortMode(value.socksPort)
+
+  function socksPortMode(currentValue) {
+    return currentValue === '' || currentValue === 'auto' || Number(currentValue) === 0 ? 'auto' : 'manual'
+  }
+
+  function setSocksPortMode(mode) {
+    socksPortModeValue = mode
+    value = {
+      ...value,
+      socksPort: mode === 'auto' ? 'auto' : '',
+    }
+  }
+
+  $: socksPortModeValue = value.connectionType === 'socks_proxy'
+    ? (value.socksPort === '' && socksPortModeValue === 'manual' ? 'manual' : socksPortMode(value.socksPort))
+    : 'auto'
 
   tick().then(() => labelInput?.focus())
 </script>
@@ -80,11 +97,26 @@
         </label>
       </div>
     {:else}
-      <label>
-        <span>SOCKS port</span>
-        <input bind:value={value.socksPort} aria-label="SOCKS port" inputmode="numeric" aria-invalid={errors.socksPort ? 'true' : 'false'} />
+      <div class="form-section-card">
+        <label>
+          <span>SOCKS port mode</span>
+          <select bind:value={socksPortModeValue} aria-label="SOCKS port mode" on:change={(event) => setSocksPortMode(event.currentTarget.value)}>
+            <option value="auto">Auto</option>
+            <option value="manual">Manual</option>
+          </select>
+        </label>
+
+        {#if socksPortModeValue === 'manual'}
+          <label>
+            <span>SOCKS port</span>
+            <input bind:value={value.socksPort} aria-label="SOCKS port" inputmode="numeric" placeholder="1080" aria-invalid={errors.socksPort ? 'true' : 'false'} />
+          </label>
+        {:else}
+          <div class="muted form-hint" aria-label="SOCKS port auto hint">An open localhost port will be chosen when the tunnel starts.</div>
+        {/if}
+
         {#if errors.socksPort}<small class="error-text">{errors.socksPort}</small>{/if}
-      </label>
+      </div>
     {/if}
   </section>
 

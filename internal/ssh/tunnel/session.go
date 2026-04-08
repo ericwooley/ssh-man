@@ -75,6 +75,19 @@ func (s *Session) Stop() error {
 	return stopErr
 }
 
+func (s *Session) BoundPort() int {
+	if s.listener == nil {
+		return s.config.BoundPort()
+	}
+
+	addr, ok := s.listener.Addr().(*net.TCPAddr)
+	if !ok || addr == nil {
+		return s.config.BoundPort()
+	}
+
+	return addr.Port
+}
+
 func (s *Session) serve() {
 	for {
 		conn, err := s.listener.Accept()

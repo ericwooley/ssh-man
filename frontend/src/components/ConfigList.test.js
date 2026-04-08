@@ -103,4 +103,20 @@ describe('ConfigList', () => {
     await fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('menu', { name: 'Actions for SOCKS' })).toBeNull()
   })
+
+  it('shows auto for SOCKS tunnels without a fixed port', () => {
+    render(ConfigList, {
+      props: {
+        configurations: [{
+          id: 'config-1',
+          label: 'SOCKS',
+          connectionType: 'socks_proxy',
+          socksPort: 0,
+        }],
+        sessions: [],
+      },
+    })
+
+    expect(screen.getByText('SOCKS Auto')).toBeTruthy()
+  })
 })

@@ -167,7 +167,8 @@ func (s *Service) start(ctx context.Context, configurationID string, passphrase 
 		return state, nil
 	}
 
-	connected := RuntimeSession{ConfigurationID: configurationID, Status: StatusConnected, StatusDetail: fmt.Sprintf("Listening on localhost:%d", configuration.BoundPort()), StartedAt: starting.StartedAt, LastStateChangeAt: time.Now().UTC()}
+	connectedPort := runner.BoundPort()
+	connected := RuntimeSession{ConfigurationID: configurationID, Status: StatusConnected, BoundPort: connectedPort, StatusDetail: fmt.Sprintf("Listening on localhost:%d", connectedPort), StartedAt: starting.StartedAt, LastStateChangeAt: time.Now().UTC()}
 	s.runtimes.SetWithToken(connected, runner, passphrase, runtimeToken)
 	_ = s.recordHistory(ctx, configurationID, starting.StartedAt, OutcomeConnected, connected.StatusDetail)
 	return connected, nil

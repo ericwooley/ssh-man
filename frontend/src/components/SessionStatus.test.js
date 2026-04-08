@@ -43,4 +43,15 @@ describe('SessionStatus', () => {
     expect(screen.queryByLabelText('SSH key passphrase')).toBeNull()
     expect(screen.getByRole('status').textContent).toContain('Unlock the SSH key to continue')
   })
+
+  it('shows the runtime assigned SOCKS port when auto mode is used', () => {
+    render(SessionStatus, {
+      props: {
+        configuration: { id: 'config-1', label: 'SOCKS', connectionType: 'socks_proxy', socksPort: 0 },
+        session: { status: 'connected', boundPort: 43123, statusDetail: 'Listening on localhost:43123' },
+      },
+    })
+
+    expect(screen.getByText('SOCKS proxy on :43123')).toBeTruthy()
+  })
 })

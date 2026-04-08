@@ -99,11 +99,36 @@ describe('App', () => {
     const tunnelDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
     await fireEvent.input(within(tunnelDialog).getByLabelText('Label'), { target: { value: 'Docs SOCKS' } })
     await fireEvent.change(within(tunnelDialog).getByLabelText('Type'), { target: { value: 'socks_proxy' } })
+    await fireEvent.change(within(tunnelDialog).getByLabelText('SOCKS port mode'), { target: { value: 'manual' } })
     await fireEvent.input(within(tunnelDialog).getByLabelText('SOCKS port'), { target: { value: '1080' } })
     await fireEvent.click(within(tunnelDialog).getByRole('button', { name: 'Save tunnel' }))
 
     expect(screen.getByRole('button', { name: 'Select tunnel Docs SOCKS' })).toBeTruthy()
     expect(screen.queryByText('No saved tunnels')).toBeNull()
+  })
+
+  it('saves a SOCKS tunnel with auto port mode', async () => {
+    render(App)
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add server' }))
+
+    const serverDialog = screen.getByRole('dialog', { name: 'New server' })
+    await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
+    await fireEvent.input(within(serverDialog).getByLabelText('Server host'), { target: { value: 'example.com' } })
+    await fireEvent.input(within(serverDialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
+    await fireEvent.input(within(serverDialog).getByLabelText('Private key path'), { target: { value: '~/.ssh/id_ed25519' } })
+    await fireEvent.click(within(serverDialog).getByRole('button', { name: 'Save server' }))
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
+
+    const tunnelDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
+    await fireEvent.input(within(tunnelDialog).getByLabelText('Label'), { target: { value: 'Auto SOCKS' } })
+    await fireEvent.change(within(tunnelDialog).getByLabelText('Type'), { target: { value: 'socks_proxy' } })
+    await fireEvent.change(within(tunnelDialog).getByLabelText('SOCKS port mode'), { target: { value: 'auto' } })
+    await fireEvent.click(within(tunnelDialog).getByRole('button', { name: 'Save tunnel' }))
+
+    expect(api.saveConnectionConfiguration).toHaveBeenCalledWith(expect.objectContaining({ socksPort: 0 }))
+    expect(screen.getByText('SOCKS Auto')).toBeTruthy()
   })
 
   it('refreshes runtime state after start and stop so all views stay in sync', async () => {
@@ -141,6 +166,34 @@ describe('App', () => {
       expect(screen.getByLabelText('Tunnel status stopped')).toBeTruthy()
       expect(screen.getByLabelText('Session status stopped')).toBeTruthy()
       expect(screen.queryByText('Listening on localhost:1080')).toBeNull()
+    })
+  })
+
+  it('shows the runtime assigned port for auto SOCKS tunnels after start', async () => {
+    api.loadInitialState.mockResolvedValue({
+      servers: [{
+        server: { id: 'server-1', name: 'Primary', host: 'example.com', port: 22, username: 'eric', authMode: 'private_key', keyReference: '~/.ssh/id_ed25519' },
+        configurations: [{ id: 'config-1', serverId: 'server-1', label: 'Auto SOCKS', connectionType: 'socks_proxy', socksPort: 0, autoReconnectEnabled: true }],
+      }],
+      preferences: { theme: 'dark', lastSelectedServerId: 'server-1' },
+      sessions: [],
+      diagnostics: { appDataPath: '/tmp/ssh-man', databasePath: '/tmp/ssh-man/ssh-man.db' },
+      message: '',
+      recoverable: false,
+    })
+
+    api.startConfiguration.mockResolvedValue({ configurationId: 'config-1', status: 'starting', statusDetail: 'Starting tunnel' })
+    api.listRuntimeSessions.mockResolvedValue([{ configurationId: 'config-1', status: 'connected', boundPort: 43123, statusDetail: 'Listening on localhost:43123' }])
+
+    render(App)
+
+    expect(await screen.findByText('SOCKS Auto')).toBeTruthy()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start tunnel' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('SOCKS proxy on :43123')).toBeTruthy()
+      expect(screen.getAllByText('Listening on localhost:43123').length).toBeGreaterThan(0)
     })
   })
 })

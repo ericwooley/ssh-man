@@ -5,6 +5,7 @@ import "sync"
 type Runner interface {
 	Start() error
 	Stop() error
+	BoundPort() int
 }
 
 type runtimeEntry struct {

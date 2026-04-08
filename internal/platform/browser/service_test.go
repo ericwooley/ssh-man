@@ -55,3 +55,18 @@ func TestLaunchThroughSOCKSRejectsNonSOCKSConfiguration(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLaunchThroughSOCKSRequiresRuntimeBoundPort(t *testing.T) {
+	service := NewService(
+		stubConfigLookup{item: configdomain.ConnectionConfiguration{ID: "config-1", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 0}},
+		stubRuntimeLookup{state: sessiondomain.RuntimeSession{ConfigurationID: "config-1", Status: sessiondomain.StatusConnected}, ok: true},
+	)
+
+	err := service.LaunchThroughSOCKS(context.Background(), "config-1", "google-chrome")
+	if err == nil {
+		t.Fatal("expected missing bound-port validation error")
+	}
+	if !strings.Contains(err.Error(), "local port is unavailable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

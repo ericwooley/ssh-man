@@ -232,10 +232,23 @@ textarea:focus-visible {
   gap: 1rem;
   padding: 1rem;
   background: var(--bg-panel);
+  position: relative;
 }
 
 .panel.is-disabled {
   opacity: 0.72;
+}
+
+.config-panel,
+.active-connections-panel,
+.server-panel {
+  overflow: visible;
+}
+
+.config-panel:has(.list-item-shell.menu-open),
+.active-connections-panel:has(.list-item-shell.menu-open),
+.server-panel:has(.list-item-shell.menu-open) {
+  z-index: 20;
 }
 
 .panel-header,
