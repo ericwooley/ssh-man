@@ -222,4 +222,47 @@ describe('App', () => {
       expect(screen.getByText((content) => content.includes('google-chrome --proxy-server=socks5://127.0.0.1:1080'))).toBeTruthy()
     })
   })
+
+  it('unlocks all start-all tunnels that need the same SSH key passphrase', async () => {
+    api.loadInitialState.mockResolvedValue({
+      servers: [{
+        server: { id: 'server-1', name: 'Primary', host: 'example.com', port: 22, username: 'eric', authMode: 'private_key', keyReference: '~/.ssh/id_ed25519' },
+        configurations: [
+          { id: 'config-1', serverId: 'server-1', label: 'Docs SOCKS', connectionType: 'socks_proxy', socksPort: 1080, autoReconnectEnabled: true },
+          { id: 'config-2', serverId: 'server-1', label: 'Docs Port', connectionType: 'local_forward', localPort: 9000, remoteHost: '127.0.0.1', remotePort: 5432, autoReconnectEnabled: true },
+        ],
+      }],
+      preferences: { theme: 'dark', lastSelectedServerId: 'server-1' },
+      sessions: [],
+      diagnostics: { appDataPath: '/tmp/ssh-man', databasePath: '/tmp/ssh-man/ssh-man.db' },
+      message: '',
+      recoverable: false,
+    })
+    api.startServerConfigurations.mockResolvedValue([
+      { configurationId: 'config-1', status: 'needs_attention', statusDetail: 'Unlock the SSH key to continue' },
+      { configurationId: 'config-2', status: 'needs_attention', statusDetail: 'Unlock the SSH key to continue' },
+    ])
+    api.submitKeyUnlock
+      .mockResolvedValueOnce({ configurationId: 'config-1', status: 'connected', boundPort: 1080, statusDetail: 'Listening on localhost:1080' })
+      .mockResolvedValueOnce({ configurationId: 'config-2', status: 'connected', statusDetail: 'Listening on localhost:9000' })
+    api.listRuntimeSessions.mockResolvedValue([
+      { configurationId: 'config-1', status: 'connected', boundPort: 1080, statusDetail: 'Listening on localhost:1080' },
+      { configurationId: 'config-2', status: 'connected', statusDetail: 'Listening on localhost:9000' },
+    ])
+
+    render(App)
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start all' }))
+
+    const unlockDialog = await screen.findByRole('dialog', { name: 'SSH key passphrase required' })
+    await fireEvent.input(within(unlockDialog).getByLabelText('SSH key passphrase'), { target: { value: 'hunter2' } })
+    await fireEvent.click(within(unlockDialog).getByRole('button', { name: 'Unlock key' }))
+
+    await waitFor(() => {
+      expect(api.submitKeyUnlock).toHaveBeenCalledTimes(2)
+      expect(api.submitKeyUnlock).toHaveBeenNthCalledWith(1, 'config-1', 'hunter2')
+      expect(api.submitKeyUnlock).toHaveBeenNthCalledWith(2, 'config-2', 'hunter2')
+      expect(screen.getByText('Unlocked and started 2 tunnels.')).toBeTruthy()
+    })
+  })
 })

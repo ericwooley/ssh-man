@@ -113,6 +113,9 @@ export async function startServerConfigurations(serverId) {
   const server = memoryState.servers.find((item) => item.server.id === serverId)
   if (!server) return []
   return server.configurations.map((configuration, index) => {
+    if (server.server.authMode === 'private_key' && server.server.keyReference && !memoryState.preferences.__mockPassphraseUnlocked) {
+      return syncSession({ configurationId: configuration.id, status: 'needs_attention', boundPort: 0, statusDetail: 'Unlock the SSH key to continue' })
+    }
     const boundPort = configuration.connectionType === 'socks_proxy' ? (configuration.socksPort || 43123 + index) : (configuration.localPort || 0)
     return syncSession({ configurationId: configuration.id, status: 'connected', boundPort, statusDetail: configuration.connectionType === 'socks_proxy' ? `Listening on localhost:${boundPort}` : 'Mock tunnel connected' })
   })
@@ -138,6 +141,7 @@ export async function submitKeyUnlock(configurationId, secret) {
   if (hasWailsRuntime()) {
     return appBindings().SubmitKeyUnlock(configurationId, secret)
   }
+  memoryState.preferences.__mockPassphraseUnlocked = Boolean(secret)
   const configuration = memoryState.servers.flatMap((item) => item.configurations).find((item) => item.id === configurationId)
   const boundPort = configuration?.connectionType === 'socks_proxy' ? (configuration.socksPort || 43123) : (configuration?.localPort || 0)
   return syncSession({ configurationId, status: secret ? 'connected' : 'needs_attention', boundPort: secret ? boundPort : 0, statusDetail: secret ? (configuration?.connectionType === 'socks_proxy' ? `Listening on localhost:${boundPort}` : 'Mock key unlocked') : 'Unlock required' })

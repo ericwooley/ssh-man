@@ -71,6 +71,7 @@
   let isHydrating = false
   let unlockDialogOpen = false
   let unlockConfigurationId = ''
+  let unlockConfigurationIds = []
   let diagnosticDetails = ''
   let diagnostics = { appDataPath: '', databasePath: '' }
   let runtimeRefreshHandle = null
@@ -225,6 +226,7 @@
     sessions = runtimeSessionSnapshot.filter((item) => item.configurationId !== normalized.configurationId).concat(normalized)
     if (normalized.status === 'needs_attention') {
       unlockConfigurationId = normalized.configurationId
+      unlockConfigurationIds = Array.from(new Set(unlockConfigurationIds.concat(normalized.configurationId)))
       unlockDialogOpen = true
       return
     }
@@ -232,12 +234,14 @@
     if (unlockConfigurationId === normalized.configurationId) {
       unlockDialogOpen = false
       unlockConfigurationId = ''
+      unlockConfigurationIds = unlockConfigurationIds.filter((id) => id !== normalized.configurationId)
     }
   }
 
   function closeUnlockDialog() {
     unlockDialogOpen = false
     unlockConfigurationId = ''
+    unlockConfigurationIds = []
   }
 
   function validateConfig(configuration) {
@@ -493,6 +497,11 @@
       ].filter(Boolean).join(' ') || 'No tunnels were started.'
       diagnosticDetails = attentionCount ? attentionSessions.map((session) => `${findConfigurationRecord(servers, session.configurationId)?.configuration.label || 'Tunnel'}: ${session.statusDetail || 'Needs attention.'}`).join('\n') : ''
       bannerKind = failedCount > 0 || attentionCount > 0 ? 'warning' : 'info'
+      if (attentionCount > 0) {
+        unlockConfigurationIds = attentionSessions.map((session) => session.configurationId)
+        unlockConfigurationId = unlockConfigurationIds[0] || ''
+        unlockDialogOpen = true
+      }
     } catch (error) {
       banner = error.message || 'The selected server tunnels could not be started.'
       diagnosticDetails = error.message || ''
@@ -532,12 +541,28 @@
 
   async function handleUnlock(configurationId, secret) {
     try {
-      const session = await submitKeyUnlock(configurationId, secret)
-      upsertSession(session)
+      const pendingUnlockIds = unlockConfigurationIds.length > 0 ? unlockConfigurationIds : [configurationId]
+      const unlockedSessions = []
+
+      for (const pendingId of pendingUnlockIds) {
+        const session = await submitKeyUnlock(pendingId, secret)
+        unlockedSessions.push(session)
+        upsertSession(session)
+      }
+
       await refreshRuntimeSessions()
-      banner = session.statusDetail || ''
-      diagnosticDetails = ''
-      bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
+      const remainingAttentionSessions = unlockedSessions.filter((session) => session.status === 'needs_attention')
+      const connectedCount = unlockedSessions.filter((session) => session.status === 'connected').length
+
+      banner = [
+        connectedCount ? `Unlocked and started ${connectedCount} tunnel${connectedCount === 1 ? '' : 's'}.` : '',
+        remainingAttentionSessions.length ? `${remainingAttentionSessions.length} still need attention.` : '',
+      ].filter(Boolean).join(' ') || unlockedSessions[0]?.statusDetail || ''
+      diagnosticDetails = remainingAttentionSessions.map((session) => `${findConfigurationRecord(servers, session.configurationId)?.configuration.label || 'Tunnel'}: ${session.statusDetail || 'Needs attention.'}`).join('\n')
+      bannerKind = remainingAttentionSessions.length > 0 ? 'warning' : 'info'
+      unlockConfigurationIds = remainingAttentionSessions.map((session) => session.configurationId)
+      unlockConfigurationId = unlockConfigurationIds[0] || ''
+      unlockDialogOpen = unlockConfigurationIds.length > 0
     } catch (error) {
       banner = error.message || 'The SSH key could not be unlocked.'
       diagnosticDetails = error.message || ''
