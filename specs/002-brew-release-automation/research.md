@@ -1,71 +1,63 @@
 # Research: Homebrew Installation and Automated Releases
 
-## Distribution Strategy
+## Distribution Decisions
 
-Decision: Use a Homebrew cask distributed through a project-owned Homebrew tap as the first automated brew installation path.
+Decision: Use a Homebrew cask as the official Homebrew installation model for the app.
 
-Rationale: The product is a desktop application, so a cask is the correct Homebrew distribution model instead of a formula. A project-owned tap keeps release publication and Homebrew metadata under the same automation boundary, which fits the requirement for builds to be automatically built and tagged from GitHub Actions and avoids waiting on a separate review process for every release.
+Rationale: The feature distributes a packaged macOS desktop application, which maps cleanly to a cask and matches the user-facing install and upgrade flow expected from Homebrew for GUI apps.
 
-Alternatives considered: A Homebrew formula was rejected because it is intended for CLI tools and source-oriented installs, not packaged desktop apps. Publishing directly to `homebrew-core` was considered better for discoverability, but it was rejected for the initial plan because it introduces an external review dependency and does not guarantee immediate sync with each automated release.
+Alternatives considered: A Homebrew formula was rejected because it better fits CLI or source-build-oriented tooling. Supporting either model would weaken automation and documentation clarity.
 
-Decision: Treat the Homebrew package as a macOS-only install path while continuing to publish Linux artifacts through GitHub Releases.
+Decision: Publish the official cask through a project-owned Homebrew tap.
 
-Rationale: Homebrew is a natural install path for macOS users, while the constitution still requires Linux parity for official release artifacts. This split satisfies both the requested brew install path and the repository's cross-platform packaging obligations without pretending Linux will use the same install flow.
+Rationale: A project-owned tap keeps version, URL, and checksum changes under repository-controlled automation and avoids external review latency that would break the requested automatic sync between releases and Homebrew availability.
 
-Alternatives considered: A Linux Homebrew path was considered but rejected as unnecessary scope for the initial release automation feature. macOS-only release automation was rejected because the constitution requires Linux and macOS parity for official user-facing releases.
+Alternatives considered: `homebrew-core` offers broader discoverability but adds review and merge delays that conflict with the requested release-to-install synchronization. Supporting both immediately adds unnecessary scope.
 
-## Release Automation
+Decision: Use GitHub Actions and GitHub Releases as the authoritative official release pipeline.
 
-Decision: Use GitHub Actions as the authoritative release pipeline, triggered by version tags and responsible for building platform artifacts, creating the GitHub Release, and publishing release assets.
+Rationale: The user explicitly requested builds and tags from GitHub Actions, and GitHub Releases provide a versioned, traceable source for release assets that Homebrew metadata can reference directly.
 
-Rationale: The user explicitly requested that builds be automatically built and tagged from GitHub Actions. GitHub Actions is the closest control point to the repository, and GitHub Releases provides a stable public artifact source for users, release notes, and Homebrew metadata.
+Alternatives considered: Local maintainer packaging or another CI platform would increase manual steps or conflict with the requested workflow authority.
 
-Alternatives considered: Manual release assembly was rejected because it breaks the requested automation and weakens traceability. External release infrastructure was rejected because it would increase operational complexity without adding user value for this project.
+## Versioning And Artifact Decisions
 
-Decision: Use stable, versioned asset naming for every published platform artifact.
+Decision: Use plain semantic version tags in the format `1.2.3` for official releases.
 
-Rationale: Release automation, Homebrew metadata, user documentation, and troubleshooting all depend on predictable artifact names. Stable names also reduce the risk of cask update mistakes and make release runs easier to verify.
+Rationale: The spec explicitly clarified this format, and a plain semantic version is easy to validate, easy to map into release metadata, and compatible with Homebrew version fields.
 
-Alternatives considered: Ad hoc artifact names generated per runner or job were rejected because they make workflow outputs harder to consume and validate.
+Alternatives considered: `v1.2.3` and other custom prefixes were rejected because the spec now defines the unprefixed semantic tag as the canonical release identifier.
 
-Decision: Publish the GitHub Release only when the required assets are available or clearly mark the release as failed/incomplete when publication cannot finish successfully.
+Decision: Publish official automated release artifacts for macOS only in this feature.
 
-Rationale: The specification requires that failed release creation or artifact publication must not appear fully available to users. Making release completeness explicit prevents broken Homebrew installs and misleading release pages.
+Rationale: The Homebrew path is explicitly scoped to macOS, and narrowing artifact publication keeps the release automation small enough to deliver now while still satisfying the primary user-facing install goal.
 
-Alternatives considered: Creating the release record before artifact verification and leaving it publicly available during partial failures was rejected because it conflicts with the spec's failure-handling requirement.
+Alternatives considered: Publishing Linux and macOS artifacts together would improve release-channel parity but exceeds the clarified feature scope. Publishing macOS, Linux, and Windows would further expand the feature without user need.
 
-## Packaging Choices
+Decision: Keep Linux explicitly supported through documented clone-and-build workflows rather than matching the macOS automated release cycle.
 
-Decision: Package a macOS archive format that Homebrew cask can install directly from GitHub Releases and checksum deterministically.
+Rationale: The product remains supported on Linux under the constitution, and the repository already has Linux build validation scripts. Treating Linux as a source-build-supported platform preserves product support and validation without forcing the release cycle to match macOS packaging work immediately.
 
-Rationale: Homebrew casks need a stable downloadable asset and checksum. A packaged macOS application archive fits that contract and can be referenced directly from the cask metadata without requiring users to build from source.
+Alternatives considered: Declaring Linux out of scope entirely would conflict with platform support expectations. Requiring Linux to ship official automated artifacts now would increase release automation scope beyond the clarified feature intent.
 
-Alternatives considered: Source-based Homebrew installs were rejected because the spec requires installation from an official release. Custom installer logic outside standard Homebrew-supported artifact types was rejected because it would add maintenance overhead and reduce trust.
+## Packaging Decisions
 
-Decision: Preserve Linux packaging as a release artifact published alongside macOS, even though Homebrew installation targets macOS.
+Decision: Treat macOS signing and notarization as not required for this feature, but document unsigned-app expectations in installation guidance.
 
-Rationale: Linux and macOS parity in official releases is a constitution requirement. Publishing Linux assets from the same automation pipeline keeps supported desktop targets aligned even when only macOS gets a Homebrew path.
+Rationale: The spec explicitly clarified that signing is not required. Making the unsigned state visible in documentation reduces user confusion without expanding the feature into Apple credential and notarization automation.
 
-Alternatives considered: Shipping only macOS artifacts for the automated release flow was rejected because it would create release drift between supported platforms.
+Alternatives considered: Requiring signing or notarization now would add secrets management, Apple account coordination, and more failure modes. Leaving the unsigned state undocumented would create avoidable install friction.
 
-## Security and Trust Assumptions
+Decision: Update Homebrew cask metadata only after the macOS asset URL and checksum are known from a successful release.
 
-Decision: Document macOS signing and notarization as an explicit packaging assumption rather than making it a hard prerequisite for the first automated release workflow.
+Rationale: This guarantees that Homebrew installation points only to complete, published artifacts and prevents stale or broken cask references when a release run fails partway through.
 
-Rationale: Open-source desktop apps are commonly distributed without full Apple notarization automation, and the repository does not currently show an existing signing setup. The release design should make the assumption visible so users and maintainers understand the trust posture, while still allowing the initial automated release path to land.
+Alternatives considered: Precomputing metadata before release publication risks checksum mismatches or dead URLs. Manual cask edits after release would conflict with the automation goal.
 
-Alternatives considered: Requiring signing and notarization immediately was rejected because it would add secrets, certificates, and Apple account dependencies that were not part of the original feature request. Ignoring signing expectations entirely was rejected because the constitution requires packaging assumptions to be documented for release-affecting work.
+## Validation Decisions
 
-Decision: Update Homebrew metadata only after the release asset URL and checksum are known from the successful release output.
+Decision: Keep the existing repository validation commands as the baseline quality gates and add release-specific smoke validation on top.
 
-Rationale: This guarantees that the Homebrew install path points to a real, published release asset and prevents mismatches between the cask version, checksum, and downloadable file.
+Rationale: The repository already has Go, frontend, and Linux build validation commands. Extending those checks with release workflow verification and Homebrew rehearsal provides confidence without inventing a separate validation stack.
 
-Alternatives considered: Updating the cask optimistically before release publication completes was rejected because it could expose broken installs. Manual checksum updates were rejected because they undermine the requested automation.
-
-## Validation Strategy
-
-Decision: Keep the existing repository quality commands as the baseline and add release-specific smoke validation around tagged builds, published assets, and Homebrew install or upgrade rehearsal.
-
-Rationale: The repository already has a clear Go, frontend, and Wails validation path. Extending that path with release smoke checks keeps the feature aligned with current engineering standards without introducing a separate verification culture.
-
-Alternatives considered: A release pipeline that skips repository tests and only checks workflow success was rejected because it weakens confidence in shipped binaries. Heavy end-to-end release test infrastructure was rejected as excessive for the current project scope.
+Alternatives considered: A wholly separate release-only validation process would duplicate existing checks and increase maintenance cost.

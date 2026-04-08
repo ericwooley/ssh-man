@@ -2,21 +2,21 @@
 
 ## Purpose
 
-This document describes how to validate the release-automation feature during development and how to rehearse the user-facing Homebrew install path once official release assets are available.
+This document describes how to validate the release-automation feature during development and rehearse the user-facing install paths for macOS and Linux.
 
 ## Preconditions
 
-- Go 1.22.2 installed locally for repository validation.
-- Node.js and npm installed for the plain Svelte frontend build.
-- Wails v2 CLI installed and passing `wails doctor` on supported development machines.
-- Access to the GitHub repository with permission to inspect workflow runs and releases.
-- Access to the project-owned Homebrew tap repository or automation target for cask updates.
-- A macOS environment with Homebrew installed for installation and upgrade rehearsal.
-- A Linux or macOS environment available to validate packaged builds.
+- Go 1.22.2 installed locally.
+- Node.js and npm installed for the existing Wails frontend build.
+- Wails v2 CLI installed and passing `wails doctor` where applicable.
+- GitHub repository access sufficient to inspect or run release workflows.
+- Access to the project-owned Homebrew tap or the automation target repository.
+- A macOS environment with Homebrew for install and upgrade rehearsal.
+- A Linux or Linux-capable environment for clone-and-build validation.
 
 ## Baseline Validation Commands
 
-Run these commands from the repository root before rehearsing release automation:
+Run these commands from the repository root before validating release automation:
 
 ```bash
 wails doctor
@@ -31,43 +31,48 @@ npm run validate --prefix frontend
 
 ## Release Automation Rehearsal
 
-1. Confirm the repository versioning approach for the release you want to test.
-2. Verify the release workflow configuration points to the intended artifact names and supported platforms.
-3. Create or simulate a version tag in a safe test context.
-4. Run the GitHub Actions release workflow.
-5. Confirm the workflow publishes a tagged GitHub Release.
-6. Confirm the release includes the expected Linux and macOS assets.
-7. Record the published macOS asset URL and checksum.
-8. Confirm the Homebrew tap or cask update uses that exact version, URL, and checksum.
-9. Verify a failed release path does not update the Homebrew metadata.
+1. Confirm the intended release version uses the semantic tag format `1.2.3`.
+2. Confirm the GitHub Actions workflow is configured to build and publish the official macOS artifact.
+3. Create or simulate the release trigger using the approved version tag.
+4. Run the release workflow and confirm one GitHub Release is created.
+5. Confirm the GitHub Release exposes the expected macOS artifact and release notes or summary.
+6. Record the published macOS artifact URL and checksum.
+7. Confirm the Homebrew cask update in the project-owned tap uses the exact version, URL, and checksum from the successful macOS release.
+8. Confirm a failed or partial workflow run does not leave Homebrew metadata pointing to incomplete artifacts.
 
-## Homebrew Install Rehearsal
+## macOS Homebrew Rehearsal
 
-Use a macOS machine with Homebrew installed.
-
-1. Follow the published tap and install instructions for the project.
-2. Confirm the install resolves to the latest successful official release.
-3. Launch the installed application and verify it starts successfully.
+1. Follow the documented tap and install instructions on a supported macOS environment.
+2. Confirm the installation resolves to the latest successful official release.
+3. Launch the installed app and note any unsigned-app messaging that must remain in the documentation.
 4. Publish or simulate a newer successful release.
 5. Run the documented Homebrew upgrade flow.
-6. Confirm the installed version updates to the new release.
+6. Confirm the installed version matches the newer official release.
 
-## Expected Artifacts to Verify
+## Linux Support Rehearsal
 
-- One tagged GitHub Release entry for the target version.
-- One macOS artifact suitable for Homebrew cask installation.
-- One or more Linux release artifacts.
-- Release notes or generated release summary.
-- Homebrew cask metadata updated to the matching version and checksum.
+1. Follow the documented Linux clone-and-build workflow from a fresh clone.
+2. Run `./scripts/build-current-os.sh` on Linux or the documented Linux-specific build commands.
+3. Run `./scripts/wails-build-linux.sh` to validate the packaged Linux build path still works where the host environment supports it.
+4. Confirm the Linux guidance does not claim an official automated release artifact is available.
+
+## Expected Outputs
+
+- One tagged GitHub Release with the semantic version tag `1.2.3` style.
+- One or more official macOS artifacts suitable for Homebrew distribution.
+- Homebrew cask metadata in the project-owned tap updated to the matching version and checksum.
+- Linux support guidance that remains accurate for clone-and-build users.
+
+## Documentation Expectations
+
+Implementation should leave behind:
+
+- User-facing Homebrew install and upgrade guidance for macOS.
+- User-facing or maintainer-facing Linux clone-and-build guidance that remains accurate.
+- Maintainer-facing release notes describing how tagged releases, macOS artifacts, and tap updates are validated.
 
 ## Platform Validation Notes
 
-- Linux: verify the Wails Linux build flow remains valid and produces a releasable artifact from the automated pipeline.
-- macOS: verify the build artifact is suitable for Homebrew installation and document whether the artifact is signed or unsigned.
-- Both platforms: confirm the same release version is represented consistently in tags, release metadata, and asset names.
-
-## Documentation Updates Expected from Implementation
-
-- User-facing installation guidance must describe the official Homebrew install and upgrade flow.
-- Maintainer-facing release documentation must describe how to trigger, observe, and troubleshoot automated releases.
-- Smoke-validation notes should record at least one successful release rehearsal and one successful Homebrew install or upgrade rehearsal.
+- macOS: this feature owns the official packaged install path, Homebrew flow, and unsigned-app disclosure if signing remains disabled.
+- Linux: this feature must keep clone-and-build support accurate and validated, even though Linux does not receive an official automated release artifact yet.
+- Both platforms: product support remains documented, but release-channel parity is intentionally deferred.
