@@ -8,6 +8,7 @@
     listRuntimeSessions,
     loadInitialState,
     openDevTools,
+    previewBrowserLaunchThroughSocks,
     retryConfiguration,
     saveConnectionConfiguration,
     savePreferences,
@@ -63,6 +64,7 @@
   let tunnelDialogOpen = false
   let browsers = []
   let selectedBrowserId = ''
+  let browserLaunchPreview = ''
   let banner = ''
   let bannerKind = 'info'
   let loadRecoverable = false
@@ -86,6 +88,8 @@
   let attentionSessionCount = 0
   let selectedServerActiveCount = 0
   let currentIssue = ''
+  let browserDiscoveryKey = ''
+  let browserPreviewKey = ''
 
   function normalizeSession(session) {
     if (!session) return null
@@ -542,6 +546,9 @@
   async function handleDiscoverBrowsers() {
     try {
       browsers = await discoverBrowsers()
+      if (!browsers.some((browser) => browser.id === selectedBrowserId)) {
+        selectedBrowserId = browsers[0]?.id || ''
+      }
       banner = browsers.length === 0 ? 'No supported browsers were found.' : ''
       diagnosticDetails = ''
       bannerKind = 'info'
@@ -562,6 +569,20 @@
       banner = error.message || 'Browser launch failed.'
       diagnosticDetails = error.message || ''
       bannerKind = 'danger'
+    }
+  }
+
+  async function refreshBrowserPreview(configurationId, browserId) {
+    if (!configurationId || !browserId || selectedConfiguration?.id !== configurationId || selectedSession?.status !== 'connected') {
+      browserLaunchPreview = ''
+      return
+    }
+
+    try {
+      const preview = await previewBrowserLaunchThroughSocks(configurationId, browserId)
+      browserLaunchPreview = preview.command || ''
+    } catch {
+      browserLaunchPreview = ''
     }
   }
 
@@ -656,6 +677,27 @@
     })
   $: selectedServerActiveCount = activeRuntimeConnections.filter((item) => findConfigurationRecord(servers, item.configurationId)?.server.id === selectedServerId).length
   $: currentIssue = bannerKind === 'info' && !loadRecoverable ? '' : diagnosticDetails || banner || ''
+  $: nextBrowserDiscoveryKey = selectedConfiguration?.connectionType === 'socks_proxy' ? selectedConfigurationId : ''
+  $: if (nextBrowserDiscoveryKey && nextBrowserDiscoveryKey !== browserDiscoveryKey) {
+    browserDiscoveryKey = nextBrowserDiscoveryKey
+    handleDiscoverBrowsers()
+  } else if (!nextBrowserDiscoveryKey) {
+    browserDiscoveryKey = ''
+    browserPreviewKey = ''
+    selectedBrowserId = ''
+    browsers = []
+    browserLaunchPreview = ''
+  }
+  $: nextBrowserPreviewKey = selectedConfiguration?.connectionType === 'socks_proxy' && selectedSession?.status === 'connected' && selectedBrowserId
+    ? `${selectedConfiguration.id}:${selectedBrowserId}:${selectedSession.boundPort || 0}`
+    : ''
+  $: if (nextBrowserPreviewKey && nextBrowserPreviewKey !== browserPreviewKey) {
+    browserPreviewKey = nextBrowserPreviewKey
+    refreshBrowserPreview(selectedConfiguration.id, selectedBrowserId)
+  } else if (!nextBrowserPreviewKey) {
+    browserPreviewKey = ''
+    browserLaunchPreview = ''
+  }
 
   $: if (typeof document !== 'undefined') {
     document.body.style.overflow = modalOpen() ? 'hidden' : ''
@@ -805,6 +847,7 @@
               session={selectedSession}
               {browsers}
               {selectedBrowserId}
+              launchPreview={browserLaunchPreview}
               onSelect={(id) => (selectedBrowserId = id)}
               onRefresh={handleDiscoverBrowsers}
               onLaunch={handleLaunchBrowser}

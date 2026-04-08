@@ -15,6 +15,14 @@ type BrowserOption struct {
 	SupportsProxyLaunch bool   `json:"supportsProxyLaunch"`
 }
 
+type LaunchPreview struct {
+	BrowserID       string `json:"browserId"`
+	BrowserName     string `json:"browserName"`
+	Command         string `json:"command"`
+	Supported       bool   `json:"supported"`
+	ConfigurationID string `json:"configurationId"`
+}
+
 type RuntimeLookup interface {
 	Get(id string) (sessiondomain.RuntimeSession, bool)
 }
@@ -26,14 +34,17 @@ type ConfigLookup interface {
 type Service struct {
 	configs  ConfigLookup
 	runtimes RuntimeLookup
+	discover func(context.Context) ([]BrowserOption, error)
 }
 
 func NewService(configs ConfigLookup, runtimes RuntimeLookup) *Service {
-	return &Service{configs: configs, runtimes: runtimes}
+	return &Service{configs: configs, runtimes: runtimes, discover: func(context.Context) ([]BrowserOption, error) {
+		return discoverBrowsers()
+	}}
 }
 
-func (s *Service) Discover(context.Context) ([]BrowserOption, error) {
-	return discoverBrowsers()
+func (s *Service) Discover(ctx context.Context) ([]BrowserOption, error) {
+	return s.discover(ctx)
 }
 
 func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string, browserID string) error {
@@ -65,4 +76,41 @@ func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string
 	}
 
 	return fmt.Errorf("the selected browser is no longer available")
+}
+
+func (s *Service) PreviewLaunchThroughSOCKS(ctx context.Context, configurationID string, browserID string) (LaunchPreview, error) {
+	runtimeState, ok := s.runtimes.Get(configurationID)
+	if !ok || runtimeState.Status != sessiondomain.StatusConnected {
+		return LaunchPreview{}, fmt.Errorf("start the socks configuration before launching a browser")
+	}
+
+	configuration, err := s.configs.Get(ctx, configurationID)
+	if err != nil {
+		return LaunchPreview{}, fmt.Errorf("load socks configuration: %w", err)
+	}
+	if configuration.ConnectionType != configdomain.ConnectionTypeSOCKSProxy {
+		return LaunchPreview{}, fmt.Errorf("browser launch is only available for socks configurations")
+	}
+	if runtimeState.BoundPort < 1 {
+		return LaunchPreview{}, fmt.Errorf("the SOCKS tunnel is connected, but its local port is unavailable")
+	}
+
+	browsers, err := s.Discover(ctx)
+	if err != nil {
+		return LaunchPreview{}, err
+	}
+	for _, option := range browsers {
+		if option.ID != browserID {
+			continue
+		}
+		return LaunchPreview{
+			BrowserID:       option.ID,
+			BrowserName:     option.DisplayName,
+			Command:         previewLaunchCommand(option, runtimeState.BoundPort),
+			Supported:       option.SupportsProxyLaunch,
+			ConfigurationID: configurationID,
+		}, nil
+	}
+
+	return LaunchPreview{}, fmt.Errorf("the selected browser is no longer available")
 }

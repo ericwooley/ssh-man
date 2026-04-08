@@ -3,6 +3,7 @@
   export let session = null
   export let browsers = []
   export let selectedBrowserId = ''
+  export let launchPreview = ''
   export let onSelect = () => {}
   export let onRefresh = () => {}
   export let onLaunch = () => {}
@@ -43,6 +44,13 @@
 
     {#if selectedBrowser && !selectedBrowser.supportsProxyLaunch}
       <p class="error-text" role="alert">{selectedBrowser.displayName} was found, but this app cannot launch it through a SOCKS proxy on this platform yet.</p>
+    {/if}
+
+    {#if launchPreview}
+      <div class="browser-command-block">
+        <span>Launch command</span>
+        <pre class="banner-detail browser-command-preview">{launchPreview}</pre>
+      </div>
     {/if}
   {/if}
 </section>

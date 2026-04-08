@@ -28,10 +28,13 @@ describe('BrowserLauncher', () => {
           { id: 'chromium', displayName: 'Chromium', supportsProxyLaunch: true },
         ],
         selectedBrowserId: 'firefox',
+        launchPreview: 'firefox -new-instance -profile /tmp/ssh-man-browser-profiles/firefox-43123',
         onLaunch,
         onSelect,
       },
     })
+
+    expect(screen.getByText('firefox -new-instance -profile /tmp/ssh-man-browser-profiles/firefox-43123')).toBeTruthy()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Launch through SOCKS' }))
 

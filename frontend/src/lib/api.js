@@ -154,6 +154,25 @@ export async function discoverBrowsers() {
   ]
 }
 
+export async function previewBrowserLaunchThroughSocks(configurationId, browserId) {
+  if (hasWailsRuntime()) {
+    return appBindings().PreviewBrowserLaunchThroughSocks(configurationId, browserId)
+  }
+
+  const configuration = memoryState.servers.flatMap((item) => item.configurations).find((item) => item.id === configurationId)
+  const session = memoryState.sessions.find((item) => item.configurationId === configurationId)
+  const boundPort = session?.boundPort || configuration?.socksPort || 43123
+  return {
+    configurationId,
+    browserId,
+    browserName: browserId,
+    supported: true,
+    command: browserId === 'firefox'
+      ? `firefox -new-instance -profile /tmp/ssh-man-browser-profiles/firefox-${boundPort}`
+      : `${browserId} --proxy-server=socks5://127.0.0.1:${boundPort} --proxy-bypass-list=<-loopback> --host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1`,
+  }
+}
+
 export async function launchBrowserThroughSocks(configurationId, browserId) {
   if (hasWailsRuntime()) {
     return appBindings().LaunchBrowserThroughSocks(configurationId, browserId)

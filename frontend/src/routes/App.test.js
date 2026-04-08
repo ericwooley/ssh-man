@@ -16,6 +16,7 @@ const { api } = vi.hoisted(() => ({
     submitKeyUnlock: vi.fn(),
     discoverBrowsers: vi.fn(),
     launchBrowserThroughSocks: vi.fn(),
+    previewBrowserLaunchThroughSocks: vi.fn(),
     openDevTools: vi.fn(),
     listRuntimeSessions: vi.fn(),
   },
@@ -49,6 +50,7 @@ describe('App', () => {
     api.submitKeyUnlock.mockResolvedValue(undefined)
     api.discoverBrowsers.mockResolvedValue([])
     api.launchBrowserThroughSocks.mockResolvedValue(undefined)
+    api.previewBrowserLaunchThroughSocks.mockResolvedValue({ command: 'google-chrome --proxy-server=socks5://127.0.0.1:1080' })
     api.openDevTools.mockResolvedValue(undefined)
     api.listRuntimeSessions.mockResolvedValue([])
 
@@ -194,6 +196,30 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText('SOCKS proxy on :43123')).toBeTruthy()
       expect(screen.getAllByText('Listening on localhost:43123').length).toBeGreaterThan(0)
+    })
+  })
+
+  it('discovers browsers automatically for a selected socks tunnel and shows the launch command preview', async () => {
+    api.loadInitialState.mockResolvedValue({
+      servers: [{
+        server: { id: 'server-1', name: 'Primary', host: 'example.com', port: 22, username: 'eric', authMode: 'private_key', keyReference: '~/.ssh/id_ed25519' },
+        configurations: [{ id: 'config-1', serverId: 'server-1', label: 'Docs SOCKS', connectionType: 'socks_proxy', socksPort: 1080, autoReconnectEnabled: true }],
+      }],
+      preferences: { theme: 'dark', lastSelectedServerId: 'server-1' },
+      sessions: [{ configurationId: 'config-1', status: 'connected', boundPort: 1080, statusDetail: 'Listening on localhost:1080' }],
+      diagnostics: { appDataPath: '/tmp/ssh-man', databasePath: '/tmp/ssh-man/ssh-man.db' },
+      message: '',
+      recoverable: false,
+    })
+    api.discoverBrowsers.mockResolvedValue([{ id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true }])
+    api.previewBrowserLaunchThroughSocks.mockResolvedValue({ command: 'google-chrome --proxy-server=socks5://127.0.0.1:1080' })
+
+    render(App)
+
+    await waitFor(() => {
+      expect(api.discoverBrowsers).toHaveBeenCalled()
+      expect(api.previewBrowserLaunchThroughSocks).toHaveBeenCalledWith('config-1', 'google-chrome')
+      expect(screen.getByText((content) => content.includes('google-chrome --proxy-server=socks5://127.0.0.1:1080'))).toBeTruthy()
     })
   })
 })

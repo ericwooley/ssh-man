@@ -70,3 +70,24 @@ func TestLaunchThroughSOCKSRequiresRuntimeBoundPort(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestPreviewLaunchThroughSOCKSIncludesCommand(t *testing.T) {
+	service := NewService(
+		stubConfigLookup{item: configdomain.ConnectionConfiguration{ID: "config-1", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
+		stubRuntimeLookup{state: sessiondomain.RuntimeSession{ConfigurationID: "config-1", Status: sessiondomain.StatusConnected, BoundPort: 43123}, ok: true},
+	)
+	service.discover = func(context.Context) ([]BrowserOption, error) {
+		return []BrowserOption{{ID: "google-chrome", DisplayName: "Google Chrome", LaunchReference: "/usr/bin/google-chrome", SupportsProxyLaunch: true}}, nil
+	}
+
+	preview, err := service.PreviewLaunchThroughSOCKS(context.Background(), "config-1", "google-chrome")
+	if err != nil {
+		t.Fatalf("unexpected preview error: %v", err)
+	}
+	if preview.BrowserID != "google-chrome" {
+		t.Fatalf("unexpected browser id: %#v", preview)
+	}
+	if !strings.Contains(preview.Command, "43123") {
+		t.Fatalf("expected preview command to include runtime port, got %q", preview.Command)
+	}
+}
