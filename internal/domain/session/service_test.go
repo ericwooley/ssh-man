@@ -127,8 +127,9 @@ func TestHandleDisconnectMovesToFailedWithoutReconnect(t *testing.T) {
 	runtimes := NewRuntimeStore()
 	service := NewService(nil, nil, nil, runtimes)
 	configuration := configdomain.ConnectionConfiguration{ID: "config-1", AutoReconnectEnabled: false}
+	runtimes.SetWithToken(RuntimeSession{ConfigurationID: "config-1", Status: StatusConnected}, nil, "", "token-1")
 
-	service.handleDisconnect(configuration, "", errors.New("network dropped"))
+	service.handleDisconnect(configuration, "", "token-1", errors.New("network dropped"))
 
 	state, ok := runtimes.Get("config-1")
 	if !ok {
@@ -289,5 +290,50 @@ func TestStartAllStartsEachConfigurationForServer(t *testing.T) {
 		if state.Status != StatusConnected {
 			t.Fatalf("expected connected state, got %+v", state)
 		}
+	}
+}
+
+func TestHandleDisconnectDoesNotOverwriteManualStop(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080, AutoReconnectEnabled: true}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	initialRunner := &stubRunner{}
+	reconnectRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{initialRunner, reconnectRunner}}
+
+	state, err := service.Start(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("start tunnel: %v", err)
+	}
+	if state.Status != StatusConnected {
+		t.Fatalf("expected connected state, got %s", state.Status)
+	}
+
+	initialRunner.Disconnect(errors.New("ssh keepalive failed: EOF"))
+	time.Sleep(100 * time.Millisecond)
+
+	state, err = service.Stop(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("stop tunnel: %v", err)
+	}
+	if state.Status != StatusStopped {
+		t.Fatalf("expected stopped state, got %s", state.Status)
+	}
+
+	time.Sleep(1200 * time.Millisecond)
+
+	state, ok := runtimes.Get("config-1")
+	if !ok {
+		t.Fatal("expected runtime state to exist")
+	}
+	if state.Status != StatusStopped {
+		t.Fatalf("expected manual stop to win, got %+v", state)
+	}
+	if reconnectRunner.started {
+		t.Fatal("expected reconnect runner not to start after manual stop")
 	}
 }

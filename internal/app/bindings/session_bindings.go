@@ -48,3 +48,12 @@ func (a *AppBindings) SubmitKeyUnlock(configurationID string, secret string) (an
 	}
 	return state, nil
 }
+
+func (a *AppBindings) ListRuntimeSessions() (any, error) {
+	runtimeStates := a.app.SessionService.Snapshot()
+	results := make([]any, 0, len(runtimeStates))
+	for _, state := range runtimeStates {
+		results = append(results, state)
+	}
+	return results, nil
+}

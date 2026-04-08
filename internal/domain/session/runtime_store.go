@@ -11,6 +11,7 @@ type runtimeEntry struct {
 	state      RuntimeSession
 	runner     Runner
 	passphrase string
+	token      string
 }
 
 type RuntimeStore struct {
@@ -36,10 +37,21 @@ func (s *RuntimeStore) Runner(id string) (Runner, string, bool) {
 	return entry.runner, entry.passphrase, ok
 }
 
+func (s *RuntimeStore) Token(id string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entry, ok := s.sessions[id]
+	return entry.token, ok
+}
+
 func (s *RuntimeStore) Set(state RuntimeSession, runner Runner, passphrase string) {
+	s.SetWithToken(state, runner, passphrase, "")
+}
+
+func (s *RuntimeStore) SetWithToken(state RuntimeSession, runner Runner, passphrase string, token string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sessions[state.ConfigurationID] = runtimeEntry{state: state, runner: runner, passphrase: passphrase}
+	s.sessions[state.ConfigurationID] = runtimeEntry{state: state, runner: runner, passphrase: passphrase, token: token}
 }
 
 func (s *RuntimeStore) Delete(id string) {

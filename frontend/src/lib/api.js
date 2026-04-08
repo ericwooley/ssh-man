@@ -157,3 +157,10 @@ export async function openDevTools() {
     return appBindings().OpenDevTools()
   }
 }
+
+export async function listRuntimeSessions() {
+  if (hasWailsRuntime()) {
+    return appBindings().ListRuntimeSessions()
+  }
+  return cloneState(memoryState.sessions)
+}

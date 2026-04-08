@@ -64,6 +64,10 @@ func (s *Service) Get(id string) (RuntimeSession, bool) {
 	return s.runtimes.Get(id)
 }
 
+func (s *Service) Snapshot() []RuntimeSession {
+	return s.runtimes.List()
+}
+
 func (s *Service) Start(ctx context.Context, configurationID string) (RuntimeSession, error) {
 	return s.start(ctx, configurationID, "")
 }
@@ -98,7 +102,7 @@ func (s *Service) Stop(ctx context.Context, configurationID string) (RuntimeSess
 	current, exists := s.runtimes.Get(configurationID)
 	if !exists {
 		state := stoppedState(configurationID, "Configuration is already stopped")
-		s.runtimes.Set(state, nil, "")
+		s.runtimes.SetWithToken(state, nil, "", historyID())
 		return state, nil
 	}
 
@@ -109,7 +113,7 @@ func (s *Service) Stop(ctx context.Context, configurationID string) (RuntimeSess
 		}
 	}
 	state := stoppedState(configurationID, "Tunnel stopped")
-	s.runtimes.Set(state, nil, "")
+	s.runtimes.SetWithToken(state, nil, "", historyID())
 	_ = s.recordHistory(ctx, configurationID, current.StartedAt, OutcomeStopped, state.StatusDetail)
 	return state, nil
 }
@@ -141,46 +145,63 @@ func (s *Service) start(ctx context.Context, configurationID string, passphrase 
 		return RuntimeSession{}, fmt.Errorf("stop existing tunnel: %w", err)
 	}
 
+	runtimeToken := historyID()
+
 	starting := RuntimeSession{ConfigurationID: configurationID, Status: StatusStarting, StatusDetail: "Starting tunnel", StartedAt: time.Now().UTC(), LastStateChangeAt: time.Now().UTC()}
-	s.runtimes.Set(starting, nil, passphrase)
+	s.runtimes.SetWithToken(starting, nil, passphrase, runtimeToken)
 
 	runner := s.factory.New(server, configuration, passphrase, func(disconnectErr error) {
-		s.handleDisconnect(configuration, passphrase, disconnectErr)
+		s.handleDisconnect(configuration, passphrase, runtimeToken, disconnectErr)
 	})
 	if err := runner.Start(); err != nil {
 		if errors.Is(err, auth.ErrPassphraseRequired) {
 			state := RuntimeSession{ConfigurationID: configurationID, Status: StatusNeedsAttention, StatusDetail: "Unlock the SSH key to continue", StartedAt: starting.StartedAt, LastStateChangeAt: time.Now().UTC(), LastError: err.Error(), NeedsUserInput: true}
-			s.runtimes.Set(state, nil, passphrase)
+			s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
 			_ = s.recordHistory(ctx, configurationID, starting.StartedAt, OutcomeFailedAuth, state.StatusDetail)
 			return state, nil
 		}
 		detail := tunnel.DescribeStartError(err, server, configuration)
 		state := RuntimeSession{ConfigurationID: configurationID, Status: StatusFailed, StatusDetail: detail, StartedAt: starting.StartedAt, LastStateChangeAt: time.Now().UTC(), LastError: err.Error()}
-		s.runtimes.Set(state, nil, passphrase)
+		s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
 		_ = s.recordHistory(ctx, configurationID, starting.StartedAt, OutcomeFailedRuntime, state.StatusDetail)
 		return state, nil
 	}
 
 	connected := RuntimeSession{ConfigurationID: configurationID, Status: StatusConnected, StatusDetail: fmt.Sprintf("Listening on localhost:%d", configuration.BoundPort()), StartedAt: starting.StartedAt, LastStateChangeAt: time.Now().UTC()}
-	s.runtimes.Set(connected, runner, passphrase)
+	s.runtimes.SetWithToken(connected, runner, passphrase, runtimeToken)
 	_ = s.recordHistory(ctx, configurationID, starting.StartedAt, OutcomeConnected, connected.StatusDetail)
 	return connected, nil
 }
 
-func (s *Service) handleDisconnect(configuration configdomain.ConnectionConfiguration, passphrase string, disconnectErr error) {
+func (s *Service) handleDisconnect(configuration configdomain.ConnectionConfiguration, passphrase string, runtimeToken string, disconnectErr error) {
+	currentToken, ok := s.runtimes.Token(configuration.ID)
+	if !ok || currentToken != runtimeToken {
+		return
+	}
+
 	detail := tunnel.DescribeDisconnectError(disconnectErr)
 	_ = s.stopExistingRunner(configuration.ID)
 	if !configuration.AutoReconnectEnabled {
 		state := RuntimeSession{ConfigurationID: configuration.ID, Status: StatusFailed, StatusDetail: detail, LastStateChangeAt: time.Now().UTC(), LastError: disconnectErr.Error()}
-		s.runtimes.Set(state, nil, passphrase)
+		s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
 		return
 	}
 
 	go func() {
 		for attempt := 1; attempt <= 3; attempt++ {
+			currentToken, ok := s.runtimes.Token(configuration.ID)
+			if !ok || currentToken != runtimeToken {
+				return
+			}
+
 			state := RuntimeSession{ConfigurationID: configuration.ID, Status: StatusReconnecting, StatusDetail: fmt.Sprintf("%s Reconnect attempt %d of 3.", detail, attempt), LastStateChangeAt: time.Now().UTC(), ReconnectAttemptCount: attempt, LastError: disconnectErr.Error()}
-			s.runtimes.Set(state, nil, passphrase)
+			s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
 			time.Sleep(time.Duration(attempt) * time.Second)
+
+			currentToken, ok = s.runtimes.Token(configuration.ID)
+			if !ok || currentToken != runtimeToken {
+				return
+			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			nextState, err := s.start(ctx, configuration.ID, passphrase)
@@ -194,7 +215,7 @@ func (s *Service) handleDisconnect(configuration configdomain.ConnectionConfigur
 		}
 
 		failed := RuntimeSession{ConfigurationID: configuration.ID, Status: StatusFailed, StatusDetail: fmt.Sprintf("%s Reconnect attempts exhausted.", detail), LastStateChangeAt: time.Now().UTC(), LastError: disconnectErr.Error()}
-		s.runtimes.Set(failed, nil, passphrase)
+		s.runtimes.SetWithToken(failed, nil, passphrase, runtimeToken)
 		_ = s.recordHistory(context.Background(), configuration.ID, time.Now().UTC(), OutcomeReconnectExhausted, failed.StatusDetail)
 	}()
 }

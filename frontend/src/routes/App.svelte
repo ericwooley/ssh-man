@@ -5,6 +5,7 @@
     deleteServer,
     discoverBrowsers,
     launchBrowserThroughSocks,
+    listRuntimeSessions,
     loadInitialState,
     openDevTools,
     retryConfiguration,
@@ -70,11 +71,21 @@
   let unlockConfigurationId = ''
   let diagnosticDetails = ''
   let diagnostics = { appDataPath: '', databasePath: '' }
+  let runtimeRefreshHandle = null
   let selectedServerRecord = null
   let selectedServer = null
   let selectedConfigurations = []
   let selectedConfiguration = null
   let selectedSession = null
+  let unlockConfiguration = null
+  let unlockSession = null
+  let runtimeSessionSnapshot = []
+  let activeRuntimeConnections = []
+  let totalTunnelCount = 0
+  let connectedSessionCount = 0
+  let attentionSessionCount = 0
+  let selectedServerActiveCount = 0
+  let currentIssue = ''
 
   function normalizeSession(session) {
     if (!session) return null
@@ -99,10 +110,10 @@
     return Number.isNaN(value) ? 0 : value
   }
 
-  function runtimeSessions() {
+  function buildRuntimeSessions(sourceSessions) {
     const latestByConfiguration = new Map()
 
-    for (const item of sessions) {
+    for (const item of sourceSessions) {
       const normalized = normalizeSession(item)
       if (!normalized) continue
 
@@ -115,21 +126,36 @@
     return Array.from(latestByConfiguration.values())
   }
 
-  function runtimeSessionFor(configurationId) {
-    return runtimeSessions().find((item) => item.configurationId === configurationId) || null
+  function replaceRuntimeSessions(nextSessions) {
+    sessions = (nextSessions || []).map((session) => normalizeSession(session)).filter(Boolean)
   }
 
-  const unlockConfiguration = () => configurationRecord(unlockConfigurationId)?.configuration || null
-  const unlockSession = () => runtimeSessionFor(unlockConfigurationId)
-  const totalTunnelCount = () => servers.reduce((count, item) => count + item.configurations.length, 0)
-  const connectedSessionCount = () => runtimeSessions().filter((item) => item.status === 'connected').length
-  const attentionSessionCount = () => runtimeSessions().filter((item) => item.status === 'needs_attention').length
-  const selectedServerActiveCount = () => activeConnections().filter((item) => configurationRecord(item.configurationId)?.server.id === selectedServerId).length
-  const currentIssue = () => bannerKind === 'info' && !loadRecoverable ? '' : diagnosticDetails || banner || ''
+  async function refreshRuntimeSessions() {
+    try {
+      replaceRuntimeSessions(await listRuntimeSessions())
+    } catch {
+      // Keep the last known runtime snapshot if polling fails.
+    }
+  }
+
+  function startRuntimeRefreshLoop() {
+    if (typeof window === 'undefined' || runtimeRefreshHandle) return
+
+    runtimeRefreshHandle = window.setInterval(() => {
+      refreshRuntimeSessions()
+    }, 1500)
+  }
+
+  function stopRuntimeRefreshLoop() {
+    if (typeof window === 'undefined' || !runtimeRefreshHandle) return
+    window.clearInterval(runtimeRefreshHandle)
+    runtimeRefreshHandle = null
+  }
+
   const modalOpen = () => serverDialogOpen || tunnelDialogOpen || unlockDialogOpen
 
-  function configurationRecord(configurationId) {
-    for (const item of servers) {
+  function findConfigurationRecord(items, configurationId) {
+    for (const item of items) {
       const configuration = item.configurations.find((entry) => entry.id === configurationId)
       if (configuration) {
         return { server: item.server, configuration }
@@ -138,12 +164,20 @@
     return null
   }
 
+  function configurationsForServer(serverId) {
+    return servers.find((item) => item.server.id === serverId)?.configurations || []
+  }
+
+  function firstConfigurationIdForServer(serverId) {
+    return configurationsForServer(serverId)[0]?.id || ''
+  }
+
   const activeConnections = () => sessions
     .map((session) => normalizeSession(session))
     .filter(Boolean)
     .filter((session) => !['stopped', 'failed'].includes(session.status))
     .map((session) => {
-      const record = configurationRecord(session.configurationId)
+      const record = findConfigurationRecord(servers, session.configurationId)
       return {
         configurationId: session.configurationId,
         configurationLabel: record?.configuration.label || 'Unknown tunnel',
@@ -159,10 +193,10 @@
       const state = await loadInitialState()
       servers = state.servers || []
       preferences = state.preferences || preferences
-      sessions = state.sessions || []
+      replaceRuntimeSessions(state.sessions || [])
       diagnostics = state.diagnostics || diagnostics
       selectedServerId = servers.some((item) => item.server.id === preferences.lastSelectedServerId) ? preferences.lastSelectedServerId : ''
-      selectedConfigurationId = selectedConfigurations[0]?.id || ''
+      selectedConfigurationId = firstConfigurationIdForServer(selectedServerId)
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
       document.documentElement.dataset.theme = preferences.theme
       banner = state.message || ''
@@ -183,7 +217,7 @@
     const normalized = normalizeSession(session)
     if (!normalized) return
 
-    sessions = runtimeSessions().filter((item) => item.configurationId !== normalized.configurationId).concat(normalized)
+    sessions = runtimeSessionSnapshot.filter((item) => item.configurationId !== normalized.configurationId).concat(normalized)
     if (normalized.status === 'needs_attention') {
       unlockConfigurationId = normalized.configurationId
       unlockDialogOpen = true
@@ -350,7 +384,7 @@
         configurations: item.configurations.filter((entry) => entry.id !== configurationId),
       }))
       if (selectedConfigurationId === configurationId) {
-        selectedConfigurationId = selectedConfigurations[0]?.id || ''
+        selectedConfigurationId = firstConfigurationIdForServer(selectedServerId)
       }
       banner = 'Tunnel deleted.'
       diagnosticDetails = ''
@@ -364,7 +398,7 @@
 
   async function selectServer(serverId) {
     selectedServerId = serverId
-    selectedConfigurationId = selectedConfigurations[0]?.id || ''
+    selectedConfigurationId = firstConfigurationIdForServer(serverId)
     editorValue = { ...emptyConfig(), serverId }
     try {
       preferences = await savePreferences({ ...preferences, lastSelectedServerId: serverId })
@@ -377,7 +411,7 @@
   }
 
   async function focusConfiguration(configurationId) {
-    const record = configurationRecord(configurationId)
+    const record = findConfigurationRecord(servers, configurationId)
     if (!record) return
 
     selectedServerId = record.server.id
@@ -411,6 +445,7 @@
     try {
       const session = await startConfiguration(configurationId)
       upsertSession(session)
+      await refreshRuntimeSessions()
       banner = session.statusDetail || ''
       diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
@@ -431,6 +466,7 @@
     try {
       const nextSessions = await startServerConfigurations(selectedServerId)
       nextSessions.forEach((session) => upsertSession(session))
+      await refreshRuntimeSessions()
 
       const connectedCount = nextSessions.filter((session) => session.status === 'connected').length
       const attentionCount = nextSessions.filter((session) => session.status === 'needs_attention').length
@@ -454,6 +490,7 @@
     try {
       const session = await stopConfiguration(configurationId)
       upsertSession(session)
+      await refreshRuntimeSessions()
       banner = session.statusDetail || ''
       diagnosticDetails = ''
       bannerKind = 'info'
@@ -468,6 +505,7 @@
     try {
       const session = await retryConfiguration(configurationId)
       upsertSession(session)
+      await refreshRuntimeSessions()
       banner = session.statusDetail || ''
       diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
@@ -482,6 +520,7 @@
     try {
       const session = await submitKeyUnlock(configurationId, secret)
       upsertSession(session)
+      await refreshRuntimeSessions()
       banner = session.statusDetail || ''
       diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
@@ -576,19 +615,46 @@
 
   onMount(() => {
     hydrate()
+    startRuntimeRefreshLoop()
   })
 
+  $: runtimeSessionSnapshot = buildRuntimeSessions(sessions)
   $: selectedServerRecord = servers.find((item) => item.server.id === selectedServerId) || null
   $: selectedServer = selectedServerRecord?.server || null
   $: selectedConfigurations = selectedServerRecord?.configurations || []
+  $: if (!selectedServerId) {
+    selectedConfigurationId = ''
+  } else if (!selectedConfigurations.some((item) => item.id === selectedConfigurationId)) {
+    selectedConfigurationId = selectedConfigurations[0]?.id || ''
+  }
   $: selectedConfiguration = selectedConfigurations.find((item) => item.id === selectedConfigurationId) || null
-  $: selectedSession = runtimeSessionFor(selectedConfigurationId)
+  $: selectedSession = runtimeSessionSnapshot.find((item) => item.configurationId === selectedConfigurationId) || null
+  $: unlockConfiguration = findConfigurationRecord(servers, unlockConfigurationId)?.configuration || null
+  $: unlockSession = runtimeSessionSnapshot.find((item) => item.configurationId === unlockConfigurationId) || null
+  $: totalTunnelCount = servers.reduce((count, item) => count + item.configurations.length, 0)
+  $: connectedSessionCount = runtimeSessionSnapshot.filter((item) => item.status === 'connected').length
+  $: attentionSessionCount = runtimeSessionSnapshot.filter((item) => item.status === 'needs_attention').length
+  $: activeRuntimeConnections = runtimeSessionSnapshot
+    .filter((session) => !['stopped', 'failed'].includes(session.status))
+    .map((session) => {
+      const record = findConfigurationRecord(servers, session.configurationId)
+      return {
+        configurationId: session.configurationId,
+        configurationLabel: record?.configuration.label || 'Unknown tunnel',
+        serverName: record?.server.name || 'Unknown server',
+        status: session.status,
+        statusDetail: session.statusDetail,
+      }
+    })
+  $: selectedServerActiveCount = activeRuntimeConnections.filter((item) => findConfigurationRecord(servers, item.configurationId)?.server.id === selectedServerId).length
+  $: currentIssue = bannerKind === 'info' && !loadRecoverable ? '' : diagnosticDetails || banner || ''
 
   $: if (typeof document !== 'undefined') {
     document.body.style.overflow = modalOpen() ? 'hidden' : ''
   }
 
   onDestroy(() => {
+    stopRuntimeRefreshLoop()
     if (typeof document !== 'undefined') {
       document.body.style.overflow = ''
     }
@@ -637,15 +703,15 @@
           </div>
           <div class="metric-card">
             <span class="metric-label">Saved tunnels</span>
-            <strong>{totalTunnelCount()}</strong>
+            <strong>{totalTunnelCount}</strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">Connected</span>
-            <strong>{connectedSessionCount()}</strong>
+            <strong>{connectedSessionCount}</strong>
           </div>
           <div class="metric-card">
             <span class="metric-label">Need attention</span>
-            <strong>{attentionSessionCount()}</strong>
+            <strong>{attentionSessionCount}</strong>
           </div>
         </div>
 
@@ -656,7 +722,7 @@
               <strong>{selectedServer.name}</strong>
             </div>
             <small>{selectedServer.username}@{selectedServer.host}:{selectedServer.port}</small>
-            <small>{selectedConfigurations.length} saved tunnel{selectedConfigurations.length === 1 ? '' : 's'} and {selectedServerActiveCount()} active.</small>
+            <small>{selectedConfigurations.length} saved tunnel{selectedConfigurations.length === 1 ? '' : 's'} and {selectedServerActiveCount} active.</small>
           </div>
         {:else}
           <div class="empty-state compact">
@@ -677,7 +743,7 @@
 
       <DiagnosticsPanel
         {diagnostics}
-        issue={currentIssue()}
+        {currentIssue}
         hasWarning={loadRecoverable || bannerKind !== 'info'}
         onReload={handleReloadState}
         onOpenDevTools={handleOpenDevTools}
@@ -706,7 +772,7 @@
             enabled={Boolean(selectedServerId)}
             configurations={selectedConfigurations}
             {selectedConfigurationId}
-            sessions={runtimeSessions()}
+            sessions={runtimeSessionSnapshot}
             onSelect={focusConfiguration}
             onCreate={openCreateTunnelDialog}
             onStartAll={handleStartAll}
@@ -714,7 +780,7 @@
             onDelete={handleDeleteConfiguration}
           />
 
-          <ActiveConnections connections={activeConnections()} onSelect={focusConfiguration} onStop={handleStop} />
+          <ActiveConnections connections={activeRuntimeConnections} onSelect={focusConfiguration} onStop={handleStop} />
         </div>
 
         <div class="workspace-secondary-column">
@@ -767,8 +833,8 @@
 
   <UnlockKeyDialog
     open={unlockDialogOpen}
-    configurationLabel={unlockConfiguration()?.label || ''}
-    detail={unlockSession()?.statusDetail || ''}
+    configurationLabel={unlockConfiguration?.label || ''}
+    detail={unlockSession?.statusDetail || ''}
     onSubmit={(secret) => handleUnlock(unlockConfigurationId, secret)}
     onClose={closeUnlockDialog}
   />

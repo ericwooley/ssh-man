@@ -16,7 +16,8 @@
     openMenuId = ''
   }
 
-  function handleWindowClick() {
+  function handleWindowClick(event) {
+    if (event.target?.closest?.('.row-menu')) return
     closeMenu()
   }
 

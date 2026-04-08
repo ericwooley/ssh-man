@@ -10,10 +10,9 @@
   export let onDelete = () => {}
 
   let openMenuId = ''
+  let sessionByConfigurationId = new Map()
 
-  function sessionFor(id) {
-    return sessions.findLast ? sessions.findLast((item) => item.configurationId === id) : [...sessions].reverse().find((item) => item.configurationId === id)
-  }
+  $: sessionByConfigurationId = new Map(sessions.map((session) => [session.configurationId, session]))
 
   function toggleMenu(configurationId) {
     openMenuId = openMenuId === configurationId ? '' : configurationId
@@ -23,7 +22,8 @@
     openMenuId = ''
   }
 
-  function handleWindowClick() {
+  function handleWindowClick(event) {
+    if (event.target?.closest?.('.row-menu')) return
     closeMenu()
   }
 
@@ -64,7 +64,7 @@
   {:else}
     <ul class="stack-list" aria-label="Saved configurations">
       {#each configurations as configuration}
-        {@const runtime = sessionFor(configuration.id)}
+        {@const runtime = sessionByConfigurationId.get(configuration.id)}
         <li>
           <div class:selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id} class="list-item-shell">
             <div class="list-card-topline">
