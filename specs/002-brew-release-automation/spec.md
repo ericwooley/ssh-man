@@ -14,6 +14,7 @@
 - Q: Which Homebrew packaging model should the official install path use? → A: Homebrew cask
 - Q: Which Homebrew distribution target should the official install path use? → A: project-owned tap
 - Q: Is macOS signing or notarization required for official releases in this feature? → A: no signing required
+- Q: How should Linux platform parity be handled for this feature? → A: Linux remains supported, but automated releases are macOS-only for now and Linux users can clone and build
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -45,7 +46,7 @@ As a maintainer, I want official builds to be generated automatically from GitHu
 
 1. **Given** a maintainer initiates an official release through the approved repository process, **When** the release workflow runs successfully, **Then** the repository publishes a tagged release with the required installable assets attached.
 2. **Given** the release workflow fails before completion, **When** the maintainer inspects the repository release area, **Then** no misleading completed release is presented as available to users.
-3. **Given** a release has been published, **When** users or maintainers review the release entry, **Then** they can identify the release version and access the expected downloadable assets for the supported macOS distribution path.
+3. **Given** a release has been published, **When** users or maintainers review the release entry, **Then** they can identify the release version, access the expected downloadable assets for the supported macOS distribution path, and understand that Linux users can continue using the supported clone-and-build workflow.
 
 ---
 
@@ -75,8 +76,8 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 
 ## Platform & Environment Considerations *(include for desktop or device-bound features)*
 
-- **Supported Platforms**: Homebrew-based installation must support the macOS environments accepted by the project for end-user distribution. Release automation must publish the assets required for the supported macOS distribution path.
-- **Platform Differences**: The only packaged install flow in scope is Homebrew on macOS. Other operating systems are out of scope for official automated release artifacts in this feature.
+- **Supported Platforms**: The application remains a supported desktop product on Linux and macOS. Homebrew-based installation must support the macOS environments accepted by the project for end-user distribution, while Linux users may continue using the supported clone-and-build path.
+- **Platform Differences**: The packaged install flow in scope is Homebrew on macOS. Official automated release artifacts are macOS-only for this feature, while Linux parity is preserved through the existing source-based workflow rather than matching the macOS release cycle.
 - **Packaging Assumptions**: Official releases in this feature do not require macOS code signing or notarization. If the distributed app is unsigned, the installation guidance must state that clearly.
 - **Environment Assumptions**: End users have Homebrew installed and can access the project's official release source. Maintainers have repository permissions needed to initiate and manage official releases through the repository hosting platform.
 
@@ -88,6 +89,7 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 - **FR-001A**: The official Homebrew-based installation path MUST be implemented as a Homebrew cask rather than a formula.
 - **FR-001B**: The official Homebrew-based installation path MUST be published through a project-owned Homebrew tap.
 - **FR-002**: The system MUST provide user-facing installation guidance that identifies the official Homebrew install flow and how users obtain updates.
+- **FR-002A**: The installation guidance MUST clearly state that Linux remains supported through a clone-and-build workflow even though official automated release artifacts are not yet provided for Linux.
 - **FR-003**: Users MUST be able to install the latest official release through the documented Homebrew flow without building the application from source.
 - **FR-004**: Users MUST be able to upgrade an existing Homebrew installation to a newer official release through the standard Homebrew upgrade flow.
 - **FR-005**: The system MUST produce official release artifacts through an automated repository-hosted workflow rather than requiring manual build assembly for each release.
@@ -123,6 +125,7 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 - Homebrew distribution is intended for end users on macOS, where Homebrew is a standard installation method.
 - GitHub Actions and GitHub-hosted releases are the approved release channel for this project.
 - Existing non-Homebrew distribution paths may continue to exist, but defining, automating, or redesigning them is out of scope for this feature.
+- Linux support remains in scope for the product, but aligning Linux to the same official automated release cycle as macOS is out of scope for this feature.
 - Maintainers will continue to control when an official release is initiated; this feature automates release execution after that decision.
 - The project will treat only successfully completed automated releases as installable through the official Homebrew path.
 - macOS signing and notarization are not release-blocking requirements for this feature.
