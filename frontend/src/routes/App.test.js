@@ -224,20 +224,9 @@ describe('App', () => {
   })
 
   it('unlocks all start-all tunnels that need the same SSH key passphrase', async () => {
-    api.loadInitialState.mockResolvedValue({
-      servers: [{
-        server: { id: 'server-1', name: 'Primary', host: 'example.com', port: 22, username: 'eric', authMode: 'private_key', keyReference: '~/.ssh/id_ed25519' },
-        configurations: [
-          { id: 'config-1', serverId: 'server-1', label: 'Docs SOCKS', connectionType: 'socks_proxy', socksPort: 1080, autoReconnectEnabled: true },
-          { id: 'config-2', serverId: 'server-1', label: 'Docs Port', connectionType: 'local_forward', localPort: 9000, remoteHost: '127.0.0.1', remotePort: 5432, autoReconnectEnabled: true },
-        ],
-      }],
-      preferences: { theme: 'dark', lastSelectedServerId: 'server-1' },
-      sessions: [],
-      diagnostics: { appDataPath: '/tmp/ssh-man', databasePath: '/tmp/ssh-man/ssh-man.db' },
-      message: '',
-      recoverable: false,
-    })
+    api.saveConnectionConfiguration
+      .mockImplementationOnce(async (config) => ({ ...config, id: 'config-1' }))
+      .mockImplementationOnce(async (config) => ({ ...config, id: 'config-2' }))
     api.startServerConfigurations.mockResolvedValue([
       { configurationId: 'config-1', status: 'needs_attention', statusDetail: 'Unlock the SSH key to continue' },
       { configurationId: 'config-2', status: 'needs_attention', statusDetail: 'Unlock the SSH key to continue' },
@@ -252,7 +241,34 @@ describe('App', () => {
 
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Start all' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add server' }))
+
+    const serverDialog = screen.getByRole('dialog', { name: 'New server' })
+    await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Primary' } })
+    await fireEvent.input(within(serverDialog).getByLabelText('Server host'), { target: { value: 'example.com' } })
+    await fireEvent.input(within(serverDialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
+    await fireEvent.input(within(serverDialog).getByLabelText('Private key path'), { target: { value: '~/.ssh/id_ed25519' } })
+    await fireEvent.click(within(serverDialog).getByRole('button', { name: 'Save server' }))
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
+
+    const socksDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
+    await fireEvent.input(within(socksDialog).getByLabelText('Label'), { target: { value: 'Docs SOCKS' } })
+    await fireEvent.change(within(socksDialog).getByLabelText('Type'), { target: { value: 'socks_proxy' } })
+    await fireEvent.change(within(socksDialog).getByLabelText('SOCKS port mode'), { target: { value: 'manual' } })
+    await fireEvent.input(within(socksDialog).getByLabelText('SOCKS port'), { target: { value: '1080' } })
+    await fireEvent.click(within(socksDialog).getByRole('button', { name: 'Save tunnel' }))
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
+
+    const portDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
+    await fireEvent.input(within(portDialog).getByLabelText('Label'), { target: { value: 'Docs Port' } })
+    await fireEvent.input(within(portDialog).getByLabelText('Local port'), { target: { value: '9000' } })
+    await fireEvent.input(within(portDialog).getByLabelText('Remote host'), { target: { value: '127.0.0.1' } })
+    await fireEvent.input(within(portDialog).getByLabelText('Remote port'), { target: { value: '5432' } })
+    await fireEvent.click(within(portDialog).getByRole('button', { name: 'Save tunnel' }))
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start all' }))
 
     const unlockDialog = await screen.findByRole('dialog', { name: 'SSH key passphrase required' })
     await fireEvent.input(within(unlockDialog).getByLabelText('SSH key passphrase'), { target: { value: 'hunter2' } })
