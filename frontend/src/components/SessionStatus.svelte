@@ -3,7 +3,30 @@
   export let session = null
   export let onStart = () => {}
   export let onStop = () => {}
-  export let onRetry = () => {}
+
+  const activeStatuses = ['starting', 'connected', 'reconnecting']
+  const startableStatuses = ['stopped', 'failed']
+
+  function statusLabel(status) {
+    switch (status) {
+      case 'starting':
+        return 'Starting'
+      case 'connected':
+        return 'Connected'
+      case 'reconnecting':
+        return 'Reconnecting'
+      case 'needs_attention':
+        return 'Needs attention'
+      case 'failed':
+        return 'Failed'
+      default:
+        return 'Stopped'
+    }
+  }
+
+  $: currentStatus = session?.status || 'stopped'
+  $: canStart = !configuration ? false : startableStatuses.includes(currentStatus) || !session
+  $: canStop = Boolean(configuration) && (activeStatuses.includes(currentStatus) || currentStatus === 'needs_attention')
 </script>
 
 <section class="panel status-panel" aria-labelledby="session-status-heading">
@@ -13,7 +36,7 @@
       <h2 id="session-status-heading">Session status</h2>
       <p class="panel-copy">Operate the selected tunnel here and watch its current runtime state.</p>
     </div>
-    <span class={`status-pill ${session?.status || 'stopped'}`} aria-live="polite" aria-label={`Session status ${session?.status || 'stopped'}`}>{session?.status || 'stopped'}</span>
+    <span class={`status-pill ${currentStatus}`} aria-live="polite" aria-label={`Session status ${currentStatus}`}>{statusLabel(currentStatus)}</span>
   </div>
 
   {#if configuration}
@@ -34,9 +57,8 @@
     <p class="status-copy status-callout" role="status">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
 
     <div class="runtime-actions-grid">
-      <button class="button button-primary" type="button" on:click={() => onStart(configuration.id)}>Start tunnel</button>
-      <button class="button button-ghost" type="button" on:click={() => onRetry(configuration.id)}>Retry session</button>
-      <button class="button button-ghost danger" type="button" on:click={() => onStop(configuration.id)}>Stop tunnel</button>
+      <button class="button button-primary" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
+      <button class="button button-ghost danger" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
     </div>
   {:else}
     <div class="empty-state compact">

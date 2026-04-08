@@ -797,7 +797,6 @@
             session={selectedSession}
             onStart={handleStart}
             onStop={handleStop}
-            onRetry={handleRetry}
           />
 
           {#if selectedConfiguration?.connectionType === 'socks_proxy'}
