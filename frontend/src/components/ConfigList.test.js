@@ -119,4 +119,21 @@ describe('ConfigList', () => {
 
     expect(screen.getByText('SOCKS Auto')).toBeTruthy()
   })
+
+  it('shows the runtime detail when a tunnel needs attention', () => {
+    render(ConfigList, {
+      props: {
+        configurations: [{
+          id: 'config-1',
+          label: 'SOCKS',
+          connectionType: 'socks_proxy',
+          socksPort: 1080,
+        }],
+        sessions: [{ configurationId: 'config-1', status: 'needs_attention', statusDetail: 'Unlock the SSH key to continue' }],
+      },
+    })
+
+    expect(screen.getByLabelText('Tunnel status needs_attention')).toBeTruthy()
+    expect(screen.getByText('Unlock the SSH key to continue')).toBeTruthy()
+  })
 })

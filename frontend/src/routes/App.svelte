@@ -481,15 +481,17 @@
       await refreshRuntimeSessions()
 
       const connectedCount = nextSessions.filter((session) => session.status === 'connected').length
-      const attentionCount = nextSessions.filter((session) => session.status === 'needs_attention').length
+      const attentionSessions = nextSessions.filter((session) => session.status === 'needs_attention')
+      const attentionCount = attentionSessions.length
       const failedCount = nextSessions.filter((session) => session.status === 'failed').length
+      const attentionSummary = attentionSessions[0]?.statusDetail || (attentionCount ? 'A tunnel needs attention before it can continue.' : '')
 
       banner = [
         connectedCount ? `Started ${connectedCount} tunnel${connectedCount === 1 ? '' : 's'}.` : '',
-        attentionCount ? `${attentionCount} need${attentionCount === 1 ? 's' : ''} a passphrase.` : '',
+        attentionCount ? `${attentionCount} need${attentionCount === 1 ? 's' : ''} attention. ${attentionSummary}` : '',
         failedCount ? `${failedCount} failed to start.` : '',
       ].filter(Boolean).join(' ') || 'No tunnels were started.'
-      diagnosticDetails = ''
+      diagnosticDetails = attentionCount ? attentionSessions.map((session) => `${findConfigurationRecord(servers, session.configurationId)?.configuration.label || 'Tunnel'}: ${session.statusDetail || 'Needs attention.'}`).join('\n') : ''
       bannerKind = failedCount > 0 || attentionCount > 0 ? 'warning' : 'info'
     } catch (error) {
       banner = error.message || 'The selected server tunnels could not be started.'

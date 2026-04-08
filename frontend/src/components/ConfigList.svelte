@@ -84,6 +84,9 @@
                     {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
                   {/if}
                 </small>
+                {#if runtime?.statusDetail}
+                  <small>{runtime.statusDetail}</small>
+                {/if}
               </span>
             </button>
 
