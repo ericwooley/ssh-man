@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -25,6 +26,11 @@ type Session struct {
 	stopped      bool
 	stopOnce     sync.Once
 }
+
+const (
+	keepaliveInterval = 15 * time.Second
+	keepaliveTimeout  = 5 * time.Second
+)
 
 func NewSession(server serverdomain.Server, config configdomain.ConnectionConfiguration, passphrase string, onDisconnect func(error)) *Session {
 	return &Session{server: server, config: config, passphrase: passphrase, onDisconnect: onDisconnect, stopCh: make(chan struct{})}
@@ -123,20 +129,43 @@ func (s *Session) handleConnection(conn net.Conn) {
 }
 
 func (s *Session) watchConnection() {
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(keepaliveInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			if _, _, err := s.client.SendRequest("keepalive@ssh-man", true, nil); err != nil && !s.stopped {
+			if err := s.sendKeepalive(); err != nil && !s.stopped {
 				if s.onDisconnect != nil {
-					s.onDisconnect(fmt.Errorf("ssh keepalive failed: %w", err))
+					s.onDisconnect(err)
 				}
 				return
 			}
 		}
+	}
+}
+
+func (s *Session) sendKeepalive() error {
+	resultCh := make(chan error, 1)
+
+	go func() {
+		_, _, err := s.client.SendRequest("keepalive@ssh-man", true, nil)
+		if err != nil {
+			resultCh <- fmt.Errorf("ssh keepalive failed: %w", err)
+			return
+		}
+		resultCh <- nil
+	}()
+
+	select {
+	case <-s.stopCh:
+		return nil
+	case err := <-resultCh:
+		return err
+	case <-time.After(keepaliveTimeout):
+		_ = s.client.Close()
+		return fmt.Errorf("ssh keepalive timed out after %s: %w", keepaliveTimeout, context.DeadlineExceeded)
 	}
 }
 
@@ -186,6 +215,8 @@ func DescribeDisconnectError(err error) string {
 
 	message := strings.ToLower(err.Error())
 	switch {
+	case strings.Contains(message, "keepalive timed out"), strings.Contains(message, "deadline exceeded"):
+		return "The SSH connection health check timed out, likely because the computer slept or the network path stalled."
 	case strings.Contains(message, "keepalive"):
 		return "The SSH connection stopped responding to keepalive checks."
 	case strings.Contains(message, "use of closed network connection"):

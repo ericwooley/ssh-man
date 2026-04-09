@@ -29,3 +29,10 @@ func TestDescribeDisconnectErrorForKeepaliveFailure(t *testing.T) {
 		t.Fatalf("expected %q in %q", want, message)
 	}
 }
+
+func TestDescribeDisconnectErrorForKeepaliveTimeout(t *testing.T) {
+	message := DescribeDisconnectError(errors.New("ssh keepalive timed out after 5s: context deadline exceeded"))
+	if want := "slept"; !strings.Contains(strings.ToLower(message), want) {
+		t.Fatalf("expected %q in %q", want, message)
+	}
+}
