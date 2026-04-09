@@ -20,10 +20,11 @@ Use Homebrew for the normal macOS install path.
 
 ```bash
 brew tap ericwooley/homebrew-apps
-brew install --cask --no-quarantine ssh-man
+brew install --cask ssh-man
+xattr -d com.apple.quarantine /Applications/ssh-man.app
 ```
 
-`--no-quarantine` is required because the app is currently distributed unsigned.
+The app is currently distributed unsigned, so remove the quarantine attribute after install before first launch.
 
 ### Requirements
 
