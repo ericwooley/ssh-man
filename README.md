@@ -14,7 +14,16 @@ It lets you:
 
 ## macOS
 
-At the moment, the repository supports building from source on macOS.
+Use Homebrew for the normal macOS install path.
+
+### Homebrew install
+
+```bash
+brew tap ericwooley/homebrew-apps
+brew install --cask --no-quarantine ssh-man
+```
+
+`--no-quarantine` is required because the app is currently distributed unsigned.
 
 ### Requirements
 
@@ -30,6 +39,8 @@ xcode-select --install
 
 ### Build and run
 
+If you want to build from source instead of using Homebrew:
+
 ```bash
 git clone git@github.com:ericwooley/ssh-man.git
 cd ssh-man
@@ -44,6 +55,12 @@ The packaged app bundle is written to `build/bin/ssh-man.app`.
 - If Gatekeeper warns because the app is unsigned, open it from Finder with `Open` and confirm once.
 - `ssh-man` uses your local SSH agent by default, so make sure your agent is running and `SSH_AUTH_SOCK` is available to GUI apps.
 - App data is stored under `~/Library/Application Support/ssh-man`.
+
+### Upgrade
+
+```bash
+brew upgrade --cask ssh-man
+```
 
 ## Linux
 
@@ -124,6 +141,6 @@ tests/      integration and smoke coverage
 
 ## Status
 
-- macOS: supported via local source build
+- macOS: supported via Homebrew cask and local source build
 - Linux: supported via local source build
-- Homebrew/release automation: planned in the repo, but no published tap name is checked into this repository yet
+- Homebrew tap: `ericwooley/homebrew-apps`
