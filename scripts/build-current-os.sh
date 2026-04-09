@@ -30,13 +30,13 @@ EOF
 }
 
 require_command go
-require_command npm
+require_command pnpm
 
 printf '==> Downloading Go modules\n'
 go mod download
 
 printf '==> Installing frontend dependencies\n'
-npm install --prefix frontend
+pnpm install --dir frontend --frozen-lockfile
 
 case "$OS" in
 	Linux)

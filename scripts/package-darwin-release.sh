@@ -23,7 +23,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 require_command go
-require_command npm
+require_command pnpm
 require_command hdiutil
 
 cd "$ROOT_DIR"
@@ -32,7 +32,7 @@ printf '==> Downloading Go modules\n'
 go mod download
 
 printf '==> Installing frontend dependencies\n'
-npm install --prefix frontend
+pnpm install --dir frontend --frozen-lockfile
 
 printf '==> Building macOS app bundle\n'
 go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -platform darwin/universal -clean

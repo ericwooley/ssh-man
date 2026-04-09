@@ -28,13 +28,19 @@ brew install --cask --no-quarantine ssh-man
 ### Requirements
 
 - Go `1.22.2`
-- Node.js and npm
+- Node.js and pnpm
 - Xcode Command Line Tools
 
 Install the Xcode tools if needed:
 
 ```bash
 xcode-select --install
+```
+
+Install pnpm if needed:
+
+```bash
+npm install -g pnpm
 ```
 
 ### Build and run
@@ -69,7 +75,7 @@ Linux is currently supported through a clone-and-build workflow.
 ### Requirements
 
 - Go `1.22.2`
-- Node.js and npm
+- Node.js and pnpm
 - `pkg-config`
 - GTK 3 development headers
 - WebKitGTK 4.1 development headers
@@ -78,7 +84,8 @@ Ubuntu or Debian example:
 
 ```bash
 sudo apt update
-sudo apt install -y golang-go npm pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+sudo apt install -y golang-go pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+npm install -g pnpm
 ```
 
 ### Build and run
@@ -120,8 +127,8 @@ If your distro needs the explicit Linux Wails build path, use:
 ### Frontend-only checks
 
 ```bash
-npm install --prefix frontend
-npm run validate --prefix frontend
+pnpm install --dir frontend
+pnpm --dir frontend run validate
 ```
 
 ## First-run tips

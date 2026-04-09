@@ -4,10 +4,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+require_command() {
+  local cmd="$1"
+
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    printf 'Missing required command: %s\n' "$cmd" >&2
+    exit 1
+  fi
+}
+
 cd "$ROOT_DIR"
 
+require_command pnpm
+
 gofmt -w main.go cmd/app internal tests
-npm run build --prefix frontend
+pnpm install --dir frontend --frozen-lockfile
+pnpm --dir frontend run build
 go vet ./...
 go test ./...
-npm run test --prefix frontend
+pnpm --dir frontend run test

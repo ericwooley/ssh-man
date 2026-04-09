@@ -25,8 +25,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
 
       - name: Resolve release version
         run: |
@@ -34,19 +40,19 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
-        run: npm ci --prefix frontend
+        run: pnpm install --dir frontend --frozen-lockfile
 
       - name: Build frontend assets
-        run: npm run build --prefix frontend
+        run: pnpm --dir frontend run build
 
       - name: Run backend tests
         run: go test ./...
 
       - name: Run frontend tests
-        run: npm test --prefix frontend -- --run
+        run: pnpm --dir frontend run test
 
       - name: Build release artifact
-        run: ./scripts/package-darwin-release.sh "$VERSION"
+        run: bash ./scripts/package-darwin-release.sh "$VERSION"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
