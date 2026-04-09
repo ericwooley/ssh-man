@@ -11,6 +11,10 @@
 
 - Q: Which accessibility standard should this feature target for compliance? → A: Platform-native baseline.
 
+### Session 2026-04-09
+
+- Q: Which spec should capture the sleep/reconnect behavior? → A: `001-ssh-connection-manager`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Organize Servers and Connection Configurations (Priority: P1)
@@ -43,6 +47,7 @@ As an operator, I want to start port forwards and SOCKS proxies from saved confi
 2. **Given** a valid saved SOCKS configuration, **When** the user starts it, **Then** the app opens the proxy session and shows that the SOCKS endpoint is available for use.
 3. **Given** an active session is interrupted after it was running successfully, **When** the underlying connection becomes unavailable, **Then** the app marks the session as reconnecting, attempts recovery automatically, and returns the session to running or failed with a clear status message.
 4. **Given** the user uses an encrypted SSH key, **When** authentication is required, **Then** the app lets the user unlock the key and proceed without requiring an unencrypted replacement key.
+5. **Given** the app still shows a session as running after the computer sleeps or the network path silently stalls, **When** the app performs its connection health check, **Then** it detects the stale tunnel, marks the session as reconnecting, and re-establishes the connection or surfaces a clear failure state.
 
 ---
 
@@ -72,6 +77,7 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 - Previously saved configuration data is missing, partially corrupted, or incompatible with the current app state.
 - Linux and macOS expose different installed-browser paths or launch behaviors, but the visible workflow must remain equivalent.
 - The app closes or the machine sleeps while active tunnels are reconnecting or waiting for credentials.
+- The computer sleeps or resumes in a way that leaves a tunnel appearing connected locally while the SSH transport is no longer usable.
 
 ## Platform & Environment Considerations *(include for desktop or device-bound features)*
 
@@ -90,6 +96,7 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 - **FR-005**: The system MUST support saved connection configurations for local port forwarding and SOCKS proxying.
 - **FR-006**: The system MUST display the current state of each active or recently attempted connection configuration, including at minimum idle, running, reconnecting, and failed states.
 - **FR-007**: The system MUST automatically attempt to reconnect an active session after an unexpected disconnection and MUST surface whether recovery succeeded or failed.
+- **FR-007A**: While a session is shown as running, the system MUST periodically verify tunnel health and treat an unresponsive transport as disconnected even if the local app process is still alive.
 - **FR-008**: The system MUST support authentication using encrypted SSH keys and MUST provide a user flow for unlocking those keys when required.
 - **FR-009**: The system MUST preserve saved servers, connection configurations, and user theme preference between app launches in the standard application configuration location for the current operating system.
 - **FR-010**: When a SOCKS proxy configuration is available, the system MUST let the user choose from installed supported browsers on the device.
@@ -116,7 +123,7 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 
 - **SC-001**: In usability testing, 90% of target users can create a server with at least two connection configurations and start one of them in under 3 minutes without assistance.
 - **SC-002**: In validation runs covering saved SOCKS configurations on both supported platforms, users can launch a selected installed browser through the proxy in under 15 seconds after selecting the launch action in 95% of successful cases.
-- **SC-003**: In controlled interruption tests where connectivity is restored within 60 seconds, at least 95% of previously running sessions automatically recover without requiring the user to recreate the configuration.
+- **SC-003**: In controlled interruption tests, including sleep/resume and stalled-transport scenarios where connectivity is restored within 60 seconds, at least 95% of previously running sessions automatically recover without requiring the user to recreate the configuration.
 - **SC-004**: In task-based testing with 50 saved connection configurations, 90% of users can locate the correct server and configuration they need in under 10 seconds.
 - **SC-005**: In post-task surveys for the primary workflows, at least 85% of users rate the interface as clean and easy to understand.
 - **SC-006**: In accessibility validation on both supported platforms, 100% of primary workflows can be completed with keyboard-only navigation and pass the team's platform-native accessibility checklist for labels, focus visibility, and readable themed presentation.
