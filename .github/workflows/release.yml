@@ -61,3 +61,41 @@ jobs:
           name: ssh-man ${{ env.VERSION }}
           generate_release_notes: true
           files: dist/ssh-man.dmg
+
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: ericwooley/homebrew-apps
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-apps
+
+      - name: Calculate release SHA256
+        run: |
+          SHA="$(shasum -a 256 dist/ssh-man.dmg | awk '{print $1}')"
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: Update Homebrew cask
+        run: |
+          ruby <<'RUBY'
+          path = "homebrew-apps/Casks/ssh-man.rb"
+          content = File.read(path)
+
+          content.sub!(/version ".*"/, %(version "#{ENV.fetch("VERSION")}"))
+          content.sub!(/sha256 ".*"/, %(sha256 "#{ENV.fetch("SHA")}"))
+          content.sub!(%r{url ".*"}, %(url "https://github.com/ericwooley/ssh-man/releases/download/#{ENV.fetch("GITHUB_REF_NAME")}/ssh-man.dmg"))
+
+          File.write(path, content)
+          RUBY
+
+      - name: Commit and push tap update
+        run: |
+          cd homebrew-apps
+
+          if git diff --quiet -- Casks/ssh-man.rb; then
+            printf 'Homebrew cask already up to date.\n'
+            exit 0
+          fi
+
+          git add Casks/ssh-man.rb
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Update ssh-man to ${VERSION}"
+          git push
