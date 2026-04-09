@@ -19,6 +19,7 @@ const { api } = vi.hoisted(() => ({
     previewBrowserLaunchThroughSocks: vi.fn(),
     openDevTools: vi.fn(),
     listRuntimeSessions: vi.fn(),
+    listSessionHistory: vi.fn(),
   },
 }))
 
@@ -53,6 +54,7 @@ describe('App', () => {
     api.previewBrowserLaunchThroughSocks.mockResolvedValue({ command: 'google-chrome --proxy-server=socks5://127.0.0.1:1080' })
     api.openDevTools.mockResolvedValue(undefined)
     api.listRuntimeSessions.mockResolvedValue([])
+    api.listSessionHistory.mockResolvedValue([])
 
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn(async () => {}) },
@@ -280,5 +282,34 @@ describe('App', () => {
       expect(api.submitKeyUnlock).toHaveBeenNthCalledWith(2, 'config-2', 'hunter2')
       expect(screen.getByText('Unlocked and started 2 tunnels.')).toBeTruthy()
     })
+  })
+
+  it('loads and copies connection history for the selected tunnel', async () => {
+    api.loadInitialState.mockResolvedValue({
+      servers: [{
+        server: { id: 'server-1', name: 'Primary', host: 'example.com', port: 22, username: 'eric', authMode: 'private_key', keyReference: '~/.ssh/id_ed25519' },
+        configurations: [{ id: 'config-1', serverId: 'server-1', label: 'Docs SOCKS', connectionType: 'socks_proxy', socksPort: 1080, autoReconnectEnabled: true }],
+      }],
+      preferences: { theme: 'dark', lastSelectedServerId: 'server-1' },
+      sessions: [{ configurationId: 'config-1', status: 'connected', boundPort: 1080, statusDetail: 'Listening on localhost:1080' }],
+      diagnostics: { appDataPath: '/tmp/ssh-man', databasePath: '/tmp/ssh-man/ssh-man.db' },
+      message: '',
+      recoverable: false,
+    })
+    api.listSessionHistory.mockResolvedValue([
+      { id: 'entry-1', configurationId: 'config-1', outcome: 'connected', endedAt: '2026-04-09T12:00:00Z', message: 'Listening on localhost:1080' },
+    ])
+
+    render(App)
+
+    await waitFor(() => {
+      expect(api.listSessionHistory).toHaveBeenCalledWith('config-1')
+      expect(screen.getAllByText('Listening on localhost:1080').length).toBeGreaterThan(0)
+      expect(screen.getByRole('button', { name: 'Copy history' }).hasAttribute('disabled')).toBe(false)
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy history' }))
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('[2026-04-09T12:00:00Z] connected: Listening on localhost:1080')
   })
 })

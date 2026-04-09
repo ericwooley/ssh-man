@@ -46,15 +46,16 @@ If frontend type or accessibility checks are added during implementation, includ
 
 ## Current Repository Status
 
-- `gofmt -w main.go cmd/app internal tests`: passing as of 2026-04-06.
-- `go vet ./...`: passing as of 2026-04-06.
-- `go test ./...`: passing as of 2026-04-06.
-- `npm run test` from `frontend/`: passing as of 2026-04-06.
-- `npm run build` from `frontend/`: passing as of 2026-04-06.
-- `./scripts/build-current-os.sh`: passing as of 2026-04-06. Verified from the current clone to `build/bin/ssh-man` in this workspace.
-- `./scripts/validate.sh`: passing as of 2026-04-06.
-- `wails doctor`: ran on Linux as of 2026-04-06 and still reports missing default WebKit packages unless the host has the GTK/WebKit development packages installed.
-- `./scripts/wails-build-linux.sh`: passing as of 2026-04-06. This wraps `wails build -clean -tags webkit2_41` and produced `build/bin/ssh-man` in this workspace.
+- `gofmt -w main.go cmd/app internal tests`: passing as of 2026-04-09 via `./scripts/validate.sh`.
+- `go vet ./...`: passing as of 2026-04-09 via `./scripts/validate.sh`.
+- `go test ./...`: passing as of 2026-04-09.
+- `npm run test` from `frontend/`: passing as of 2026-04-09 via `npm run validate --prefix frontend`.
+- `npm run build` from `frontend/`: passing as of 2026-04-09.
+- `npm run validate --prefix frontend`: passing as of 2026-04-09.
+- `./scripts/validate.sh`: passing as of 2026-04-09.
+- `wails doctor`: ran on Linux as of 2026-04-09 and reports missing default `libwebkit` packages on this Ubuntu 24.04 host.
+- `wails build -clean`: ran on Linux as of 2026-04-09 and failed on this host because `webkit2gtk-4.0` was not present in `pkg-config`.
+- `./scripts/wails-build-linux.sh`: passing as of 2026-04-09. This wraps `wails build -clean -tags webkit2_41` and produced `build/bin/ssh-man` in this workspace.
 - macOS validation outcomes are still pending local execution on a macOS machine.
 
 ## Local Development Notes
@@ -80,10 +81,11 @@ If frontend type or accessibility checks are added during implementation, includ
 9. Open the browser selector for the running SOCKS session and confirm installed supported browsers are listed.
 10. Launch a selected browser through the SOCKS session and confirm the action succeeds or returns a clear failure reason.
 11. Toggle between light and dark themes and verify readable text, visible focus states, and keyboard-complete access to primary actions.
-12. Trigger invalid inputs such as duplicate/conflicting local ports, missing browser availability, or unavailable config storage, and confirm the app provides actionable error feedback.
+12. Open the recent connection history for the selected tunnel and confirm start, stop, reconnect, and failure events remain readable and can be copied for sharing without exposing key material.
+13. Trigger invalid inputs such as duplicate/conflicting local ports, missing browser availability, or unavailable config storage, and confirm the app provides actionable error feedback.
 
 ## Platform Validation Notes
 
-- Linux: `wails build -clean -tags webkit2_41` was executed successfully on Ubuntu 24.04 in this workspace and produced `build/bin/ssh-man`. The helper script `./scripts/wails-build-linux.sh` now captures that build flow. `wails doctor` may still report missing default WebKit packages depending on the installed distro packages.
+- Linux: `wails doctor` was run on Ubuntu 24.04 in this workspace on 2026-04-09 and reported missing default `libwebkit` packages. A plain `wails build -clean` failed for the same `webkit2gtk-4.0` dependency reason. `wails build -clean -tags webkit2_41` succeeded, and `./scripts/wails-build-linux.sh` now captures that verified build flow and produced `build/bin/ssh-man`.
 - macOS: validate the equivalent flows, including app path resolution and browser launch behavior with the same user-visible workflow. This remains pending local execution on macOS.
 - Both platforms must support the same saved-data, session-management, browser-selection, theme, and accessibility flows even if OS-native prompts or browser names differ.

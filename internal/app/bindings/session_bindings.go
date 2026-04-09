@@ -57,3 +57,15 @@ func (a *AppBindings) ListRuntimeSessions() (any, error) {
 	}
 	return results, nil
 }
+
+func (a *AppBindings) ListSessionHistory(configurationID string) (any, error) {
+	entries, err := a.app.SessionService.ListHistory(context.Background(), configurationID)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load connection history. %w", err)
+	}
+	results := make([]any, 0, len(entries))
+	for _, entry := range entries {
+		results = append(results, entry)
+	}
+	return results, nil
+}

@@ -18,8 +18,24 @@ export function LaunchBrowserThroughSocks(arg1, arg2) {
   return window['go']['bindings']['AppBindings']['LaunchBrowserThroughSocks'](arg1, arg2);
 }
 
+export function ListRuntimeSessions() {
+  return window['go']['bindings']['AppBindings']['ListRuntimeSessions']();
+}
+
+export function ListSessionHistory(arg1) {
+  return window['go']['bindings']['AppBindings']['ListSessionHistory'](arg1);
+}
+
 export function LoadInitialState() {
   return window['go']['bindings']['AppBindings']['LoadInitialState']();
+}
+
+export function OpenDevTools() {
+  return window['go']['bindings']['AppBindings']['OpenDevTools']();
+}
+
+export function PreviewBrowserLaunchThroughSocks(arg1, arg2) {
+  return window['go']['bindings']['AppBindings']['PreviewBrowserLaunchThroughSocks'](arg1, arg2);
 }
 
 export function RetryConfiguration(arg1) {
@@ -38,8 +54,20 @@ export function SaveServer(arg1) {
   return window['go']['bindings']['AppBindings']['SaveServer'](arg1);
 }
 
+export function SetContext(arg1) {
+  return window['go']['bindings']['AppBindings']['SetContext'](arg1);
+}
+
+export function Shutdown(arg1) {
+  return window['go']['bindings']['AppBindings']['Shutdown'](arg1);
+}
+
 export function StartConfiguration(arg1) {
   return window['go']['bindings']['AppBindings']['StartConfiguration'](arg1);
+}
+
+export function StartServerConfigurations(arg1) {
+  return window['go']['bindings']['AppBindings']['StartServerConfigurations'](arg1);
 }
 
 export function StopConfiguration(arg1) {

@@ -1,5 +1,19 @@
 export namespace bindings {
 	
+	export class Diagnostics {
+	    appDataPath: string;
+	    databasePath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Diagnostics(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.appDataPath = source["appDataPath"];
+	        this.databasePath = source["databasePath"];
+	    }
+	}
 	export class ServerWithConfigurations {
 	    server: server.Server;
 	    configurations: config.ConnectionConfiguration[];
@@ -36,6 +50,7 @@ export namespace bindings {
 	    servers: ServerWithConfigurations[];
 	    preferences: preferences.UserPreference;
 	    sessions: any[];
+	    diagnostics: Diagnostics;
 	    message?: string;
 	    recoverable?: boolean;
 	
@@ -48,6 +63,7 @@ export namespace bindings {
 	        this.servers = this.convertValues(source["servers"], ServerWithConfigurations);
 	        this.preferences = this.convertValues(source["preferences"], preferences.UserPreference);
 	        this.sessions = source["sessions"];
+	        this.diagnostics = this.convertValues(source["diagnostics"], Diagnostics);
 	        this.message = source["message"];
 	        this.recoverable = source["recoverable"];
 	    }

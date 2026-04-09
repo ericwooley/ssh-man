@@ -27,5 +27,5 @@ Record platform-sensitive validation for persistence, browser discovery, and pac
 
 ## Validation Notes
 
-- Linux: pending local execution notes.
+- Linux: `wails doctor` was run on Ubuntu 24.04 on 2026-04-09 and reported missing default `libwebkit` packages on this host. `wails build -clean` failed for the same `webkit2gtk-4.0` dependency gap. `./scripts/wails-build-linux.sh` succeeded and produced `build/bin/ssh-man` using the required `webkit2_41` tag.
 - macOS: pending local execution notes.

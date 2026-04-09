@@ -57,6 +57,16 @@ func (s *stubHistoryStore) Add(_ context.Context, entry SessionHistoryEntry) err
 	return nil
 }
 
+func (s *stubHistoryStore) ListByConfiguration(_ context.Context, configurationID string) ([]SessionHistoryEntry, error) {
+	entries := make([]SessionHistoryEntry, 0, len(s.entries))
+	for _, entry := range s.entries {
+		if entry.ConfigurationID == configurationID {
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
 type stubRunner struct {
 	startErr  error
 	stopErr   error
@@ -368,5 +378,24 @@ func TestHandleDisconnectDoesNotOverwriteManualStop(t *testing.T) {
 	}
 	if reconnectRunner.started {
 		t.Fatal("expected reconnect runner not to start after manual stop")
+	}
+}
+
+func TestListHistoryReturnsEntriesForConfiguration(t *testing.T) {
+	history := &stubHistoryStore{entries: []SessionHistoryEntry{
+		{ID: "entry-1", ConfigurationID: "config-1", Outcome: OutcomeConnected, Message: "Listening on localhost:1080"},
+		{ID: "entry-2", ConfigurationID: "config-2", Outcome: OutcomeStopped, Message: "Tunnel stopped"},
+	}}
+	service := NewService(nil, nil, history, NewRuntimeStore())
+
+	entries, err := service.ListHistory(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(entries))
+	}
+	if entries[0].ID != "entry-1" {
+		t.Fatalf("unexpected history entry: %+v", entries[0])
 	}
 }

@@ -29,3 +29,4 @@ Validate browser discovery, SOCKS-only launch eligibility, and theme readability
 - Unsupported browsers are communicated clearly and cannot be launched.
 - Theme changes do not reduce contrast or hide focus indicators.
 - Keyboard-only navigation can complete browser selection and launch.
+- Linux and macOS may expose different browser names or install locations, but the user-visible discovery and launch flow should remain the same.

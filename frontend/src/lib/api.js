@@ -9,6 +9,7 @@ const memoryState = {
   servers: [],
   preferences: { theme: 'dark', lastSelectedServerId: '' },
   sessions: [],
+  sessionHistory: [],
 }
 
 function id() {
@@ -19,6 +20,14 @@ function syncSession(session) {
   const next = memoryState.sessions.filter((item) => item.configurationId !== session.configurationId)
   next.push(session)
   memoryState.sessions = next
+  memoryState.sessionHistory = [{
+    id: id(),
+    configurationId: session.configurationId,
+    startedAt: new Date().toISOString(),
+    endedAt: new Date().toISOString(),
+    outcome: session.status === 'connected' ? 'connected' : session.status === 'stopped' ? 'stopped' : 'failed_runtime',
+    message: session.statusDetail || 'Tunnel updated',
+  }].concat(memoryState.sessionHistory.filter((item) => item.configurationId !== session.configurationId || item.message !== (session.statusDetail || 'Tunnel updated')))
   return session
 }
 
@@ -195,4 +204,11 @@ export async function listRuntimeSessions() {
     return appBindings().ListRuntimeSessions()
   }
   return cloneState(memoryState.sessions)
+}
+
+export async function listSessionHistory(configurationId) {
+  if (hasWailsRuntime()) {
+    return appBindings().ListSessionHistory(configurationId)
+  }
+  return cloneState(memoryState.sessionHistory.filter((item) => item.configurationId === configurationId))
 }

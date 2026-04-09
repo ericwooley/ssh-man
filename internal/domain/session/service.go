@@ -26,6 +26,7 @@ type ServerStore interface {
 
 type HistoryStore interface {
 	Add(ctx context.Context, entry SessionHistoryEntry) error
+	ListByConfiguration(ctx context.Context, configurationID string) ([]SessionHistoryEntry, error)
 }
 
 type Factory interface {
@@ -66,6 +67,19 @@ func (s *Service) Get(id string) (RuntimeSession, bool) {
 
 func (s *Service) Snapshot() []RuntimeSession {
 	return s.runtimes.List()
+}
+
+func (s *Service) ListHistory(ctx context.Context, configurationID string) ([]SessionHistoryEntry, error) {
+	if s.history == nil {
+		return nil, nil
+	}
+
+	entries, err := s.history.ListByConfiguration(ctx, configurationID)
+	if err != nil {
+		return nil, fmt.Errorf("load session history: %w", err)
+	}
+
+	return entries, nil
 }
 
 func (s *Service) Start(ctx context.Context, configurationID string) (RuntimeSession, error) {

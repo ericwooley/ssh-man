@@ -70,4 +70,26 @@ describe('SessionStatus', () => {
 
     expect(screen.getByText('SOCKS proxy on :43123')).toBeTruthy()
   })
+
+  it('renders recent history and copies it on request', async () => {
+    const onCopyHistory = vi.fn()
+
+    render(SessionStatus, {
+      props: {
+        configuration: { id: 'config-1', label: 'SOCKS', connectionType: 'socks_proxy', socksPort: 1080 },
+        session: { status: 'connected', statusDetail: 'Listening on localhost:1080' },
+        history: [
+          { id: 'entry-1', configurationId: 'config-1', outcome: 'connected', endedAt: '2026-04-09T12:00:00Z', message: 'Listening on localhost:1080' },
+        ],
+        onCopyHistory,
+      },
+    })
+
+    expect(screen.getByText('Recent connection history')).toBeTruthy()
+    expect(screen.getAllByText('Listening on localhost:1080').length).toBeGreaterThan(0)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy history' }))
+
+    expect(onCopyHistory).toHaveBeenCalledWith('config-1')
+  })
 })

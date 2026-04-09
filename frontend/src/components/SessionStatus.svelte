@@ -1,8 +1,10 @@
 <script>
   export let configuration = null
   export let session = null
+  export let history = []
   export let onStart = () => {}
   export let onStop = () => {}
+  export let onCopyHistory = () => {}
 
   const activeStatuses = ['starting', 'connected', 'reconnecting']
   const startableStatuses = ['stopped', 'failed']
@@ -59,6 +61,35 @@
     <div class="runtime-actions-grid">
       <button class="button button-primary" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
       <button class="button button-ghost danger" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
+    </div>
+
+    <div class="history-panel" aria-labelledby="session-history-heading">
+      <div class="section-heading">
+        <div>
+          <h3 id="session-history-heading">Recent connection history</h3>
+          <p>User-visible outcomes for this saved tunnel.</p>
+        </div>
+        <button class="button button-ghost button-small" type="button" disabled={history.length === 0} on:click={() => onCopyHistory(configuration.id)}>Copy history</button>
+      </div>
+
+      {#if history.length > 0}
+        <ul class="history-list" aria-label="Recent connection history entries">
+          {#each history as entry (entry.id)}
+            <li class="history-item">
+              <div class="history-item-topline">
+                <strong>{entry.outcome.replaceAll('_', ' ')}</strong>
+                <span class="history-timestamp">{new Date(entry.endedAt || entry.startedAt).toLocaleString()}</span>
+              </div>
+              <p>{entry.message}</p>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <div class="empty-state compact">
+          <h3>No recorded connection events</h3>
+          <p>Start or stop this tunnel to build a shareable troubleshooting trail.</p>
+        </div>
+      {/if}
     </div>
   {:else}
     <div class="empty-state compact">

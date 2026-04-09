@@ -5,6 +5,7 @@
     deleteServer,
     discoverBrowsers,
     launchBrowserThroughSocks,
+    listSessionHistory,
     listRuntimeSessions,
     loadInitialState,
     openDevTools,
@@ -83,6 +84,7 @@
   let unlockConfiguration = null
   let unlockSession = null
   let runtimeSessionSnapshot = []
+  let sessionHistory = []
   let activeRuntimeConnections = []
   let totalTunnelCount = 0
   let connectedSessionCount = 0
@@ -91,6 +93,43 @@
   let currentIssue = ''
   let browserDiscoveryKey = ''
   let browserPreviewKey = ''
+  let historyConfigurationKey = ''
+
+  function normalizeHistoryEntry(entry) {
+    if (!entry) return null
+
+    const id = entry.id || entry.ID || ''
+    const configurationId = entry.configurationId || entry.ConfigurationID || ''
+    if (!id || !configurationId) return null
+
+    return {
+      id,
+      configurationId,
+      startedAt: entry.startedAt || entry.StartedAt || '',
+      endedAt: entry.endedAt || entry.EndedAt || '',
+      outcome: entry.outcome || entry.Outcome || '',
+      message: entry.message || entry.Message || '',
+    }
+  }
+
+  function replaceSessionHistory(nextEntries) {
+    sessionHistory = (nextEntries || []).map((entry) => normalizeHistoryEntry(entry)).filter(Boolean)
+  }
+
+  async function refreshSessionHistory(configurationId) {
+    if (!configurationId) {
+      sessionHistory = []
+      return
+    }
+
+    try {
+      replaceSessionHistory(await listSessionHistory(configurationId))
+    } catch (error) {
+      banner = error.message || 'Connection history could not be loaded.'
+      diagnosticDetails = error.message || ''
+      bannerKind = 'warning'
+    }
+  }
 
   function normalizeSession(session) {
     if (!session) return null
@@ -462,6 +501,7 @@
       const session = await startConfiguration(configurationId)
       upsertSession(session)
       await refreshRuntimeSessions()
+      await refreshSessionHistory(configurationId)
       banner = session.statusDetail || ''
       diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
@@ -514,6 +554,7 @@
       const session = await stopConfiguration(configurationId)
       upsertSession(session)
       await refreshRuntimeSessions()
+      await refreshSessionHistory(configurationId)
       banner = session.statusDetail || ''
       diagnosticDetails = ''
       bannerKind = 'info'
@@ -529,6 +570,7 @@
       const session = await retryConfiguration(configurationId)
       upsertSession(session)
       await refreshRuntimeSessions()
+      await refreshSessionHistory(configurationId)
       banner = session.statusDetail || ''
       diagnosticDetails = ''
       bannerKind = session.status === 'failed' ? 'danger' : session.status === 'needs_attention' ? 'warning' : 'info'
@@ -551,6 +593,7 @@
       }
 
       await refreshRuntimeSessions()
+      await refreshSessionHistory(configurationId)
       const remainingAttentionSessions = unlockedSessions.filter((session) => session.status === 'needs_attention')
       const connectedCount = unlockedSessions.filter((session) => session.status === 'connected').length
 
@@ -646,6 +689,27 @@
     diagnosticDetails = ''
     bannerKind = 'info'
     await hydrate()
+    await refreshSessionHistory(selectedConfigurationId)
+  }
+
+  async function handleCopyHistory(configurationId) {
+    if (!configurationId || sessionHistory.length === 0) return
+
+    const lines = sessionHistory.map((entry) => {
+      const timestamp = entry.endedAt || entry.startedAt || ''
+      return `[${timestamp}] ${entry.outcome}: ${entry.message}`
+    })
+
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      banner = 'Connection history copied.'
+      diagnosticDetails = ''
+      bannerKind = 'info'
+    } catch (error) {
+      banner = error.message || 'Connection history could not be copied.'
+      diagnosticDetails = error.message || ''
+      bannerKind = 'warning'
+    }
   }
 
   function editConfiguration(configuration) {
@@ -724,6 +788,14 @@
   } else if (!nextBrowserPreviewKey) {
     browserPreviewKey = ''
     browserLaunchPreview = ''
+  }
+  $: nextHistoryConfigurationKey = selectedConfigurationId || ''
+  $: if (nextHistoryConfigurationKey && nextHistoryConfigurationKey !== historyConfigurationKey) {
+    historyConfigurationKey = nextHistoryConfigurationKey
+    refreshSessionHistory(nextHistoryConfigurationKey)
+  } else if (!nextHistoryConfigurationKey) {
+    historyConfigurationKey = ''
+    sessionHistory = []
   }
 
   $: if (typeof document !== 'undefined') {
@@ -864,8 +936,10 @@
           <SessionStatus
             configuration={selectedConfiguration}
             session={selectedSession}
+            history={sessionHistory}
             onStart={handleStart}
             onStop={handleStop}
+            onCopyHistory={handleCopyHistory}
           />
 
           {#if selectedConfiguration?.connectionType === 'socks_proxy'}

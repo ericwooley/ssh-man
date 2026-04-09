@@ -25,6 +25,7 @@ Validate saved tunnel startup, stop, reconnect feedback, and encrypted-key recov
 10. Confirm the status changes to `needs_attention` and the unlock form is available from keyboard-only navigation.
 11. Submit an incorrect passphrase and confirm the UI keeps the session in a recoverable failure or attention state with actionable guidance.
 12. Submit the correct passphrase and confirm the session transitions to `connected` without recreating the configuration.
+13. Open `Recent connection history` for the selected tunnel and confirm the list shows timestamped lifecycle entries that can be copied for troubleshooting.
 
 ## Expected Results
 
@@ -32,3 +33,4 @@ Validate saved tunnel startup, stop, reconnect feedback, and encrypted-key recov
 - Keyboard users can reach Start, Stop, Retry, and Unlock controls with visible focus styling.
 - Reconnect failures explain whether the issue is bind-related, SSH/auth-related, or connectivity-related.
 - Unlock prompts are only required when encrypted-key startup actually needs user input.
+- Copied history contains readable timestamps, outcomes, and messages without exposing secret material.

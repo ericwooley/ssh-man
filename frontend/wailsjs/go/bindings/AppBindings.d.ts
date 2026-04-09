@@ -4,6 +4,7 @@ import {bindings} from '../models';
 import {config} from '../models';
 import {preferences} from '../models';
 import {server} from '../models';
+import {context} from '../models';
 
 export function DeleteConnectionConfiguration(arg1:string):Promise<void>;
 
@@ -13,7 +14,15 @@ export function DiscoverBrowsers():Promise<any>;
 
 export function LaunchBrowserThroughSocks(arg1:string,arg2:string):Promise<void>;
 
+export function ListRuntimeSessions():Promise<any>;
+
+export function ListSessionHistory(arg1:string):Promise<any>;
+
 export function LoadInitialState():Promise<bindings.LoadInitialStateResult>;
+
+export function OpenDevTools():Promise<void>;
+
+export function PreviewBrowserLaunchThroughSocks(arg1:string,arg2:string):Promise<any>;
 
 export function RetryConfiguration(arg1:string):Promise<any>;
 
@@ -23,7 +32,13 @@ export function SavePreferences(arg1:preferences.UserPreference):Promise<prefere
 
 export function SaveServer(arg1:server.Server):Promise<server.Server>;
 
+export function SetContext(arg1:context.Context):Promise<void>;
+
+export function Shutdown(arg1:context.Context):Promise<void>;
+
 export function StartConfiguration(arg1:string):Promise<any>;
+
+export function StartServerConfigurations(arg1:string):Promise<any>;
 
 export function StopConfiguration(arg1:string):Promise<any>;
 
