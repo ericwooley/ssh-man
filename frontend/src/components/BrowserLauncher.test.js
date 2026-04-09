@@ -61,7 +61,7 @@ describe('BrowserLauncher', () => {
     })
 
     expect(screen.getByRole('option', { name: 'Safari (unsupported)' })).toBeTruthy()
-    expect(screen.getByRole('alert').textContent).toContain('cannot launch it through a SOCKS proxy')
+    expect(screen.getByRole('alert').textContent).toContain('macOS does not support launching it with a per-app SOCKS proxy')
     expect(screen.getByRole('button', { name: 'Launch through SOCKS' }).hasAttribute('disabled')).toBe(true)
 
     await rerender({

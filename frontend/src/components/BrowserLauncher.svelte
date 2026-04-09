@@ -43,7 +43,7 @@
     </div>
 
     {#if selectedBrowser && !selectedBrowser.supportsProxyLaunch}
-      <p class="error-text" role="alert">{selectedBrowser.displayName} was found, but this app cannot launch it through a SOCKS proxy on this platform yet.</p>
+      <p class="error-text" role="alert">{selectedBrowser.displayName} was found, but macOS does not support launching it with a per-app SOCKS proxy. Use Chrome, Chromium, Brave, or Firefox for isolated tunnel launches.</p>
     {/if}
 
     {#if launchPreview}

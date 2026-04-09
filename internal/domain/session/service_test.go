@@ -195,7 +195,7 @@ func TestHandleDisconnectReconnectsWhenEnabled(t *testing.T) {
 		t.Fatalf("expected connected state, got %s", state.Status)
 	}
 
-	initialRunner.Disconnect(errors.New("ssh keepalive failed: EOF"))
+	initialRunner.Disconnect(errors.New("ssh keepalive timed out after 5s: context deadline exceeded"))
 	time.Sleep(1200 * time.Millisecond)
 
 	state, ok := runtimes.Get("config-1")
@@ -346,7 +346,7 @@ func TestHandleDisconnectDoesNotOverwriteManualStop(t *testing.T) {
 		t.Fatalf("expected connected state, got %s", state.Status)
 	}
 
-	initialRunner.Disconnect(errors.New("ssh keepalive failed: EOF"))
+	initialRunner.Disconnect(errors.New("ssh keepalive timed out after 5s: context deadline exceeded"))
 	time.Sleep(100 * time.Millisecond)
 
 	state, err = service.Stop(context.Background(), "config-1")

@@ -6,20 +6,24 @@ func discoverDarwinBrowsers() []BrowserOption {
 	candidates := []struct {
 		ID          string
 		DisplayName string
-		AppPath     string
+		AppPaths    []string
 	}{
-		{ID: "google-chrome", DisplayName: "Google Chrome", AppPath: "/Applications/Google Chrome.app"},
-		{ID: "chromium", DisplayName: "Chromium", AppPath: "/Applications/Chromium.app"},
-		{ID: "brave-browser", DisplayName: "Brave", AppPath: "/Applications/Brave Browser.app"},
-		{ID: "firefox", DisplayName: "Firefox", AppPath: "/Applications/Firefox.app"},
+		{ID: "google-chrome", DisplayName: "Google Chrome", AppPaths: []string{"/Applications/Google Chrome.app"}},
+		{ID: "chromium", DisplayName: "Chromium", AppPaths: []string{"/Applications/Chromium.app"}},
+		{ID: "brave-browser", DisplayName: "Brave", AppPaths: []string{"/Applications/Brave Browser.app"}},
+		{ID: "firefox", DisplayName: "Firefox", AppPaths: []string{"/Applications/Firefox.app"}},
+		{ID: "safari", DisplayName: "Safari", AppPaths: []string{"/Applications/Safari.app", "/System/Applications/Safari.app"}},
 	}
 
 	options := make([]BrowserOption, 0, len(candidates))
 	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate.AppPath); err != nil {
-			continue
+		for _, appPath := range candidate.AppPaths {
+			if _, err := os.Stat(appPath); err != nil {
+				continue
+			}
+			options = append(options, BrowserOption{ID: candidate.ID, DisplayName: candidate.DisplayName, LaunchReference: appPath, SupportsProxyLaunch: candidate.ID != "safari"})
+			break
 		}
-		options = append(options, BrowserOption{ID: candidate.ID, DisplayName: candidate.DisplayName, LaunchReference: candidate.AppPath, SupportsProxyLaunch: true})
 	}
 	return options
 }
