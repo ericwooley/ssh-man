@@ -24,7 +24,7 @@ brew install --cask ssh-man
 xattr -d com.apple.quarantine /Applications/ssh-man.app
 ```
 
-The app is currently distributed unsigned, so remove the quarantine attribute after install before first launch.
+The app is currently distributed unsigned, so remove the quarantine attribute after install before first launch. If Homebrew replaces the app bundle during a later upgrade, run the same `xattr -d com.apple.quarantine /Applications/ssh-man.app` command again before opening the updated copy.
 
 ### Requirements
 
@@ -67,6 +67,7 @@ The packaged app bundle is written to `build/bin/ssh-man.app`.
 
 ```bash
 brew upgrade --cask ssh-man
+xattr -d com.apple.quarantine /Applications/ssh-man.app
 ```
 
 ## Linux
