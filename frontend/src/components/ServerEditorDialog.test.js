@@ -57,6 +57,17 @@ describe('ServerEditorDialog', () => {
     expect(onSubmit.mock.calls[0][0].name).toBe('Primary')
   })
 
+  it('defaults to SSH agent auth for new servers', () => {
+    render(ServerEditorDialog, {
+      props: {
+        open: true,
+      },
+    })
+
+    expect(screen.getByLabelText('Authentication mode').value).toBe('agent')
+    expect(screen.queryByLabelText('Private key path')).toBeNull()
+  })
+
   it('closes on escape and backdrop clicks', async () => {
     const onCancel = vi.fn()
 

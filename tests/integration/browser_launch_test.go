@@ -19,7 +19,7 @@ func TestBrowserLaunchValidationRequiresRunningSOCKSSession(t *testing.T) {
 
 	server := mustSaveServer(t, ctx, serverStore)
 	configuration := mustSaveSOCKSConfig(t, ctx, configStore, server.ID)
-	service := browser.NewService(configStore, runtimeStore)
+	service := browser.NewService("/tmp/ssh-man", configStore, runtimeStore)
 
 	err := service.LaunchThroughSOCKS(ctx, configuration.ID, "google-chrome")
 	if err == nil {
@@ -38,7 +38,7 @@ func TestBrowserLaunchValidationRejectsLocalForwardConfiguration(t *testing.T) {
 	configuration := mustSaveLocalForwardConfig(t, ctx, configStore, server.ID)
 	runtimeStore.Set(sessiondomain.RuntimeSession{ConfigurationID: configuration.ID, Status: sessiondomain.StatusConnected}, nil, "")
 
-	service := browser.NewService(configStore, runtimeStore)
+	service := browser.NewService("/tmp/ssh-man", configStore, runtimeStore)
 	err := service.LaunchThroughSOCKS(ctx, configuration.ID, "google-chrome")
 	if err == nil {
 		t.Fatal("expected local forward validation error")

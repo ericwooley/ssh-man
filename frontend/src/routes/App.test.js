@@ -78,7 +78,6 @@ describe('App', () => {
     await fireEvent.input(within(dialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
     await fireEvent.input(within(dialog).getByLabelText('Server host'), { target: { value: 'example.com' } })
     await fireEvent.input(within(dialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
-    await fireEvent.input(within(dialog).getByLabelText('Private key path'), { target: { value: '~/.ssh/id_ed25519' } })
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Save server' }))
 
     expect(screen.getByRole('heading', { name: 'Test server' })).toBeTruthy()
@@ -95,7 +94,6 @@ describe('App', () => {
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
     await fireEvent.input(within(serverDialog).getByLabelText('Server host'), { target: { value: 'example.com' } })
     await fireEvent.input(within(serverDialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
-    await fireEvent.input(within(serverDialog).getByLabelText('Private key path'), { target: { value: '~/.ssh/id_ed25519' } })
     await fireEvent.click(within(serverDialog).getByRole('button', { name: 'Save server' }))
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
@@ -120,7 +118,6 @@ describe('App', () => {
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
     await fireEvent.input(within(serverDialog).getByLabelText('Server host'), { target: { value: 'example.com' } })
     await fireEvent.input(within(serverDialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
-    await fireEvent.input(within(serverDialog).getByLabelText('Private key path'), { target: { value: '~/.ssh/id_ed25519' } })
     await fireEvent.click(within(serverDialog).getByRole('button', { name: 'Save server' }))
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
@@ -249,6 +246,7 @@ describe('App', () => {
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Primary' } })
     await fireEvent.input(within(serverDialog).getByLabelText('Server host'), { target: { value: 'example.com' } })
     await fireEvent.input(within(serverDialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
+    await fireEvent.change(within(serverDialog).getByLabelText('Authentication mode'), { target: { value: 'private_key' } })
     await fireEvent.input(within(serverDialog).getByLabelText('Private key path'), { target: { value: '~/.ssh/id_ed25519' } })
     await fireEvent.click(within(serverDialog).getByRole('button', { name: 'Save server' }))
 

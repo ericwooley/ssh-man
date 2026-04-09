@@ -6,9 +6,8 @@ import (
 	"path/filepath"
 )
 
-func ensureFirefoxProfile(option BrowserOption, socksPort int) (string, error) {
-	baseDir := filepath.Join(os.TempDir(), "ssh-man-browser-profiles")
-	profileDir := filepath.Join(baseDir, fmt.Sprintf("%s-%d", sanitizeBrowserID(option.ID), socksPort))
+func ensureFirefoxProfile(appDataDir string, serverID string, option BrowserOption, socksPort int) (string, error) {
+	profileDir := filepath.Join(profileScope(appDataDir, serverID, option), "firefox")
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return "", err
 	}

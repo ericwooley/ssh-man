@@ -2,6 +2,6 @@
 
 package browser
 
-func previewLaunchCommand(option BrowserOption, socksPort int) string {
+func previewLaunchCommand(string, string, BrowserOption, int) string {
 	return ""
 }

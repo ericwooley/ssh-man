@@ -32,13 +32,14 @@ type ConfigLookup interface {
 }
 
 type Service struct {
-	configs  ConfigLookup
-	runtimes RuntimeLookup
-	discover func(context.Context) ([]BrowserOption, error)
+	appDataDir string
+	configs    ConfigLookup
+	runtimes   RuntimeLookup
+	discover   func(context.Context) ([]BrowserOption, error)
 }
 
-func NewService(configs ConfigLookup, runtimes RuntimeLookup) *Service {
-	return &Service{configs: configs, runtimes: runtimes, discover: func(context.Context) ([]BrowserOption, error) {
+func NewService(appDataDir string, configs ConfigLookup, runtimes RuntimeLookup) *Service {
+	return &Service{appDataDir: appDataDir, configs: configs, runtimes: runtimes, discover: func(context.Context) ([]BrowserOption, error) {
 		return discoverBrowsers()
 	}}
 }
@@ -72,7 +73,7 @@ func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string
 		if runtimeState.BoundPort < 1 {
 			return fmt.Errorf("the SOCKS tunnel is connected, but its local port is unavailable")
 		}
-		return launchBrowser(option, runtimeState.BoundPort)
+		return launchBrowser(s.appDataDir, configuration.ServerID, option, runtimeState.BoundPort)
 	}
 
 	return fmt.Errorf("the selected browser is no longer available")
@@ -106,7 +107,7 @@ func (s *Service) PreviewLaunchThroughSOCKS(ctx context.Context, configurationID
 		return LaunchPreview{
 			BrowserID:       option.ID,
 			BrowserName:     option.DisplayName,
-			Command:         previewLaunchCommand(option, runtimeState.BoundPort),
+			Command:         previewLaunchCommand(s.appDataDir, configuration.ServerID, option, runtimeState.BoundPort),
 			Supported:       option.SupportsProxyLaunch,
 			ConfigurationID: configurationID,
 		}, nil

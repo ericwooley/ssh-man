@@ -8,7 +8,7 @@
     host: '',
     port: '22',
     username: '',
-    authMode: 'private_key',
+    authMode: 'agent',
     keyReference: '',
   }
   export let errors = {}

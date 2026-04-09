@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 )
 
-func launchDarwin(option BrowserOption, socksPort int) error {
+func launchDarwin(appDataDir string, serverID string, option BrowserOption, socksPort int) error {
 	if !option.SupportsProxyLaunch {
 		return fmt.Errorf("%s does not support proxy launch in this MVP", option.DisplayName)
 	}
 	if option.ID == "firefox" {
-		return launchDarwinFirefox(option, socksPort)
+		return launchDarwinFirefox(appDataDir, serverID, option, socksPort)
 	}
-	profileDir, err := ensureDarwinBrowserProfile(option)
+	profileDir, err := ensureDarwinBrowserProfile(appDataDir, serverID, option)
 	if err != nil {
 		return fmt.Errorf("prepare browser profile: %w", err)
 	}
@@ -30,8 +30,8 @@ func launchDarwin(option BrowserOption, socksPort int) error {
 	return cmd.Start()
 }
 
-func launchDarwinFirefox(option BrowserOption, socksPort int) error {
-	profileDir, err := ensureFirefoxProfile(option, socksPort)
+func launchDarwinFirefox(appDataDir string, serverID string, option BrowserOption, socksPort int) error {
+	profileDir, err := ensureFirefoxProfile(appDataDir, serverID, option, socksPort)
 	if err != nil {
 		return fmt.Errorf("prepare firefox profile: %w", err)
 	}
@@ -52,9 +52,8 @@ func launchDarwinFirefox(option BrowserOption, socksPort int) error {
 	).Start()
 }
 
-func ensureDarwinBrowserProfile(option BrowserOption) (string, error) {
-	baseDir := filepath.Join(os.TempDir(), "ssh-man-browser-profiles")
-	profileDir := filepath.Join(baseDir, sanitizeBrowserID(option.ID))
+func ensureDarwinBrowserProfile(appDataDir string, serverID string, option BrowserOption) (string, error) {
+	profileDir := filepath.Join(profileScope(appDataDir, serverID, option), "chromium")
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return "", err
 	}

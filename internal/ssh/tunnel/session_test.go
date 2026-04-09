@@ -36,3 +36,14 @@ func TestDescribeDisconnectErrorForKeepaliveTimeout(t *testing.T) {
 		t.Fatalf("expected %q in %q", want, message)
 	}
 }
+
+func TestDescribeStartErrorForMissingSSHAgentSocket(t *testing.T) {
+	message := DescribeStartError(
+		errors.New("ssh agent auth unavailable: SSH_AUTH_SOCK is not set"),
+		serverdomain.Server{Host: "example.com", Port: 22},
+		configdomain.ConnectionConfiguration{ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080},
+	)
+	if want := "cannot reach your local SSH agent"; !strings.Contains(message, want) {
+		t.Fatalf("expected %q in %q", want, message)
+	}
+}

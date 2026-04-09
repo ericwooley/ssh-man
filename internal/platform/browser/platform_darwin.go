@@ -6,6 +6,6 @@ func discoverBrowsers() ([]BrowserOption, error) {
 	return discoverDarwinBrowsers(), nil
 }
 
-func launchBrowser(option BrowserOption, socksPort int) error {
-	return launchDarwin(option, socksPort)
+func launchBrowser(appDataDir string, serverID string, option BrowserOption, socksPort int) error {
+	return launchDarwin(appDataDir, serverID, option, socksPort)
 }

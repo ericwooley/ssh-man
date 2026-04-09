@@ -28,13 +28,13 @@ describe('BrowserLauncher', () => {
           { id: 'chromium', displayName: 'Chromium', supportsProxyLaunch: true },
         ],
         selectedBrowserId: 'firefox',
-        launchPreview: 'firefox -new-instance -profile /tmp/ssh-man-browser-profiles/firefox-43123',
+        launchPreview: 'firefox -new-instance -profile /Users/test/Library/Application Support/ssh-man/browser-profiles/server-1/firefox/firefox',
         onLaunch,
         onSelect,
       },
     })
 
-    expect(screen.getByText('firefox -new-instance -profile /tmp/ssh-man-browser-profiles/firefox-43123')).toBeTruthy()
+    expect(screen.getByText('firefox -new-instance -profile /Users/test/Library/Application Support/ssh-man/browser-profiles/server-1/firefox/firefox')).toBeTruthy()
 
     await fireEvent.click(screen.getByRole('button', { name: 'Launch through SOCKS' }))
 

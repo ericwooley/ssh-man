@@ -172,7 +172,7 @@ func (s *Session) sendKeepalive() error {
 func (s *Session) authMethod() (ssh.AuthMethod, error) {
 	switch s.server.AuthMode {
 	case serverdomain.AuthModeAgent:
-		return nil, fmt.Errorf("ssh agent auth is not yet wired in this MVP")
+		return auth.LoadAgentAuthMethod()
 	case serverdomain.AuthModePrivateKey:
 		signer, err := auth.LoadSigner(s.server.KeyReference, s.passphrase)
 		if err != nil {
@@ -191,6 +191,8 @@ func DescribeStartError(err error, server serverdomain.Server, config configdoma
 
 	message := strings.ToLower(err.Error())
 	switch {
+	case strings.Contains(message, "ssh_auth_sock"):
+		return "SSH agent authentication is selected, but this app cannot reach your local SSH agent. Start your SSH agent, ensure SSH_AUTH_SOCK is available to the app, then retry."
 	case strings.Contains(message, "bind local port"):
 		return fmt.Sprintf("Couldn't listen on localhost:%d. Another app may already be using that port. Stop the conflicting app or choose another port, then retry.", config.BoundPort())
 	case strings.Contains(message, "connect to ssh server"):
@@ -201,8 +203,6 @@ func DescribeStartError(err error, server serverdomain.Server, config configdoma
 		return "The SSH key could not be unlocked. Verify the passphrase and key format, then retry."
 	case strings.Contains(message, "parse private key"):
 		return "The SSH key could not be parsed. Verify that the key file is valid and supported, then retry."
-	case strings.Contains(message, "ssh agent auth"):
-		return "SSH agent authentication is not available in this MVP yet. Switch this server to private-key authentication and retry."
 	default:
 		return fmt.Sprintf("Tunnel start failed. %s", err.Error())
 	}

@@ -45,7 +45,7 @@ func New(context.Context) (*Application, error) {
 	configService := configdomain.NewService(configStore)
 	preferencesService := preferencesdomain.NewService(prefStore)
 	sessionService := sessiondomain.NewService(configStore, serverStore, historyStore, runtimeStore)
-	browserService := browser.NewService(configStore, runtimeStore)
+	browserService := browser.NewService(configDir, configStore, runtimeStore)
 
 	return &Application{
 		ConfigDir:          configDir,

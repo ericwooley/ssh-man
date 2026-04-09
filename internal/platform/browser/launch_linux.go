@@ -3,26 +3,29 @@ package browser
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 )
 
-func launchLinux(option BrowserOption, socksPort int) error {
+func launchLinux(appDataDir string, serverID string, option BrowserOption, socksPort int) error {
 	if !option.SupportsProxyLaunch {
 		return fmt.Errorf("%s does not support proxy launch in this MVP", option.DisplayName)
 	}
 	if option.ID == "firefox" {
-		return launchLinuxFirefox(option, socksPort)
+		return launchLinuxFirefox(appDataDir, serverID, option, socksPort)
 	}
+	profileDir := filepath.Join(profileScope(appDataDir, serverID, option), "chromium")
 	cmd := exec.Command(
 		option.LaunchReference,
 		fmt.Sprintf("--proxy-server=socks5://127.0.0.1:%d", socksPort),
+		fmt.Sprintf("--user-data-dir=%s", profileDir),
 		"--proxy-bypass-list=<-loopback>",
 		"--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1",
 	)
 	return cmd.Start()
 }
 
-func launchLinuxFirefox(option BrowserOption, socksPort int) error {
-	profileDir, err := ensureFirefoxProfile(option, socksPort)
+func launchLinuxFirefox(appDataDir string, serverID string, option BrowserOption, socksPort int) error {
+	profileDir, err := ensureFirefoxProfile(appDataDir, serverID, option, socksPort)
 	if err != nil {
 		return fmt.Errorf("prepare firefox profile: %w", err)
 	}
