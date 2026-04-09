@@ -308,6 +308,10 @@ describe('App', () => {
       expect(screen.getByRole('button', { name: 'Copy history' }).hasAttribute('disabled')).toBe(false)
     })
 
+    const browserHeading = screen.getByRole('heading', { name: 'SOCKS-aware browser' })
+    const historyHeading = screen.getByRole('heading', { name: 'Recent connection history' })
+    expect(browserHeading.compareDocumentPosition(historyHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
     await fireEvent.click(screen.getByRole('button', { name: 'Copy history' }))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('[2026-04-09T12:00:00Z] connected: Listening on localhost:1080')

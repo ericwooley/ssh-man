@@ -218,12 +218,15 @@ textarea:focus-visible {
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+  align-items: start;
 }
 
 .workspace-primary-column,
 .workspace-secondary-column {
   display: grid;
   gap: 1rem;
+  align-content: start;
+  align-self: start;
 }
 
 .panel,
@@ -694,6 +697,11 @@ textarea:hover {
 
 .history-panel {
   padding-top: 0.25rem;
+}
+
+.history-toggle-row {
+  display: flex;
+  justify-content: center;
 }
 
 .history-list {

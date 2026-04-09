@@ -8,6 +8,10 @@
 
   const activeStatuses = ['starting', 'connected', 'reconnecting']
   const startableStatuses = ['stopped', 'failed']
+  const collapsedHistoryCount = 5
+
+  let historyExpanded = false
+  let historyOwnerId = ''
 
   function statusLabel(status) {
     switch (status) {
@@ -29,6 +33,12 @@
   $: currentStatus = session?.status || 'stopped'
   $: canStart = !configuration ? false : startableStatuses.includes(currentStatus) || !session
   $: canStop = Boolean(configuration) && (activeStatuses.includes(currentStatus) || currentStatus === 'needs_attention')
+  $: if ((configuration?.id || '') !== historyOwnerId) {
+    historyOwnerId = configuration?.id || ''
+    historyExpanded = false
+  }
+  $: hiddenHistoryCount = Math.max(history.length - collapsedHistoryCount, 0)
+  $: visibleHistory = historyExpanded ? history : history.slice(0, collapsedHistoryCount)
 </script>
 
 <section class="panel status-panel" aria-labelledby="session-status-heading">
@@ -74,7 +84,7 @@
 
       {#if history.length > 0}
         <ul class="history-list" aria-label="Recent connection history entries">
-          {#each history as entry (entry.id)}
+          {#each visibleHistory as entry (entry.id)}
             <li class="history-item">
               <div class="history-item-topline">
                 <strong>{entry.outcome.replaceAll('_', ' ')}</strong>
@@ -84,6 +94,23 @@
             </li>
           {/each}
         </ul>
+
+        {#if hiddenHistoryCount > 0}
+          <div class="history-toggle-row">
+            <button
+              class="button button-ghost button-small"
+              type="button"
+              aria-expanded={historyExpanded}
+              on:click={() => (historyExpanded = !historyExpanded)}
+            >
+              {#if historyExpanded}
+                Show fewer entries
+              {:else}
+                Show {hiddenHistoryCount} older entr{hiddenHistoryCount === 1 ? 'y' : 'ies'}
+              {/if}
+            </button>
+          </div>
+        {/if}
       {:else}
         <div class="empty-state compact">
           <h3>No recorded connection events</h3>

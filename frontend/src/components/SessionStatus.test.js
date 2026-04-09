@@ -92,4 +92,29 @@ describe('SessionStatus', () => {
 
     expect(onCopyHistory).toHaveBeenCalledWith('config-1')
   })
+
+  it('shows five history entries first and expands older entries on demand', async () => {
+    render(SessionStatus, {
+      props: {
+        configuration: { id: 'config-1', label: 'SOCKS', connectionType: 'socks_proxy', socksPort: 1080 },
+        session: { status: 'connected', statusDetail: 'Listening on localhost:1080' },
+        history: Array.from({ length: 6 }, (_, index) => ({
+          id: `entry-${index + 1}`,
+          configurationId: 'config-1',
+          outcome: 'connected',
+          endedAt: `2026-04-09T12:0${index}:00Z`,
+          message: `History event ${index + 1}`,
+        })),
+      },
+    })
+
+    expect(screen.getByText('History event 1')).toBeTruthy()
+    expect(screen.getByText('History event 5')).toBeTruthy()
+    expect(screen.queryByText('History event 6')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Show 1 older entry' }))
+
+    expect(screen.getByText('History event 6')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Show fewer entries' })).toBeTruthy()
+  })
 })

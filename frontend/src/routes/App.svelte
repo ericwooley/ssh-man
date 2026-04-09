@@ -933,15 +933,6 @@
         </div>
 
         <div class="workspace-secondary-column">
-          <SessionStatus
-            configuration={selectedConfiguration}
-            session={selectedSession}
-            history={sessionHistory}
-            onStart={handleStart}
-            onStop={handleStop}
-            onCopyHistory={handleCopyHistory}
-          />
-
           {#if selectedConfiguration?.connectionType === 'socks_proxy'}
             <BrowserLauncher
               configuration={selectedConfiguration}
@@ -954,6 +945,15 @@
               onLaunch={handleLaunchBrowser}
             />
           {/if}
+
+          <SessionStatus
+            configuration={selectedConfiguration}
+            session={selectedSession}
+            history={sessionHistory}
+            onStart={handleStart}
+            onStop={handleStop}
+            onCopyHistory={handleCopyHistory}
+          />
         </div>
       </div>
     </div>
