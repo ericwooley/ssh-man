@@ -15,6 +15,12 @@
 
 - Q: Which spec should capture the sleep/reconnect behavior? → A: `001-ssh-connection-manager`.
 
+### Session 2026-04-11
+
+- Q: What level of logging should the application provide for connection attempts, errors, and user actions? → A: User-accessible logs of connection events, errors, and core actions (can be shared with support if needed).
+- Q: What is the maximum number of servers and connection configurations the app must perform well with? → A: Unlimited (best effort; no guarantees).
+- Q: Should the app encrypt all saved configuration data (including server and connection info) at rest? → A: No encryption. Servers addresses and ports should not be considered sensitive information, nor should ssh key selection. The passwords are sensitive and shouldn't even be kept in memory once they are used to unlock the key.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Organize Servers and Connection Configurations (Priority: P1)
@@ -98,7 +104,7 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 - **FR-007**: The system MUST automatically attempt to reconnect an active session after an unexpected disconnection and MUST surface whether recovery succeeded or failed.
 - **FR-007A**: While a session is shown as running, the system MUST periodically verify tunnel health and treat an unresponsive transport as disconnected even if the local app process is still alive.
 - **FR-008**: The system MUST support authentication using encrypted SSH keys and MUST provide a user flow for unlocking those keys when required.
-- **FR-009**: The system MUST preserve saved servers, connection configurations, and user theme preference between app launches in the standard application configuration location for the current operating system.
+- **FR-009**: The system MUST preserve saved servers, connection configurations, and user theme preference between app launches in the standard application configuration location for the current operating system. Performance and stability must be maintained for any number of saved items supported within available platform resources; no hard limit will be imposed in software.
 - **FR-010**: When a SOCKS proxy configuration is available, the system MUST let the user choose from installed supported browsers on the device.
 - **FR-011**: The system MUST let the user launch a selected installed browser through a chosen running SOCKS proxy configuration with a single explicit launch action.
 - **FR-012**: If browser launch is unavailable, the selected browser cannot be found, or the SOCKS session is not usable, the system MUST prevent or fail the action with a clear explanation.
@@ -107,6 +113,7 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 - **FR-015**: The system MUST allow users to switch between dark and light themes at any time.
 - **FR-016**: The system MUST make primary workflows usable with platform-native accessibility support, including keyboard navigation, clear focus indication, discernible labels for interactive elements, and readable presentation in both themes.
 - **FR-017**: The system MUST provide clear user feedback when configuration data cannot be loaded, saved, or recovered from the platform-appropriate configuration location.
+- **FR-018**: The system MUST provide user-accessible logs of connection events, errors, and core actions, allowing users to view, export, or share logs for troubleshooting purposes. Logs must exclude sensitive private keys and credentials.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -124,7 +131,7 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 - **SC-001**: In usability testing, 90% of target users can create a server with at least two connection configurations and start one of them in under 3 minutes without assistance.
 - **SC-002**: In validation runs covering saved SOCKS configurations on both supported platforms, users can launch a selected installed browser through the proxy in under 15 seconds after selecting the launch action in 95% of successful cases.
 - **SC-003**: In controlled interruption tests, including sleep/resume and stalled-transport scenarios where connectivity is restored within 60 seconds, at least 95% of previously running sessions automatically recover without requiring the user to recreate the configuration.
-- **SC-004**: In task-based testing with 50 saved connection configurations, 90% of users can locate the correct server and configuration they need in under 10 seconds.
+- **SC-004**: In task-based testing with at least 50 saved connection configurations (and up to any number supported by system resources), 90% of users can locate the correct server and configuration they need in under 10 seconds.
 - **SC-005**: In post-task surveys for the primary workflows, at least 85% of users rate the interface as clean and easy to understand.
 - **SC-006**: In accessibility validation on both supported platforms, 100% of primary workflows can be completed with keyboard-only navigation and pass the team's platform-native accessibility checklist for labels, focus visibility, and readable themed presentation.
 
