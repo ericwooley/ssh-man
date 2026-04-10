@@ -39,7 +39,7 @@
   tick().then(() => labelInput?.focus())
 </script>
 
-<form class="editor-card" on:submit|preventDefault={() => onSubmit(value)}>
+<form class="editor-card dialog dialog-body gap-md" on:submit|preventDefault={() => onSubmit(value)}>
   <div class="editor-header">
     <div>
       <p class="eyebrow">Editor</p>
@@ -57,7 +57,7 @@
       <p>Name the tunnel and choose the traffic pattern.</p>
     </div>
 
-    <label>
+    <label class:field-error={Boolean(errors.label)}>
       <span>Label</span>
       <input bind:this={labelInput} bind:value={value.label} aria-label="Label" placeholder="Staging SOCKS" aria-invalid={errors.label ? 'true' : 'false'} />
       {#if errors.label}<small class="error-text">{errors.label}</small>{/if}
@@ -80,17 +80,17 @@
 
     {#if value.connectionType === 'local_forward'}
       <div class="field-grid">
-        <label>
+        <label class:field-error={Boolean(errors.localPort)}>
           <span>Local port</span>
           <input bind:value={value.localPort} aria-label="Local port" inputmode="numeric" aria-invalid={errors.localPort ? 'true' : 'false'} />
           {#if errors.localPort}<small class="error-text">{errors.localPort}</small>{/if}
         </label>
-        <label>
+        <label class:field-error={Boolean(errors.remoteHost)}>
           <span>Remote host</span>
           <input bind:value={value.remoteHost} aria-label="Remote host" placeholder="127.0.0.1" aria-invalid={errors.remoteHost ? 'true' : 'false'} />
           {#if errors.remoteHost}<small class="error-text">{errors.remoteHost}</small>{/if}
         </label>
-        <label>
+        <label class:field-error={Boolean(errors.remotePort)}>
           <span>Remote port</span>
           <input bind:value={value.remotePort} aria-label="Remote port" inputmode="numeric" aria-invalid={errors.remotePort ? 'true' : 'false'} />
           {#if errors.remotePort}<small class="error-text">{errors.remotePort}</small>{/if}
@@ -107,7 +107,7 @@
         </label>
 
         {#if socksPortModeValue === 'manual'}
-          <label>
+          <label class:field-error={Boolean(errors.socksPort)}>
             <span>SOCKS port</span>
             <input bind:value={value.socksPort} aria-label="SOCKS port" inputmode="numeric" placeholder="1080" aria-invalid={errors.socksPort ? 'true' : 'false'} />
           </label>
@@ -137,7 +137,7 @@
     </label>
   </section>
 
-  <div class="editor-actions">
+  <div class="editor-actions dialog-actions">
     <button class="button button-primary" type="submit">Save tunnel</button>
     <button class="button button-ghost" type="button" on:click={onCancel}>Cancel</button>
   </div>

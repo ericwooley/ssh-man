@@ -32,8 +32,8 @@
 
 {#if open}
   <div class="dialog-backdrop" role="presentation" on:click|self={onCancel}>
-    <div class="dialog-card" aria-modal="true" role="dialog" aria-labelledby="server-dialog-heading" tabindex="0">
-      <form class="editor-card modal-editor-card" on:submit|preventDefault={() => onSubmit(value)}>
+    <div class="dialog-card dialog" aria-modal="true" role="dialog" aria-labelledby="server-dialog-heading" tabindex="0">
+      <form class="editor-card modal-editor-card dialog-body gap-md" on:submit|preventDefault={() => onSubmit(value)}>
         <div class="editor-header">
           <div>
             <p class="eyebrow">Server</p>
@@ -48,26 +48,26 @@
             <p>Give the host a useful name and record the SSH target details.</p>
           </div>
 
-            <label>
+            <label class:field-error={Boolean(errors.name)}>
               <span>Name</span>
             <input bind:this={nameInput} bind:value={value.name} aria-label="Server name" aria-invalid={errors.name ? 'true' : 'false'} placeholder="Staging bastion" />
             {#if errors.name}<small class="error-text">{errors.name}</small>{/if}
           </label>
 
           <div class="field-grid server-field-grid">
-            <label>
+            <label class:field-error={Boolean(errors.host)}>
               <span>Host</span>
               <input bind:value={value.host} aria-label="Server host" aria-invalid={errors.host ? 'true' : 'false'} placeholder="example.com" />
               {#if errors.host}<small class="error-text">{errors.host}</small>{/if}
             </label>
 
-            <label>
+            <label class:field-error={Boolean(errors.port)}>
               <span>Port</span>
               <input bind:value={value.port} aria-label="Server port" inputmode="numeric" aria-invalid={errors.port ? 'true' : 'false'} />
               {#if errors.port}<small class="error-text">{errors.port}</small>{/if}
             </label>
 
-            <label>
+            <label class:field-error={Boolean(errors.username)}>
               <span>Username</span>
               <input bind:value={value.username} aria-label="SSH username" aria-invalid={errors.username ? 'true' : 'false'} placeholder="eric" />
               {#if errors.username}<small class="error-text">{errors.username}</small>{/if}
@@ -90,7 +90,7 @@
           </label>
 
           {#if value.authMode === 'private_key'}
-            <label>
+            <label class:field-error={Boolean(errors.keyReference)}>
               <span>Private key path</span>
               <input bind:value={value.keyReference} aria-label="Private key path" aria-invalid={errors.keyReference ? 'true' : 'false'} placeholder="~/.ssh/id_ed25519" />
               {#if errors.keyReference}<small class="error-text">{errors.keyReference}</small>{/if}
@@ -98,7 +98,7 @@
           {/if}
         </section>
 
-        <div class="editor-actions">
+        <div class="editor-actions dialog-actions">
           <button class="button button-primary" type="submit">Save server</button>
           <button class="button button-ghost" type="button" on:click={onCancel}>Cancel</button>
         </div>

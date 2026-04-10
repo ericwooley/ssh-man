@@ -33,8 +33,8 @@
 
 {#if open}
   <div class="dialog-backdrop" role="presentation" on:click|self={onClose}>
-    <div class="dialog-card" aria-modal="true" role="dialog" aria-labelledby="unlock-dialog-heading">
-      <form class="dialog-form" on:submit|preventDefault={handleSubmit}>
+    <div class="dialog-card dialog" aria-modal="true" role="dialog" aria-labelledby="unlock-dialog-heading">
+      <form class="dialog-form dialog-body gap-md" on:submit|preventDefault={handleSubmit}>
         <div class="dialog-header">
           <div>
             <p class="eyebrow">Unlock</p>
@@ -53,7 +53,7 @@
           <input bind:this={secretInput} bind:value={secret} type="password" autocomplete="current-password" />
         </label>
 
-        <div class="editor-actions">
+        <div class="editor-actions dialog-actions">
           <button class="button button-primary" type="submit" disabled={!secret.trim()}>Unlock key</button>
           <button class="button button-ghost" type="button" on:click={onClose}>Close</button>
         </div>

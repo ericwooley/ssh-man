@@ -66,7 +66,7 @@
       {#each configurations as configuration}
         {@const runtime = sessionByConfigurationId.get(configuration.id)}
         <li>
-          <div class:selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id} class="list-item-shell">
+          <div class:selected={selectedConfigurationId === configuration.id} class:is-selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id} class="list-item-shell">
             <div class="list-card-topline">
             <button
               class="list-card-main"
@@ -91,7 +91,7 @@
             </button>
 
               <div class="list-card-tools">
-                <span class={`status-pill ${runtime?.status || 'stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
+                <span class={`status-pill ${runtime?.status || 'stopped'} ${runtime?.status === 'connected' ? 'status-running' : runtime?.status === 'reconnecting' ? 'status-reconnecting' : runtime?.status === 'failed' ? 'status-failed' : runtime?.status === 'needs_attention' ? 'status-attention' : runtime?.status === 'starting' ? 'status-info' : 'status-stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
 
                 <div class:open={openMenuId === configuration.id} class="row-menu">
                   <button

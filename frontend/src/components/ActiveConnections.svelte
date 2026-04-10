@@ -58,7 +58,7 @@
             </button>
 
               <div class="list-card-tools">
-                <span class={`status-pill ${connection.status}`}>{connection.status}</span>
+                <span class={`status-pill ${connection.status} ${connection.status === 'connected' ? 'status-running' : connection.status === 'reconnecting' ? 'status-reconnecting' : connection.status === 'failed' ? 'status-failed' : connection.status === 'needs_attention' ? 'status-attention' : connection.status === 'starting' ? 'status-info' : 'status-stopped'}`}>{connection.status}</span>
 
                 <div class:open={openMenuId === connection.configurationId} class="row-menu">
                   <button

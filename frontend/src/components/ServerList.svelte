@@ -50,7 +50,7 @@
     <ul class="stack-list" aria-label="Saved servers">
       {#each servers as item}
         <li>
-          <div class:selected={selectedServerId === item.server.id} class:menu-open={openMenuId === item.server.id} class="list-item-shell">
+          <div class:selected={selectedServerId === item.server.id} class:is-selected={selectedServerId === item.server.id} class:menu-open={openMenuId === item.server.id} class="list-item-shell">
             <div class="list-card-topline">
             <button
               class="list-card-main"

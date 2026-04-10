@@ -30,6 +30,23 @@
     }
   }
 
+  function statusClass(status) {
+    switch (status) {
+      case 'connected':
+        return 'status-running'
+      case 'reconnecting':
+        return 'status-reconnecting'
+      case 'failed':
+        return 'status-failed'
+      case 'needs_attention':
+        return 'status-attention'
+      case 'starting':
+        return 'status-info'
+      default:
+        return 'status-stopped'
+    }
+  }
+
   $: currentStatus = session?.status || 'stopped'
   $: canStart = !configuration ? false : startableStatuses.includes(currentStatus) || !session
   $: canStop = Boolean(configuration) && (activeStatuses.includes(currentStatus) || currentStatus === 'needs_attention')
@@ -48,7 +65,7 @@
       <h2 id="session-status-heading">Session status</h2>
       <p class="panel-copy">Operate the selected tunnel here and watch its current runtime state.</p>
     </div>
-    <span class={`status-pill ${currentStatus}`} aria-live="polite" aria-label={`Session status ${currentStatus}`}>{statusLabel(currentStatus)}</span>
+    <span class={`status-pill ${currentStatus} ${statusClass(currentStatus)}`} aria-live="polite" aria-label={`Session status ${currentStatus}`}>{statusLabel(currentStatus)}</span>
   </div>
 
   {#if configuration}
@@ -66,7 +83,7 @@
       </small>
     </div>
 
-    <p class="status-copy status-callout" role="status">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
+    <p class={`status-copy status-callout ${statusClass(currentStatus)}`} role="status">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
 
     <div class="runtime-actions-grid">
       <button class="button button-primary" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>

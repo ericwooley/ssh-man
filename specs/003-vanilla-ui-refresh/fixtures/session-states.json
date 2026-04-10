@@ -1,0 +1,32 @@
+[
+  {
+    "status": "connected",
+    "statusClass": "status-running",
+    "label": "Connected",
+    "detail": "Listening on localhost:1080"
+  },
+  {
+    "status": "reconnecting",
+    "statusClass": "status-reconnecting",
+    "label": "Reconnecting",
+    "detail": "Retrying after network interruption"
+  },
+  {
+    "status": "stopped",
+    "statusClass": "status-stopped",
+    "label": "Stopped",
+    "detail": "Tunnel is idle"
+  },
+  {
+    "status": "failed",
+    "statusClass": "status-failed",
+    "label": "Failed",
+    "detail": "Tunnel start failed"
+  },
+  {
+    "status": "needs_attention",
+    "statusClass": "status-attention",
+    "label": "Needs attention",
+    "detail": "Unlock the SSH key to continue"
+  }
+]
