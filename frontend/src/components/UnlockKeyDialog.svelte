@@ -32,30 +32,32 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if open}
-  <div class="dialog-backdrop" role="presentation" on:click|self={onClose}>
-    <div class="dialog-card dialog" aria-modal="true" role="dialog" aria-labelledby="unlock-dialog-heading">
-      <form class="dialog-form dialog-body gap-md" on:submit|preventDefault={handleSubmit}>
-        <div class="dialog-header">
-          <div>
-            <p class="eyebrow">Unlock</p>
-            <h2 id="unlock-dialog-heading">SSH key passphrase required</h2>
-          </div>
+  <div class="p-modal dialog-backdrop" role="presentation" on:click|self={onClose}>
+    <div class="p-modal__dialog dialog-card dialog" aria-modal="true" role="dialog" aria-labelledby="unlock-dialog-heading">
+      <form class="dialog-form dialog-body gap-md p-form--stacked" on:submit|preventDefault={handleSubmit}>
+        <div class="p-modal__header dialog-header">
+          <h2 class="p-modal__title" id="unlock-dialog-heading">SSH key passphrase required</h2>
+          <button class="p-modal__close" type="button" aria-label="Close dialog" on:click={onClose}>Close</button>
         </div>
 
         <p class="muted">{configurationLabel ? `Enter the passphrase for ${configurationLabel} to continue.` : 'Enter the SSH key passphrase to continue.'}</p>
 
         {#if detail}
-          <p class="dialog-detail">{detail}</p>
+          <div class="dialog-detail p-notification p-notification--caution is-borderless">
+            <div class="p-notification__content">
+              <p class="p-notification__message">{detail}</p>
+            </div>
+          </div>
         {/if}
 
-        <label>
+        <label class="p-form__group">
           <span>SSH key passphrase</span>
-          <input bind:this={secretInput} bind:value={secret} type="password" autocomplete="current-password" />
+          <input class="p-form-validation__input" bind:this={secretInput} bind:value={secret} type="password" autocomplete="current-password" />
         </label>
 
         <div class="editor-actions dialog-actions">
-          <button class="button button-primary" type="submit" disabled={!secret.trim()}>Unlock key</button>
-          <button class="button button-ghost" type="button" on:click={onClose}>Close</button>
+          <button class="p-button" type="submit" disabled={!secret.trim()}>Unlock key</button>
+          <button class="p-button--base" type="button" on:click={onClose}>Close</button>
         </div>
       </form>
     </div>

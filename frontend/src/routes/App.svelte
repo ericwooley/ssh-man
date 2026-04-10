@@ -197,6 +197,14 @@
     runtimeRefreshHandle = null
   }
 
+  function applyTheme(theme) {
+    if (typeof document === 'undefined') return
+
+    document.documentElement.dataset.theme = theme
+    document.documentElement.classList.toggle('is-dark', theme === 'dark')
+    document.documentElement.classList.toggle('is-light', theme !== 'dark')
+  }
+
   const modalOpen = () => serverDialogOpen || tunnelDialogOpen || unlockDialogOpen
 
   function findConfigurationRecord(items, configurationId) {
@@ -243,7 +251,6 @@
       selectedServerId = servers.some((item) => item.server.id === preferences.lastSelectedServerId) ? preferences.lastSelectedServerId : ''
       selectedConfigurationId = firstConfigurationIdForServer(selectedServerId)
       editorValue = { ...emptyConfig(), serverId: selectedServerId }
-      document.documentElement.dataset.theme = preferences.theme
       banner = state.message || ''
       diagnosticDetails = state.message || ''
       bannerKind = state.recoverable ? 'warning' : 'info'
@@ -487,7 +494,6 @@
     const nextTheme = preferences.theme === 'dark' ? 'light' : 'dark'
     try {
       preferences = await savePreferences({ ...preferences, theme: nextTheme })
-      document.documentElement.dataset.theme = nextTheme
       diagnosticDetails = ''
     } catch (error) {
       banner = error.message || 'The theme preference could not be saved.'
@@ -798,6 +804,8 @@
     sessionHistory = []
   }
 
+  $: applyTheme(preferences.theme)
+
   $: if (typeof document !== 'undefined') {
     document.body.style.overflow = modalOpen() ? 'hidden' : ''
   }
@@ -817,66 +825,77 @@
 <svelte:window on:keydown={handleGlobalKeydown} />
 
 <main class="app-shell" aria-busy={isHydrating}>
-  <header class="hero">
-    <div>
-      <p class="eyebrow">SSH Connection Manager</p>
-      <h1>Persistent tunnels without the command-line churn</h1>
-      <p class="hero-copy">Save servers, reuse SOCKS and local forwards, and recover faster when sessions drop.</p>
+  <header class="p-card panel app-toolbar" aria-labelledby="app-heading">
+    <div class="app-toolbar-bar">
+      <div class="app-toolbar-copy">
+        <div>
+          <p class="eyebrow">SSH Connection Manager</p>
+          <h1 id="app-heading">SSH Man</h1>
+        </div>
+        <p class="panel-copy">Save servers, reuse SOCKS and local forwards, and recover faster when sessions drop.</p>
+      </div>
+      <div class="app-toolbar-actions">
+        <ThemeToggle theme={preferences.theme} onToggle={handleToggleTheme} />
+      </div>
     </div>
-    <ThemeToggle theme={preferences.theme} onToggle={handleToggleTheme} />
   </header>
 
   {#if banner}
-    <div class={`banner banner-${bannerKind}`} aria-live={bannerKind === 'danger' ? 'assertive' : 'polite'} role={bannerKind === 'danger' ? 'alert' : 'status'}>
-      <div class="banner-content">
-        <strong>{banner}</strong>
+    <div
+      class={`p-notification banner ${bannerKind === 'danger' ? 'p-notification--negative' : bannerKind === 'warning' ? 'p-notification--caution' : ''}`}
+      aria-live={bannerKind === 'danger' ? 'assertive' : 'polite'}
+      role={bannerKind === 'danger' ? 'alert' : 'status'}
+    >
+      <div class="p-notification__content">
+        <p class="p-notification__message"><strong>{banner}</strong></p>
+        {#if diagnosticDetails && diagnosticDetails !== banner}
+          <pre class="banner-detail">{diagnosticDetails}</pre>
+        {/if}
       </div>
     </div>
   {/if}
 
-  <section class="dashboard-shell">
-    <aside class="dashboard-sidebar">
-      <section class="panel summary-panel" aria-labelledby="summary-heading">
-        <div class="panel-header panel-header-stack">
+  <section class="row row--25-75 u-no-max-width app-content">
+    <div class="col sidebar-column">
+      <section class="p-card panel summary-panel" aria-labelledby="summary-heading">
+        <div class="p-card__header panel-header">
           <div>
             <p class="eyebrow">Workspace</p>
-            <h2 id="summary-heading">Current snapshot</h2>
-            <p class="panel-copy">Use the left rail to move between servers. The main workspace stays focused on the selected target.</p>
+            <h2 id="summary-heading">{selectedServer?.name || 'Select a server to continue'}</h2>
+            <p class="panel-copy">
+              {#if selectedServer}
+                {selectedServer.username}@{selectedServer.host}:{selectedServer.port}
+              {:else}
+                Create or select a server to unlock the main workspace.
+              {/if}
+            </p>
           </div>
         </div>
 
-        <div class="metric-grid" aria-label="Workspace summary">
-          <div class="metric-card">
-            <span class="metric-label">Servers</span>
-            <strong>{servers.length}</strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">Saved tunnels</span>
-            <strong>{totalTunnelCount}</strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">Connected</span>
-            <strong>{connectedSessionCount}</strong>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">Need attention</span>
-            <strong>{attentionSessionCount}</strong>
-          </div>
+        <div class="summary-stats" aria-label="Workspace summary">
+          <span class="p-chip is-inline">
+            <span class="p-chip__lead">Servers</span>
+            <span class="p-chip__value">{servers.length}</span>
+          </span>
+          <span class="p-chip is-inline">
+            <span class="p-chip__lead">Tunnels</span>
+            <span class="p-chip__value">{totalTunnelCount}</span>
+          </span>
+          <span class={`p-chip is-inline ${connectedSessionCount > 0 ? 'p-chip--positive' : ''}`}>
+            <span class="p-chip__lead">Connected</span>
+            <span class="p-chip__value">{connectedSessionCount}</span>
+          </span>
+          <span class={`p-chip is-inline ${attentionSessionCount > 0 ? 'p-chip--caution' : ''}`}>
+            <span class="p-chip__lead">Attention</span>
+            <span class="p-chip__value">{attentionSessionCount}</span>
+          </span>
         </div>
 
         {#if selectedServer}
-          <div class="selection-card" aria-label="Selected server summary">
-            <div>
-              <span class="selection-label">Selected server</span>
-              <strong>{selectedServer.name}</strong>
-            </div>
-            <small>{selectedServer.username}@{selectedServer.host}:{selectedServer.port}</small>
-            <small>{selectedConfigurations.length} saved tunnel{selectedConfigurations.length === 1 ? '' : 's'} and {selectedServerActiveCount} active.</small>
-          </div>
-        {:else}
-          <div class="empty-state compact">
-            <h3>No server selected</h3>
-            <p>Create or select a server to unlock the main workspace.</p>
+          <div class="p-card selection-summary" aria-label="Selected server summary">
+            <span class="selection-label">Selected server</span>
+            <p><strong>{selectedServer.name}</strong></p>
+            <p class="panel-copy">{selectedConfigurations.length} saved tunnel{selectedConfigurations.length === 1 ? '' : 's'} and {selectedServerActiveCount} active.</p>
           </div>
         {/if}
       </section>
@@ -892,31 +911,17 @@
 
       <DiagnosticsPanel
         {diagnostics}
-        {currentIssue}
+        issue={currentIssue}
         hasWarning={loadRecoverable || bannerKind !== 'info'}
         onReload={handleReloadState}
         onOpenDevTools={handleOpenDevTools}
         onCopyPath={handleCopyPath}
       />
-    </aside>
+    </div>
 
-    <div class="workspace-main">
-      <section class="panel workspace-header" aria-labelledby="workspace-heading">
-        <div class="workspace-header-copy">
-          <p class="eyebrow">Primary workspace</p>
-          <h2 id="workspace-heading">{selectedServer?.name || 'Select a server to continue'}</h2>
-          <p class="panel-copy">
-            {#if selectedServer}
-              Save, start, and troubleshoot tunnels for one host without losing track of runtime state.
-            {:else}
-              Choose a saved server from the sidebar to manage its tunnels and launch browsers through SOCKS.
-            {/if}
-          </p>
-        </div>
-      </section>
-
-      <div class="workspace-main-grid">
-        <div class="workspace-primary-column">
+    <div class="col main-column">
+      <div class="row u-no-max-width workspace-row">
+        <div class="col-8 workspace-primary-column">
           <ConfigList
             enabled={Boolean(selectedServerId)}
             configurations={selectedConfigurations}
@@ -932,7 +937,7 @@
           <ActiveConnections connections={activeRuntimeConnections} onSelect={focusConfiguration} onStop={handleStop} />
         </div>
 
-        <div class="workspace-secondary-column">
+        <div class="col-4 workspace-secondary-column">
           {#if selectedConfiguration?.connectionType === 'socks_proxy'}
             <BrowserLauncher
               configuration={selectedConfiguration}
@@ -968,8 +973,8 @@
   />
 
   {#if tunnelDialogOpen}
-    <div class="dialog-backdrop" role="presentation" on:click|self={closeTunnelDialog}>
-      <div class="dialog-card" aria-modal="true" role="dialog" aria-labelledby="tunnel-dialog-heading">
+    <div class="p-modal dialog-backdrop" role="presentation" on:click|self={closeTunnelDialog}>
+      <div class="p-modal__dialog dialog-card dialog" aria-modal="true" role="dialog" aria-labelledby="tunnel-dialog-heading">
         <div class="sr-only" id="tunnel-dialog-heading">Tunnel editor</div>
         <ConfigEditor
           server={selectedServer}

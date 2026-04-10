@@ -32,32 +32,50 @@
       closeMenu()
     }
   }
+
+  function statusChipClass(status) {
+    switch (status) {
+      case 'connected':
+        return 'p-chip--positive'
+      case 'reconnecting':
+      case 'needs_attention':
+        return 'p-chip--caution'
+      case 'failed':
+        return 'p-chip--negative'
+      case 'starting':
+        return 'p-chip--information'
+      default:
+        return ''
+    }
+  }
+
+  function statusLabel(status) {
+    return (status || 'stopped').replaceAll('_', ' ')
+  }
 </script>
 
 <svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
-<section class:is-disabled={!enabled} class="panel config-panel" aria-labelledby="config-list-heading">
-  <div class="panel-header">
+<section class:is-disabled={!enabled} class="p-card panel config-panel" aria-labelledby="config-list-heading">
+  <div class="p-card__header panel-header">
     <div>
       <p class="eyebrow">Configurations</p>
       <h2 id="config-list-heading">Tunnels</h2>
       <p class="panel-copy">Keep SOCKS proxies and forwards attached to the selected server so they are easy to restart.</p>
     </div>
     <div class="panel-actions">
-      <button class="button button-ghost" disabled={!enabled || configurations.length === 0} type="button" on:click={onStartAll}>Start all</button>
-      <button class="button button-primary" disabled={!enabled} type="button" on:click={onCreate}>Add tunnel</button>
+      <button class="p-button--base" disabled={!enabled || configurations.length === 0} type="button" on:click={onStartAll}>Start all</button>
+      <button class="p-button" disabled={!enabled} type="button" on:click={onCreate}>Add tunnel</button>
     </div>
   </div>
 
   {#if !enabled}
     <div class="empty-state compact">
-      <span class="empty-mark" aria-hidden="true">01</span>
       <h3>Select a target first</h3>
       <p>Choose a saved server in the targets lane before viewing or editing tunnels.</p>
     </div>
   {:else if configurations.length === 0}
     <div class="empty-state compact">
-      <span class="empty-mark" aria-hidden="true">::</span>
       <h3>No saved tunnels</h3>
       <p>Store a local forward or SOCKS proxy under the selected server.</p>
     </div>
@@ -66,52 +84,52 @@
       {#each configurations as configuration}
         {@const runtime = sessionByConfigurationId.get(configuration.id)}
         <li>
-          <div class:selected={selectedConfigurationId === configuration.id} class:is-selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id} class="list-item-shell">
+          <article class="p-card list-item-shell" class:selected={selectedConfigurationId === configuration.id} class:is-selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id}>
             <div class="list-card-topline">
-            <button
-              class="list-card-main"
-              type="button"
-              aria-pressed={selectedConfigurationId === configuration.id}
-              aria-label={`Select tunnel ${configuration.label}`}
-              on:click={() => onSelect(configuration.id)}
-            >
-              <span class="list-primary">
-                <strong>{configuration.label}</strong>
-                <small>
-                  {#if configuration.connectionType === 'socks_proxy'}
-                    SOCKS {configuration.socksPort > 0 ? `:${configuration.socksPort}` : 'Auto'}
-                  {:else}
-                    {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
+              <button
+                class="p-button--base list-card-main"
+                type="button"
+                aria-pressed={selectedConfigurationId === configuration.id}
+                aria-label={`Select tunnel ${configuration.label}`}
+                on:click={() => onSelect(configuration.id)}
+              >
+                <span class="list-primary">
+                  <strong>{configuration.label}</strong>
+                  <small>
+                    {#if configuration.connectionType === 'socks_proxy'}
+                      SOCKS {configuration.socksPort > 0 ? `:${configuration.socksPort}` : 'Auto'}
+                    {:else}
+                      {configuration.localPort} -> {configuration.remoteHost}:{configuration.remotePort}
+                    {/if}
+                  </small>
+                  {#if runtime?.statusDetail}
+                    <small>{runtime.statusDetail}</small>
                   {/if}
-                </small>
-                {#if runtime?.statusDetail}
-                  <small>{runtime.statusDetail}</small>
-                {/if}
-              </span>
-            </button>
+                </span>
+              </button>
 
               <div class="list-card-tools">
-                <span class={`status-pill ${runtime?.status || 'stopped'} ${runtime?.status === 'connected' ? 'status-running' : runtime?.status === 'reconnecting' ? 'status-reconnecting' : runtime?.status === 'failed' ? 'status-failed' : runtime?.status === 'needs_attention' ? 'status-attention' : runtime?.status === 'starting' ? 'status-info' : 'status-stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{runtime?.status || 'stopped'}</span>
+                <span class={`p-chip status-pill is-inline ${statusChipClass(runtime?.status)} ${runtime?.status || 'stopped'} ${runtime?.status === 'connected' ? 'status-running' : runtime?.status === 'reconnecting' ? 'status-reconnecting' : runtime?.status === 'failed' ? 'status-failed' : runtime?.status === 'needs_attention' ? 'status-attention' : runtime?.status === 'starting' ? 'status-info' : 'status-stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{statusLabel(runtime?.status)}</span>
 
-                <div class:open={openMenuId === configuration.id} class="row-menu">
+                <div class="p-contextual-menu row-menu" class:open={openMenuId === configuration.id}>
                   <button
-                    class="button button-ghost button-small row-menu-trigger"
+                    class="p-button--base p-contextual-menu__toggle row-menu-trigger"
                     type="button"
                     aria-label={`More actions for ${configuration.label}`}
                     aria-expanded={openMenuId === configuration.id}
                     aria-haspopup="menu"
                     on:click={() => toggleMenu(configuration.id)}
-                  >...</button>
-                  {#if openMenuId === configuration.id}
-                    <div class="row-menu-popover" role="menu" aria-label={`Actions for ${configuration.label}`}>
-                      <button class="button button-ghost button-small" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => { closeMenu(); onEdit(configuration) }}>Edit</button>
-                      <button class="button button-ghost button-small danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => { closeMenu(); onDelete(configuration.id) }}>Delete</button>
-                    </div>
-                  {/if}
+                  >More</button>
+                  <div class="p-contextual-menu__dropdown row-menu-popover" role="menu" aria-label={`Actions for ${configuration.label}`} aria-hidden={openMenuId === configuration.id ? 'false' : 'true'}>
+                    <span class="p-contextual-menu__group">
+                      <button class="p-contextual-menu__link" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => { closeMenu(); onEdit(configuration) }}>Edit</button>
+                      <button class="p-contextual-menu__link danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => { closeMenu(); onDelete(configuration.id) }}>Delete</button>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </article>
         </li>
       {/each}
     </ul>
