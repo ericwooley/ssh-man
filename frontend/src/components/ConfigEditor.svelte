@@ -39,111 +39,168 @@
   tick().then(() => labelInput?.focus())
 </script>
 
-<form class="dialog dialog-body gap-md p-form--stacked" on:submit|preventDefault={() => onSubmit(value)}>
-  <div class="dialog-header dialog-header--modal">
-    <div>
-      <p class="eyebrow">Tunnel</p>
-      <h2 id="tunnel-dialog-heading">{value.id ? 'Edit tunnel' : 'New tunnel'}</h2>
-      <p class="panel-copy">Define the routing and save it for one-click reuse.</p>
-    </div>
-
-    <div class="dialog-header-actions">
+<form class="p-form p-form--stacked" on:submit|preventDefault={() => onSubmit(value)}>
+  <header class="p-modal__header">
+    <h2 class="p-modal__title" id="tunnel-dialog-heading">{value.id ? 'Edit tunnel' : 'New tunnel'}</h2>
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
       {#if server}
-        <p class="muted dialog-context-chip">{server.name}</p>
+        <span class="u-text--muted">{server.name}</span>
       {/if}
-      <button class="p-button--base dialog-close-button" type="button" aria-label="Close dialog" on:click={onCancel}>
-        <span aria-hidden="true">&times;</span>
-      </button>
+      <button class="p-modal__close" type="button" aria-label="Close dialog" on:click={onCancel}>Close</button>
     </div>
-  </div>
+  </header>
 
-  <section class="p-card form-section" aria-labelledby="tunnel-basics-heading">
-    <div class="section-heading">
-      <h3 id="tunnel-basics-heading">Basics</h3>
-      <p>Name the tunnel and choose the traffic pattern.</p>
+  <fieldset>
+    <legend>Basics</legend>
+
+    <div class="p-form__group {errors.label ? 'p-form-validation is-error field-error' : ''}">
+      <label for="tunnel-label" class="p-form__label">Label</label>
+      <div class="p-form__control">
+        <input
+          id="tunnel-label"
+          class={errors.label ? 'p-form-validation__input' : ''}
+          bind:this={labelInput}
+          bind:value={value.label}
+          aria-label="Label"
+          placeholder="Staging SOCKS"
+          aria-invalid={errors.label ? 'true' : 'false'}
+        />
+        {#if errors.label}
+          <p class="p-form-validation__message">{errors.label}</p>
+        {/if}
+      </div>
     </div>
 
-    <label class:is-error={Boolean(errors.label)} class:field-error={Boolean(errors.label)} class="p-form__group">
-      <span>Label</span>
-      <input class="p-form-validation__input" bind:this={labelInput} bind:value={value.label} aria-label="Label" placeholder="Staging SOCKS" aria-invalid={errors.label ? 'true' : 'false'} />
-      {#if errors.label}<small class="p-form-validation__message error-text">{errors.label}</small>{/if}
-    </label>
-
-    <label class="p-form__group">
-      <span>Type</span>
-      <select class="p-form-validation__input" bind:value={value.connectionType} aria-label="Type">
-        <option value="local_forward">Local forward</option>
-        <option value="socks_proxy">SOCKS proxy</option>
-      </select>
-    </label>
-  </section>
-
-  <section class="p-card form-section" aria-labelledby="tunnel-routing-heading">
-    <div class="section-heading">
-      <h3 id="tunnel-routing-heading">Routing</h3>
-      <p>{value.connectionType === 'local_forward' ? 'Choose the local listener and remote destination.' : 'Choose the local port that browsers and tools should use.'}</p>
+    <div class="p-form__group">
+      <label for="tunnel-type" class="p-form__label">Type</label>
+      <div class="p-form__control">
+        <select id="tunnel-type" bind:value={value.connectionType} aria-label="Type">
+          <option value="local_forward">Local forward</option>
+          <option value="socks_proxy">SOCKS proxy</option>
+        </select>
+      </div>
     </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Routing</legend>
 
     {#if value.connectionType === 'local_forward'}
-      <div class="field-grid">
-        <label class:is-error={Boolean(errors.localPort)} class:field-error={Boolean(errors.localPort)} class="p-form__group">
-          <span>Local port</span>
-          <input class="p-form-validation__input" bind:value={value.localPort} aria-label="Local port" inputmode="numeric" aria-invalid={errors.localPort ? 'true' : 'false'} />
-          {#if errors.localPort}<small class="p-form-validation__message error-text">{errors.localPort}</small>{/if}
-        </label>
-        <label class:is-error={Boolean(errors.remoteHost)} class:field-error={Boolean(errors.remoteHost)} class="p-form__group">
-          <span>Remote host</span>
-          <input class="p-form-validation__input" bind:value={value.remoteHost} aria-label="Remote host" placeholder="127.0.0.1" aria-invalid={errors.remoteHost ? 'true' : 'false'} />
-          {#if errors.remoteHost}<small class="p-form-validation__message error-text">{errors.remoteHost}</small>{/if}
-        </label>
-        <label class:is-error={Boolean(errors.remotePort)} class:field-error={Boolean(errors.remotePort)} class="p-form__group">
-          <span>Remote port</span>
-          <input class="p-form-validation__input" bind:value={value.remotePort} aria-label="Remote port" inputmode="numeric" aria-invalid={errors.remotePort ? 'true' : 'false'} />
-          {#if errors.remotePort}<small class="p-form-validation__message error-text">{errors.remotePort}</small>{/if}
-        </label>
+      <div class="p-form__group {errors.localPort ? 'p-form-validation is-error field-error' : ''}">
+        <label for="tunnel-local-port" class="p-form__label">Local port</label>
+        <div class="p-form__control">
+          <input
+            id="tunnel-local-port"
+            class={errors.localPort ? 'p-form-validation__input' : ''}
+            bind:value={value.localPort}
+            aria-label="Local port"
+            inputmode="numeric"
+            aria-invalid={errors.localPort ? 'true' : 'false'}
+          />
+          {#if errors.localPort}
+            <p class="p-form-validation__message">{errors.localPort}</p>
+          {/if}
+        </div>
+      </div>
+
+      <div class="p-form__group {errors.remoteHost ? 'p-form-validation is-error field-error' : ''}">
+        <label for="tunnel-remote-host" class="p-form__label">Remote host</label>
+        <div class="p-form__control">
+          <input
+            id="tunnel-remote-host"
+            class={errors.remoteHost ? 'p-form-validation__input' : ''}
+            bind:value={value.remoteHost}
+            aria-label="Remote host"
+            placeholder="127.0.0.1"
+            aria-invalid={errors.remoteHost ? 'true' : 'false'}
+          />
+          {#if errors.remoteHost}
+            <p class="p-form-validation__message">{errors.remoteHost}</p>
+          {/if}
+        </div>
+      </div>
+
+      <div class="p-form__group {errors.remotePort ? 'p-form-validation is-error field-error' : ''}">
+        <label for="tunnel-remote-port" class="p-form__label">Remote port</label>
+        <div class="p-form__control">
+          <input
+            id="tunnel-remote-port"
+            class={errors.remotePort ? 'p-form-validation__input' : ''}
+            bind:value={value.remotePort}
+            aria-label="Remote port"
+            inputmode="numeric"
+            aria-invalid={errors.remotePort ? 'true' : 'false'}
+          />
+          {#if errors.remotePort}
+            <p class="p-form-validation__message">{errors.remotePort}</p>
+          {/if}
+        </div>
       </div>
     {:else}
-      <div class="p-card form-section-card">
-        <label class="p-form__group">
-          <span>SOCKS port mode</span>
-          <select class="p-form-validation__input" bind:value={socksPortModeValue} aria-label="SOCKS port mode" on:change={(event) => setSocksPortMode(event.currentTarget.value)}>
+      <div class="p-form__group">
+        <label for="tunnel-socks-mode" class="p-form__label">SOCKS port mode</label>
+        <div class="p-form__control">
+          <select
+            id="tunnel-socks-mode"
+            bind:value={socksPortModeValue}
+            aria-label="SOCKS port mode"
+            on:change={(event) => setSocksPortMode(event.currentTarget.value)}
+          >
             <option value="auto">Auto</option>
             <option value="manual">Manual</option>
           </select>
-        </label>
-
-        {#if socksPortModeValue === 'manual'}
-          <label class:is-error={Boolean(errors.socksPort)} class:field-error={Boolean(errors.socksPort)} class="p-form__group">
-            <span>SOCKS port</span>
-            <input class="p-form-validation__input" bind:value={value.socksPort} aria-label="SOCKS port" inputmode="numeric" placeholder="1080" aria-invalid={errors.socksPort ? 'true' : 'false'} />
-          </label>
-        {:else}
-          <div class="muted form-hint" aria-label="SOCKS port auto hint">An open localhost port will be chosen when the tunnel starts.</div>
-        {/if}
-
-        {#if errors.socksPort}<small class="p-form-validation__message error-text">{errors.socksPort}</small>{/if}
+        </div>
       </div>
-    {/if}
-  </section>
 
-  <section class="p-card form-section" aria-labelledby="tunnel-behavior-heading">
-    <div class="section-heading">
-      <h3 id="tunnel-behavior-heading">Behavior</h3>
-      <p>Add context for later and choose how aggressively the tunnel should recover.</p>
+      {#if socksPortModeValue === 'manual'}
+        <div class="p-form__group {errors.socksPort ? 'p-form-validation is-error field-error' : ''}">
+          <label for="tunnel-socks-port" class="p-form__label">SOCKS port</label>
+          <div class="p-form__control">
+            <input
+              id="tunnel-socks-port"
+              class={errors.socksPort ? 'p-form-validation__input' : ''}
+              bind:value={value.socksPort}
+              aria-label="SOCKS port"
+              inputmode="numeric"
+              placeholder="1080"
+              aria-invalid={errors.socksPort ? 'true' : 'false'}
+            />
+            {#if errors.socksPort}
+              <p class="p-form-validation__message">{errors.socksPort}</p>
+            {/if}
+          </div>
+        </div>
+      {:else}
+        <p class="p-form-help-text" aria-label="SOCKS port auto hint">An open localhost port will be chosen when the tunnel starts.</p>
+      {/if}
+    {/if}
+  </fieldset>
+
+  <fieldset>
+    <legend>Behavior</legend>
+
+    <div class="p-form__group">
+      <label for="tunnel-notes" class="p-form__label">Notes</label>
+      <div class="p-form__control">
+        <textarea
+          id="tunnel-notes"
+          bind:value={value.notes}
+          aria-label="Notes"
+          rows="4"
+          placeholder="Optional context for the next time you use this tunnel"
+        ></textarea>
+      </div>
     </div>
 
-    <label class="p-form__group">
-      <span>Notes</span>
-      <textarea class="p-form-validation__input" bind:value={value.notes} aria-label="Notes" rows="4" placeholder="Optional context for the next time you use this tunnel"></textarea>
-    </label>
+    <div class="p-form__group">
+      <label class="p-checkbox">
+        <input class="p-checkbox__input" bind:checked={value.autoReconnectEnabled} type="checkbox" />
+        <span class="p-checkbox__label">Reconnect automatically after transient disconnects</span>
+      </label>
+    </div>
+  </fieldset>
 
-    <label class="p-card checkbox-row checkbox-card">
-      <input bind:checked={value.autoReconnectEnabled} type="checkbox" />
-      <span>Reconnect automatically after transient disconnects</span>
-    </label>
-  </section>
-
-  <div class="editor-actions dialog-actions">
+  <div class="p-modal__footer">
     <button class="p-button--positive" type="submit">Save tunnel</button>
     <button class="p-button--base" type="button" on:click={onCancel}>Cancel</button>
   </div>
