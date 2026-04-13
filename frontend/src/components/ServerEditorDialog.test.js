@@ -61,9 +61,20 @@ describe('ServerEditorDialog', () => {
     render(ServerEditorDialog, {
       props: {
         open: true,
+        value: {
+          id: '',
+          name: '',
+          host: 'localhost',
+          port: '22',
+          username: 'eric',
+          authMode: 'agent',
+          keyReference: '',
+        },
       },
     })
 
+    expect(screen.getByLabelText('Server host').value).toBe('localhost')
+    expect(screen.getByLabelText('SSH username').value).toBe('eric')
     expect(screen.getByLabelText('Authentication mode').value).toBe('agent')
     expect(screen.queryByLabelText('Private key path')).toBeNull()
   })

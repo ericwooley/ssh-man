@@ -3,6 +3,7 @@ package bindings
 import (
 	"context"
 	"fmt"
+	"os/user"
 
 	"ssh-man/internal/app/bootstrap"
 	configdomain "ssh-man/internal/domain/config"
@@ -26,12 +27,13 @@ type Diagnostics struct {
 }
 
 type LoadInitialStateResult struct {
-	Servers     []ServerWithConfigurations       `json:"servers"`
-	Preferences preferencesdomain.UserPreference `json:"preferences"`
-	Sessions    []any                            `json:"sessions"`
-	Diagnostics Diagnostics                      `json:"diagnostics"`
-	Message     string                           `json:"message,omitempty"`
-	Recoverable bool                             `json:"recoverable,omitempty"`
+	Servers         []ServerWithConfigurations       `json:"servers"`
+	Preferences     preferencesdomain.UserPreference `json:"preferences"`
+	Sessions        []any                            `json:"sessions"`
+	Diagnostics     Diagnostics                      `json:"diagnostics"`
+	CurrentUsername string                           `json:"currentUsername,omitempty"`
+	Message         string                           `json:"message,omitempty"`
+	Recoverable     bool                             `json:"recoverable,omitempty"`
 }
 
 func NewAppBindings() (*AppBindings, error) {
@@ -59,10 +61,15 @@ func (a *AppBindings) storageError(action string, err error) error {
 
 func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 	ctx := context.Background()
+	currentUsername := ""
+	if currentUser, err := user.Current(); err == nil {
+		currentUsername = currentUser.Username
+	}
 	result := LoadInitialStateResult{
-		Preferences: preferencesdomain.Default(),
-		Sessions:    []any{},
-		Diagnostics: Diagnostics{AppDataPath: a.app.ConfigDir, DatabasePath: a.app.DatabasePath},
+		Preferences:     preferencesdomain.Default(),
+		Sessions:        []any{},
+		Diagnostics:     Diagnostics{AppDataPath: a.app.ConfigDir, DatabasePath: a.app.DatabasePath},
+		CurrentUsername: currentUsername,
 	}
 
 	servers, err := a.app.ServerService.List(ctx)
@@ -101,11 +108,12 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 	}
 
 	return LoadInitialStateResult{
-		Servers:     items,
-		Preferences: pref,
-		Sessions:    sessions,
-		Diagnostics: result.Diagnostics,
-		Message:     message,
-		Recoverable: prefErr != nil,
+		Servers:         items,
+		Preferences:     pref,
+		Sessions:        sessions,
+		Diagnostics:     result.Diagnostics,
+		CurrentUsername: currentUsername,
+		Message:         message,
+		Recoverable:     prefErr != nil,
 	}, nil
 }

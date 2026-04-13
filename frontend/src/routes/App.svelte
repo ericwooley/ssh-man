@@ -43,12 +43,14 @@
     notes: '',
   })
 
+  let currentUsername = ''
+
   const emptyServer = () => ({
     id: '',
     name: '',
-    host: '',
+    host: 'localhost',
     port: '22',
-    username: '',
+    username: currentUsername,
     authMode: 'agent',
     keyReference: '',
   })
@@ -242,6 +244,7 @@
       preferences = state.preferences || preferences
       replaceRuntimeSessions(state.sessions || [])
       diagnostics = state.diagnostics || diagnostics
+      currentUsername = state.currentUsername || ''
       selectedServerId = servers.some((item) => item.server.id === preferences.lastSelectedServerId) ? preferences.lastSelectedServerId : ''
       selectedConfigurationId = firstConfigurationIdForServer(selectedServerId)
       editorValue = { ...emptyConfig(), serverId: selectedServerId }

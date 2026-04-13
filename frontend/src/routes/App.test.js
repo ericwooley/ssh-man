@@ -36,6 +36,7 @@ describe('App', () => {
       preferences: { theme: 'dark', lastSelectedServerId: '' },
       sessions: [],
       diagnostics: { appDataPath: '/tmp/ssh-man', databasePath: '/tmp/ssh-man/ssh-man.db' },
+      currentUsername: 'eric',
       message: '',
       recoverable: false,
     })

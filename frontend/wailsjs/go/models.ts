@@ -51,6 +51,7 @@ export namespace bindings {
 	    preferences: preferences.UserPreference;
 	    sessions: any[];
 	    diagnostics: Diagnostics;
+	    currentUsername?: string;
 	    message?: string;
 	    recoverable?: boolean;
 	
@@ -64,6 +65,7 @@ export namespace bindings {
 	        this.preferences = this.convertValues(source["preferences"], preferences.UserPreference);
 	        this.sessions = source["sessions"];
 	        this.diagnostics = this.convertValues(source["diagnostics"], Diagnostics);
+	        this.currentUsername = source["currentUsername"];
 	        this.message = source["message"];
 	        this.recoverable = source["recoverable"];
 	    }
