@@ -94,10 +94,6 @@ On your machine, that usually means `ssh-man` sits under roughly `150 MB` of RAM
 
 <img src="docs/memory.png" alt="Memory usage" width="500" />
 
-### Main workspace
-
-<img src="docs/main-workspace.png" alt="Main workspace" width="500" />
-
 ### Tunnel editor
 
 <img src="docs/tunnel-editor.png" alt="Tunnel editor" width="500" />
@@ -105,10 +101,6 @@ On your machine, that usually means `ssh-man` sits under roughly `150 MB` of RAM
 ### SOCKS browser launcher
 
 <img src="docs/socks-browser-launcher.png" alt="SOCKS browser launcher" width="500" />
-
-### Active sessions
-
-<img src="docs/active-sessions.png" alt="Active sessions" width="500" />
 
 ## How it works
 
@@ -274,7 +266,7 @@ pnpm --dir frontend run validate
 
 ## First-run tips
 
-- New servers default to `SSH agent` auth.
+- New servers default to `localhost`, your current OS username, and `SSH agent` auth.
 - If you want file-based auth instead, switch the server to `Private key` and enter the key path.
 - Browser profiles are persisted per server under the app config directory so bookmarks, extensions, and other browser state survive restarts.
 - SOCKS browser launch only works for a running SOCKS tunnel, so start the tunnel first.
