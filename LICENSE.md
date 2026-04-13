@@ -1,4 +1,5 @@
 This software is licensed under the Apache License 2.0, subject to the Commons Clause condition below.
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
