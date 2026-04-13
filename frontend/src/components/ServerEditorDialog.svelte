@@ -34,12 +34,18 @@
   <div class="p-modal dialog-backdrop" role="presentation" on:click|self={onCancel}>
     <div class="p-modal__dialog dialog-card dialog" aria-modal="true" role="dialog" aria-labelledby="server-dialog-heading" tabindex="0">
       <form class="modal-editor-card dialog-body gap-md p-form--stacked" on:submit|preventDefault={() => onSubmit(value)}>
-        <div class="p-modal__header dialog-header">
-          <h2 class="p-modal__title" id="server-dialog-heading">{value.id ? 'Edit server' : 'New server'}</h2>
-          <button class="p-modal__close" type="button" aria-label="Close dialog" on:click={onCancel}>Close</button>
+        <div class="dialog-header dialog-header--modal">
+          <div>
+            <p class="eyebrow">Server</p>
+            <h2 id="server-dialog-heading">{value.id ? 'Edit server' : 'New server'}</h2>
+            <p class="panel-copy">Save the SSH host once, then attach as many tunnels as you need to it.</p>
+          </div>
+          <div class="dialog-header-actions">
+            <button class="p-button--base dialog-close-button" type="button" aria-label="Close dialog" on:click={onCancel}>
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
         </div>
-
-        <p class="panel-copy">Save the SSH host once, then attach as many tunnels as you need to it.</p>
 
         <section class="p-card form-section" aria-labelledby="server-identity-heading">
           <div class="section-heading">

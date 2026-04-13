@@ -35,9 +35,17 @@
   <div class="p-modal dialog-backdrop" role="presentation" on:click|self={onClose}>
     <div class="p-modal__dialog dialog-card dialog" aria-modal="true" role="dialog" aria-labelledby="unlock-dialog-heading">
       <form class="dialog-form dialog-body gap-md p-form--stacked" on:submit|preventDefault={handleSubmit}>
-        <div class="p-modal__header dialog-header">
-          <h2 class="p-modal__title" id="unlock-dialog-heading">SSH key passphrase required</h2>
-          <button class="p-modal__close" type="button" aria-label="Close dialog" on:click={onClose}>Close</button>
+        <div class="dialog-header dialog-header--modal">
+          <div>
+            <p class="eyebrow">Unlock</p>
+            <h2 id="unlock-dialog-heading">SSH key passphrase required</h2>
+            <p class="panel-copy">Provide the passphrase so the blocked tunnel can continue.</p>
+          </div>
+          <div class="dialog-header-actions">
+            <button class="p-button--base dialog-close-button" type="button" aria-label="Close dialog" on:click={onClose}>
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
         </div>
 
         <p class="muted">{configurationLabel ? `Enter the passphrase for ${configurationLabel} to continue.` : 'Enter the SSH key passphrase to continue.'}</p>

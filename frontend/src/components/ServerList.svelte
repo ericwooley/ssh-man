@@ -30,14 +30,14 @@
 
 <svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
-<section class="p-card panel server-panel" aria-labelledby="server-list-heading">
+<section class="p-card panel server-panel panel--compact" aria-labelledby="server-list-heading">
   <div class="p-card__header panel-header">
     <div>
       <p class="eyebrow">Saved servers</p>
       <h2 id="server-list-heading">Targets</h2>
-      <p class="panel-copy">Choose where new tunnels should be saved and which host you want to work in.</p>
+      <p class="panel-copy">Choose the host you want to work in.</p>
     </div>
-    <button class="p-button" type="button" on:click={onCreate}>Add server</button>
+    <button class="p-button is-compact-button" type="button" on:click={onCreate}>Add</button>
   </div>
 
   {#if servers.length === 0}
@@ -49,7 +49,7 @@
     <ul class="stack-list" aria-label="Saved servers">
       {#each servers as item}
         <li>
-          <article class="p-card list-item-shell" class:selected={selectedServerId === item.server.id} class:is-selected={selectedServerId === item.server.id} class:menu-open={openMenuId === item.server.id}>
+          <article class="p-card list-item-shell list-item-shell--server" class:selected={selectedServerId === item.server.id} class:is-selected={selectedServerId === item.server.id} class:menu-open={openMenuId === item.server.id}>
             <div class="list-card-topline">
               <button
                 class="p-button--base list-card-main"

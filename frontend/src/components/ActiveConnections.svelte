@@ -47,12 +47,12 @@
 
 <svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
-<section class="p-card panel active-connections-panel" aria-labelledby="active-connections-heading">
+<section class="p-card panel active-connections-panel panel--compact" aria-labelledby="active-connections-heading">
   <div class="p-card__header panel-header">
     <div>
       <p class="eyebrow">Connections</p>
       <h2 id="active-connections-heading">Active tunnels</h2>
-      <p class="panel-copy">Sessions that are live, reconnecting, or waiting for a passphrase stay visible here.</p>
+      <p class="panel-copy">Live, reconnecting, and unlock-pending sessions.</p>
     </div>
     <span class="p-chip is-inline">
       <span class="p-chip__lead">Live</span>
@@ -69,7 +69,7 @@
     <ul class="stack-list" aria-label="Active tunnels">
       {#each connections as connection}
         <li>
-          <article class="p-card list-item-shell" class:menu-open={openMenuId === connection.configurationId}>
+          <article class="p-card list-item-shell list-item-shell--runtime" class:menu-open={openMenuId === connection.configurationId}>
             <div class="list-card-topline">
               <button class="p-button--base list-card-main" type="button" aria-label={`Show ${connection.configurationLabel}`} on:click={() => onSelect(connection.configurationId)}>
                 <span class="list-primary">

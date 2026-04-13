@@ -40,15 +40,21 @@
 </script>
 
 <form class="dialog dialog-body gap-md p-form--stacked" on:submit|preventDefault={() => onSubmit(value)}>
-  <div class="editor-header">
+  <div class="dialog-header dialog-header--modal">
     <div>
-      <p class="eyebrow">Editor</p>
-      <h2>{value.id ? 'Edit tunnel' : 'New tunnel'}</h2>
-      <p class="panel-copy">Define how traffic should move through this SSH host, then save it for one-click reuse.</p>
+      <p class="eyebrow">Tunnel</p>
+      <h2 id="tunnel-dialog-heading">{value.id ? 'Edit tunnel' : 'New tunnel'}</h2>
+      <p class="panel-copy">Define the routing and save it for one-click reuse.</p>
     </div>
-    {#if server}
-      <p class="muted">{server.name}</p>
-    {/if}
+
+    <div class="dialog-header-actions">
+      {#if server}
+        <p class="muted dialog-context-chip">{server.name}</p>
+      {/if}
+      <button class="p-button--base dialog-close-button" type="button" aria-label="Close dialog" on:click={onCancel}>
+        <span aria-hidden="true">&times;</span>
+      </button>
+    </div>
   </div>
 
   <section class="p-card form-section" aria-labelledby="tunnel-basics-heading">

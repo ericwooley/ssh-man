@@ -56,16 +56,16 @@
 
 <svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
-<section class:is-disabled={!enabled} class="p-card panel config-panel" aria-labelledby="config-list-heading">
+<section class:is-disabled={!enabled} class="p-card panel config-panel panel--compact" aria-labelledby="config-list-heading">
   <div class="p-card__header panel-header">
     <div>
       <p class="eyebrow">Configurations</p>
       <h2 id="config-list-heading">Tunnels</h2>
-      <p class="panel-copy">Keep SOCKS proxies and forwards attached to the selected server so they are easy to restart.</p>
+      <p class="panel-copy">Saved forwards and SOCKS proxies for the focused target.</p>
     </div>
     <div class="panel-actions">
-      <button class="p-button--base" disabled={!enabled || configurations.length === 0} type="button" on:click={onStartAll}>Start all</button>
-      <button class="p-button" disabled={!enabled} type="button" on:click={onCreate}>Add tunnel</button>
+      <button class="p-button--base is-compact-button" disabled={!enabled || configurations.length === 0} type="button" on:click={onStartAll}>Start all</button>
+      <button class="p-button is-compact-button" disabled={!enabled} type="button" on:click={onCreate}>Add tunnel</button>
     </div>
   </div>
 
@@ -84,7 +84,7 @@
       {#each configurations as configuration}
         {@const runtime = sessionByConfigurationId.get(configuration.id)}
         <li>
-          <article class="p-card list-item-shell" class:selected={selectedConfigurationId === configuration.id} class:is-selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id}>
+          <article class="p-card list-item-shell list-item-shell--config" class:selected={selectedConfigurationId === configuration.id} class:is-selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id}>
             <div class="list-card-topline">
               <button
                 class="p-button--base list-card-main"

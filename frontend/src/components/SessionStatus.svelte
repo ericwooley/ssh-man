@@ -88,18 +88,18 @@
   $: visibleHistory = historyExpanded ? history : history.slice(0, collapsedHistoryCount)
 </script>
 
-<section class="p-card panel status-panel" aria-labelledby="session-status-heading">
+<section class="p-card panel status-panel panel--compact" aria-labelledby="session-status-heading">
   <div class="p-card__header panel-header">
     <div>
       <p class="eyebrow">Runtime</p>
       <h2 id="session-status-heading">Session status</h2>
-      <p class="panel-copy">Operate the selected tunnel here and watch its current runtime state.</p>
+      <p class="panel-copy">Operate the focused tunnel and watch its live state.</p>
     </div>
     <span class={`p-chip status-pill is-inline ${chipClass(currentStatus)} ${currentStatus} ${statusClass(currentStatus)}`} aria-live="polite" aria-label={`Session status ${currentStatus}`}>{statusLabel(currentStatus)}</span>
   </div>
 
   {#if configuration}
-    <div class="p-card runtime-summary">
+    <div class="p-card runtime-summary runtime-summary--compact">
       <div>
         <span class="runtime-label">Selected tunnel</span>
         <strong>{configuration.label}</strong>
@@ -114,23 +114,23 @@
     </div>
 
       <div class={`p-notification status-callout ${calloutClass(currentStatus)} is-borderless ${statusClass(currentStatus)}`} role="status">
-      <div class="p-notification__content">
-        <p class="p-notification__message">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
-      </div>
+        <div class="p-notification__content">
+          <p class="p-notification__message">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
+        </div>
     </div>
 
     <div class="runtime-actions-grid">
-      <button class="p-button" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
-      <button class="p-button--negative" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
+      <button class="p-button is-compact-button" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
+      <button class="p-button--negative is-compact-button" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
     </div>
 
     <div class="history-panel" aria-labelledby="session-history-heading">
       <div class="section-heading">
         <div>
           <h3 id="session-history-heading">Recent connection history</h3>
-          <p>User-visible outcomes for this saved tunnel.</p>
+          <p>User-visible outcomes for this tunnel.</p>
         </div>
-        <button class="p-button--base" type="button" disabled={history.length === 0} on:click={() => onCopyHistory(configuration.id)}>Copy history</button>
+        <button class="p-button--base is-compact-button" type="button" disabled={history.length === 0} on:click={() => onCopyHistory(configuration.id)}>Copy history</button>
       </div>
 
       {#if history.length > 0}
