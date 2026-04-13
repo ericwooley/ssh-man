@@ -27,9 +27,9 @@ describe('DiagnosticsPanel', () => {
     expect(screen.getByText('/tmp/ssh-man/ssh-man.db')).toBeTruthy()
     expect(screen.getByText('database is locked')).toBeTruthy()
 
-    await fireEvent.click(screen.getAllByRole('button', { name: 'Copy path' })[0])
-    await fireEvent.click(screen.getByRole('button', { name: 'Reload saved data' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Open devtools' }))
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0])
+    await fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Devtools' }))
 
     expect(onCopyPath).toHaveBeenCalledWith('App data path', '/tmp/ssh-man')
     expect(onReload).toHaveBeenCalledTimes(1)

@@ -64,7 +64,7 @@ describe('App', () => {
   it('opens the server dialog from the add button', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add server' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
 
     expect(screen.getByRole('dialog', { name: 'New server' })).toBeTruthy()
   })
@@ -72,7 +72,7 @@ describe('App', () => {
   it('selects the saved server and unlocks the workspace after saving', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add server' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
 
     const dialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(dialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
@@ -88,7 +88,7 @@ describe('App', () => {
   it('shows a saved tunnel in the tunnel list', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add server' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
 
     const serverDialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
@@ -98,7 +98,7 @@ describe('App', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
 
-    const tunnelDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
+    const tunnelDialog = screen.getByRole('dialog', { name: 'New tunnel' })
     await fireEvent.input(within(tunnelDialog).getByLabelText('Label'), { target: { value: 'Docs SOCKS' } })
     await fireEvent.change(within(tunnelDialog).getByLabelText('Type'), { target: { value: 'socks_proxy' } })
     await fireEvent.change(within(tunnelDialog).getByLabelText('SOCKS port mode'), { target: { value: 'manual' } })
@@ -112,7 +112,7 @@ describe('App', () => {
   it('saves a SOCKS tunnel with auto port mode', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add server' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
 
     const serverDialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
@@ -122,7 +122,7 @@ describe('App', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
 
-    const tunnelDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
+    const tunnelDialog = screen.getByRole('dialog', { name: 'New tunnel' })
     await fireEvent.input(within(tunnelDialog).getByLabelText('Label'), { target: { value: 'Auto SOCKS' } })
     await fireEvent.change(within(tunnelDialog).getByLabelText('Type'), { target: { value: 'socks_proxy' } })
     await fireEvent.change(within(tunnelDialog).getByLabelText('SOCKS port mode'), { target: { value: 'auto' } })
@@ -240,7 +240,7 @@ describe('App', () => {
 
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add server' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
 
     const serverDialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Primary' } })
@@ -252,7 +252,7 @@ describe('App', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
 
-    const socksDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
+    const socksDialog = screen.getByRole('dialog', { name: 'New tunnel' })
     await fireEvent.input(within(socksDialog).getByLabelText('Label'), { target: { value: 'Docs SOCKS' } })
     await fireEvent.change(within(socksDialog).getByLabelText('Type'), { target: { value: 'socks_proxy' } })
     await fireEvent.change(within(socksDialog).getByLabelText('SOCKS port mode'), { target: { value: 'manual' } })
@@ -261,14 +261,14 @@ describe('App', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
 
-    const portDialog = screen.getByRole('dialog', { name: 'Tunnel editor' })
+    const portDialog = screen.getByRole('dialog', { name: 'New tunnel' })
     await fireEvent.input(within(portDialog).getByLabelText('Label'), { target: { value: 'Docs Port' } })
     await fireEvent.input(within(portDialog).getByLabelText('Local port'), { target: { value: '9000' } })
     await fireEvent.input(within(portDialog).getByLabelText('Remote host'), { target: { value: '127.0.0.1' } })
     await fireEvent.input(within(portDialog).getByLabelText('Remote port'), { target: { value: '5432' } })
     await fireEvent.click(within(portDialog).getByRole('button', { name: 'Save tunnel' }))
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Start all' }))
+    await fireEvent.click(within(screen.getByRole('region', { name: 'Primary' })).getByRole('button', { name: 'Start all' }))
 
     const unlockDialog = await screen.findByRole('dialog', { name: 'SSH key passphrase required' })
     await fireEvent.input(within(unlockDialog).getByLabelText('SSH key passphrase'), { target: { value: 'hunter2' } })
