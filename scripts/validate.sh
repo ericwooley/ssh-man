@@ -19,6 +19,7 @@ require_command pnpm
 
 gofmt -w main.go cmd/app internal tests
 pnpm install --dir frontend --frozen-lockfile
+pnpm --dir frontend run check:css
 pnpm --dir frontend run build
 go vet ./...
 go test ./...

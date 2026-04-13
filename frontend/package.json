@@ -8,17 +8,19 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "vite build",
+    "check:css": "node ./scripts/check-css-contract.mjs",
     "test": "vitest run",
-    "validate": "pnpm run test && pnpm run build"
+    "validate": "pnpm run check:css && pnpm run test && pnpm run build"
   },
   "dependencies": {
     "svelte": "^5.28.2"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@testing-library/svelte": "^5.2.8",
     "@testing-library/user-event": "^14.6.1",
-    "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "jsdom": "^26.1.0",
+    "playwright": "^1.59.1",
     "vite": "^6.2.1",
     "vitest": "^3.1.2"
   }

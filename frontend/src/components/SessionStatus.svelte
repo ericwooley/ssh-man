@@ -30,6 +30,53 @@
     }
   }
 
+  function statusClass(status) {
+    switch (status) {
+      case 'connected':
+        return 'status-running'
+      case 'reconnecting':
+        return 'status-reconnecting'
+      case 'failed':
+        return 'status-failed'
+      case 'needs_attention':
+        return 'status-attention'
+      case 'starting':
+        return 'status-info'
+      default:
+        return 'status-stopped'
+    }
+  }
+
+  function chipClass(status) {
+    switch (status) {
+      case 'connected':
+        return 'p-chip--positive'
+      case 'reconnecting':
+      case 'needs_attention':
+        return 'p-chip--caution'
+      case 'failed':
+        return 'p-chip--negative'
+      case 'starting':
+        return 'p-chip--information'
+      default:
+        return ''
+    }
+  }
+
+  function calloutClass(status) {
+    switch (status) {
+      case 'connected':
+        return 'p-notification--positive'
+      case 'reconnecting':
+      case 'needs_attention':
+        return 'p-notification--caution'
+      case 'failed':
+        return 'p-notification--negative'
+      default:
+        return ''
+    }
+  }
+
   $: currentStatus = session?.status || 'stopped'
   $: canStart = !configuration ? false : startableStatuses.includes(currentStatus) || !session
   $: canStop = Boolean(configuration) && (activeStatuses.includes(currentStatus) || currentStatus === 'needs_attention')
@@ -41,18 +88,18 @@
   $: visibleHistory = historyExpanded ? history : history.slice(0, collapsedHistoryCount)
 </script>
 
-<section class="panel status-panel" aria-labelledby="session-status-heading">
+<section class="p-card panel status-panel" aria-labelledby="session-status-heading">
   <div class="panel-header">
     <div>
       <p class="eyebrow">Runtime</p>
       <h2 id="session-status-heading">Session status</h2>
-      <p class="panel-copy">Operate the selected tunnel here and watch its current runtime state.</p>
+      <p class="panel-copy">Operate the focused tunnel and watch its live state.</p>
     </div>
-    <span class={`status-pill ${currentStatus}`} aria-live="polite" aria-label={`Session status ${currentStatus}`}>{statusLabel(currentStatus)}</span>
+    <span class={`p-chip status-pill is-inline ${chipClass(currentStatus)} ${currentStatus} ${statusClass(currentStatus)}`} aria-live="polite" aria-label={`Session status ${currentStatus}`}>{statusLabel(currentStatus)}</span>
   </div>
 
   {#if configuration}
-    <div class="runtime-summary">
+    <div class="p-card runtime-summary runtime-summary--compact">
       <div>
         <span class="runtime-label">Selected tunnel</span>
         <strong>{configuration.label}</strong>
@@ -66,26 +113,30 @@
       </small>
     </div>
 
-    <p class="status-copy status-callout" role="status">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
+      <div class={`p-notification status-callout ${calloutClass(currentStatus)} is-borderless ${statusClass(currentStatus)}`} role="status">
+        <div class="p-notification__content">
+          <p class="p-notification__message">{session?.statusDetail || 'This saved tunnel is idle.'}</p>
+        </div>
+    </div>
 
     <div class="runtime-actions-grid">
-      <button class="button button-primary" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
-      <button class="button button-ghost danger" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
+      <button class="p-button--positive is-dense" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
+      <button class="p-button--negative is-dense" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
     </div>
 
     <div class="history-panel" aria-labelledby="session-history-heading">
       <div class="section-heading">
         <div>
           <h3 id="session-history-heading">Recent connection history</h3>
-          <p>User-visible outcomes for this saved tunnel.</p>
+          <p>User-visible outcomes for this tunnel.</p>
         </div>
-        <button class="button button-ghost button-small" type="button" disabled={history.length === 0} on:click={() => onCopyHistory(configuration.id)}>Copy history</button>
+        <button class="p-button--base is-dense" type="button" disabled={history.length === 0} on:click={() => onCopyHistory(configuration.id)}>Copy history</button>
       </div>
 
       {#if history.length > 0}
         <ul class="history-list" aria-label="Recent connection history entries">
           {#each visibleHistory as entry (entry.id)}
-            <li class="history-item">
+            <li class="p-card history-item">
               <div class="history-item-topline">
                 <strong>{entry.outcome.replaceAll('_', ' ')}</strong>
                 <span class="history-timestamp">{new Date(entry.endedAt || entry.startedAt).toLocaleString()}</span>
@@ -98,7 +149,7 @@
         {#if hiddenHistoryCount > 0}
           <div class="history-toggle-row">
             <button
-              class="button button-ghost button-small"
+              class="p-button--base"
               type="button"
               aria-expanded={historyExpanded}
               on:click={() => (historyExpanded = !historyExpanded)}

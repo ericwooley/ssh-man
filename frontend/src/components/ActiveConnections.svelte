@@ -3,43 +3,42 @@
   export let onSelect = () => {}
   export let onStop = () => {}
 
-  let openMenuId = ''
-
-  function toggleMenu(configurationId) {
-    openMenuId = openMenuId === configurationId ? '' : configurationId
-  }
-
-  function closeMenu() {
-    openMenuId = ''
-  }
-
-  function handleWindowClick(event) {
-    if (event.target?.closest?.('.row-menu')) return
-    closeMenu()
-  }
-
-  function handleWindowKeydown(event) {
-    if (event.key === 'Escape') {
-      closeMenu()
+  function statusChipClass(status) {
+    switch (status) {
+      case 'connected':
+        return 'p-chip--positive'
+      case 'reconnecting':
+      case 'needs_attention':
+        return 'p-chip--caution'
+      case 'failed':
+        return 'p-chip--negative'
+      case 'starting':
+        return 'p-chip--information'
+      default:
+        return ''
     }
+  }
+
+  function statusLabel(status) {
+    return (status || 'stopped').replaceAll('_', ' ')
   }
 </script>
 
-<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
-
-<section class="panel active-connections-panel" aria-labelledby="active-connections-heading">
+<section class="p-card panel active-connections-panel" aria-labelledby="active-connections-heading">
   <div class="panel-header">
     <div>
       <p class="eyebrow">Connections</p>
       <h2 id="active-connections-heading">Active tunnels</h2>
-      <p class="panel-copy">Sessions that are live, reconnecting, or waiting for a passphrase stay visible here.</p>
+      <p class="panel-copy">Live, reconnecting, and unlock-pending sessions.</p>
     </div>
-    <span class="pill">{connections.length}</span>
+    <span class="p-chip is-inline">
+      <span class="p-chip__lead">Live</span>
+      <span class="p-chip__value">{connections.length}</span>
+    </span>
   </div>
 
   {#if connections.length === 0}
     <div class="empty-state compact">
-      <span class="empty-mark" aria-hidden="true">ON</span>
       <h3>No active tunnels</h3>
       <p>Connected, reconnecting, and unlock-pending tunnels will appear here.</p>
     </div>
@@ -47,37 +46,30 @@
     <ul class="stack-list" aria-label="Active tunnels">
       {#each connections as connection}
         <li>
-          <div class:menu-open={openMenuId === connection.configurationId} class="list-item-shell">
+          <article class="list-item-shell list-item-shell--runtime">
             <div class="list-card-topline">
-            <button class="list-card-main" type="button" aria-label={`Show ${connection.configurationLabel}`} on:click={() => onSelect(connection.configurationId)}>
-              <span class="list-primary">
-                <strong>{connection.configurationLabel}</strong>
-                <small>{connection.serverName}</small>
-                <small>{connection.statusDetail || connection.status}</small>
-              </span>
-            </button>
+              <button class="p-button--base list-card-main" type="button" aria-label={`Show ${connection.configurationLabel}`} on:click={() => onSelect(connection.configurationId)}>
+                <span class="list-primary">
+                  <strong>{connection.configurationLabel}</strong>
+                  <small>{connection.serverName}</small>
+                  <small>{connection.statusDetail || connection.status}</small>
+                </span>
+              </button>
 
               <div class="list-card-tools">
-                <span class={`status-pill ${connection.status}`}>{connection.status}</span>
+                <span class={`p-chip status-pill is-inline ${statusChipClass(connection.status)} ${connection.status} ${connection.status === 'connected' ? 'status-running' : connection.status === 'reconnecting' ? 'status-reconnecting' : connection.status === 'failed' ? 'status-failed' : connection.status === 'needs_attention' ? 'status-attention' : connection.status === 'starting' ? 'status-info' : 'status-stopped'}`}>{statusLabel(connection.status)}</span>
 
-                <div class:open={openMenuId === connection.configurationId} class="row-menu">
+                <div class="list-card-actions">
                   <button
-                    class="button button-ghost button-small row-menu-trigger"
+                    class="p-button--negative is-dense"
                     type="button"
-                    aria-label={`More actions for ${connection.configurationLabel}`}
-                    aria-expanded={openMenuId === connection.configurationId}
-                    aria-haspopup="menu"
-                    on:click={() => toggleMenu(connection.configurationId)}
-                  >...</button>
-                  {#if openMenuId === connection.configurationId}
-                    <div class="row-menu-popover" role="menu" aria-label={`Actions for ${connection.configurationLabel}`}>
-                      <button class="button button-ghost button-small danger" type="button" aria-label={`Disconnect ${connection.configurationLabel}`} on:click={() => { closeMenu(); onStop(connection.configurationId) }}>Disconnect</button>
-                    </div>
-                  {/if}
+                    aria-label={`Disconnect ${connection.configurationLabel}`}
+                    on:click={() => onStop(connection.configurationId)}
+                  >Disconnect</button>
                 </div>
               </div>
             </div>
-          </div>
+          </article>
         </li>
       {/each}
     </ul>
