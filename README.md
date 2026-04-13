@@ -1,3 +1,5 @@
+[![License](https://img.shields.io/badge/License-Apache%202.0%20%2B%20Commons%20Clause-blue.svg)](LICENSE.md)
+
 # ssh-man
 
 `ssh-man` is a desktop SSH tunnel manager for people who live on remote boxes.
@@ -277,3 +279,11 @@ tests/      integration and smoke coverage
 - macOS: supported via Homebrew cask and local source build
 - Linux: supported via local source build
 - Homebrew tap: `ericwooley/homebrew-apps`
+
+## License
+
+`ssh-man` is available under Apache License 2.0 with the Commons Clause license condition.
+
+That means the source is available and the core Apache 2.0 terms still apply, but the Commons Clause adds a restriction on selling the software or services whose value substantially comes from the software itself.
+
+See `LICENSE.md` for the full license text.
