@@ -34,9 +34,7 @@ describe('ConfigList', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Start all' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Select tunnel SOCKS' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Edit SOCKS' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete SOCKS' }))
 
     expect(onStartAll).toHaveBeenCalledTimes(1)
@@ -80,7 +78,7 @@ describe('ConfigList', () => {
     expect(screen.getByLabelText('Tunnel status connected')).toBeTruthy()
   })
 
-  it('closes the action menu on outside click and escape', async () => {
+  it('renders inline edit and delete actions for each tunnel', () => {
     render(ConfigList, {
       props: {
         configurations: [{
@@ -93,15 +91,8 @@ describe('ConfigList', () => {
       },
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
-    expect(screen.getByRole('menu', { name: 'Actions for SOCKS' })).toBeTruthy()
-
-    await fireEvent.click(window)
-    expect(screen.queryByRole('menu', { name: 'Actions for SOCKS' })).toBeNull()
-
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for SOCKS' }))
-    await fireEvent.keyDown(window, { key: 'Escape' })
-    expect(screen.queryByRole('menu', { name: 'Actions for SOCKS' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit SOCKS' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Delete SOCKS' })).toBeTruthy()
   })
 
   it('shows auto for SOCKS tunnels without a fixed port', () => {

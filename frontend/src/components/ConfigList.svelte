@@ -9,29 +9,9 @@
   export let onEdit = () => {}
   export let onDelete = () => {}
 
-  let openMenuId = ''
   let sessionByConfigurationId = new Map()
 
   $: sessionByConfigurationId = new Map(sessions.map((session) => [session.configurationId, session]))
-
-  function toggleMenu(configurationId) {
-    openMenuId = openMenuId === configurationId ? '' : configurationId
-  }
-
-  function closeMenu() {
-    openMenuId = ''
-  }
-
-  function handleWindowClick(event) {
-    if (event.target?.closest?.('.row-menu')) return
-    closeMenu()
-  }
-
-  function handleWindowKeydown(event) {
-    if (event.key === 'Escape') {
-      closeMenu()
-    }
-  }
 
   function statusChipClass(status) {
     switch (status) {
@@ -53,8 +33,6 @@
     return (status || 'stopped').replaceAll('_', ' ')
   }
 </script>
-
-<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
 <section class:is-disabled={!enabled} class="p-card panel config-panel panel--compact" aria-labelledby="config-list-heading">
   <div class="p-card__header panel-header">
@@ -84,7 +62,7 @@
       {#each configurations as configuration}
         {@const runtime = sessionByConfigurationId.get(configuration.id)}
         <li>
-          <article class="p-card list-item-shell list-item-shell--config" class:selected={selectedConfigurationId === configuration.id} class:is-selected={selectedConfigurationId === configuration.id} class:menu-open={openMenuId === configuration.id}>
+          <article class="p-card list-item-shell list-item-shell--config" class:selected={selectedConfigurationId === configuration.id} class:is-selected={selectedConfigurationId === configuration.id}>
             <div class="list-card-topline">
               <button
                 class="p-button--base list-card-main"
@@ -111,21 +89,19 @@
               <div class="list-card-tools">
                 <span class={`p-chip status-pill is-inline ${statusChipClass(runtime?.status)} ${runtime?.status || 'stopped'} ${runtime?.status === 'connected' ? 'status-running' : runtime?.status === 'reconnecting' ? 'status-reconnecting' : runtime?.status === 'failed' ? 'status-failed' : runtime?.status === 'needs_attention' ? 'status-attention' : runtime?.status === 'starting' ? 'status-info' : 'status-stopped'}`} aria-label={`Tunnel status ${runtime?.status || 'stopped'}`}>{statusLabel(runtime?.status)}</span>
 
-                <div class="p-contextual-menu row-menu" class:open={openMenuId === configuration.id}>
+                <div class="list-card-actions">
                   <button
-                    class="p-button--base p-contextual-menu__toggle row-menu-trigger"
+                    class="list-action"
                     type="button"
-                    aria-label={`More actions for ${configuration.label}`}
-                    aria-expanded={openMenuId === configuration.id}
-                    aria-haspopup="menu"
-                    on:click={() => toggleMenu(configuration.id)}
-                  >More</button>
-                  <div class="p-contextual-menu__dropdown row-menu-popover" role="menu" aria-label={`Actions for ${configuration.label}`} aria-hidden={openMenuId === configuration.id ? 'false' : 'true'}>
-                    <span class="p-contextual-menu__group">
-                      <button class="p-contextual-menu__link" type="button" aria-label={`Edit ${configuration.label}`} on:click={() => { closeMenu(); onEdit(configuration) }}>Edit</button>
-                      <button class="p-contextual-menu__link danger" type="button" aria-label={`Delete ${configuration.label}`} on:click={() => { closeMenu(); onDelete(configuration.id) }}>Delete</button>
-                    </span>
-                  </div>
+                    aria-label={`Edit ${configuration.label}`}
+                    on:click={() => onEdit(configuration)}
+                  >Edit</button>
+                  <button
+                    class="list-action list-action--danger"
+                    type="button"
+                    aria-label={`Delete ${configuration.label}`}
+                    on:click={() => onDelete(configuration.id)}
+                  >Delete</button>
                 </div>
               </div>
             </div>

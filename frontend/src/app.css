@@ -144,6 +144,7 @@ a:focus-visible {
   border-radius: 1.2rem;
 }
 
+/* -- flex layouts: headers & toolbars (center-aligned) -- */
 .console-topbar-copy,
 .console-topbar-actions,
 .console-overview-header,
@@ -151,19 +152,41 @@ a:focus-visible {
 .panel-header,
 .editor-header,
 .dialog-header,
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* -- flex layouts: inline rows (center-aligned) -- */
+.diagnostics-row,
+.history-item-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* -- flex layouts: action bars (top-aligned, end-justified) -- */
 .dialog-actions,
 .editor-actions,
 .button-row,
-.panel-actions,
-.diagnostics-row,
-.section-heading,
-.runtime-summary,
-.history-item-topline {
+.panel-actions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+/* -- flex layout: runtime summary (top-aligned, internal grid) -- */
+.runtime-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .console-topbar-copy,
@@ -410,6 +433,7 @@ a:focus-visible {
   overflow: visible;
 }
 
+/* legacy: kept for backwards compat if any menu-open markup lingers */
 .config-panel:has(.list-item-shell.menu-open),
 .active-connections-panel:has(.list-item-shell.menu-open),
 .server-panel:has(.list-item-shell.menu-open) {
@@ -421,8 +445,17 @@ a:focus-visible {
   display: grid;
   gap: 0.75rem;
   overflow: hidden;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid transparent;
   border-radius: 1.2rem;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.list-item-shell:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  border-color: var(--panel-border);
 }
 
 .list-item-shell--server {
@@ -464,7 +497,7 @@ a:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.75rem;
-  align-items: start;
+  align-items: center;
 }
 
 .list-card-main {
@@ -497,10 +530,69 @@ a:focus-visible {
 
 .list-card-tools {
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+/* -- inline card actions (hover-reveal) -- */
+.list-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+/* reveal on row hover, focus-within, or selected */
+.list-item-shell:hover .list-card-actions,
+.list-item-shell:focus-within .list-card-actions,
+.list-item-shell.is-selected .list-card-actions,
+.list-item-shell.selected .list-card-actions {
+  opacity: 1;
+}
+
+.list-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.85rem;
+  padding: 0.3rem 0.62rem;
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+  white-space: nowrap;
+}
+
+.list-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--panel-border);
+  color: var(--text-strong);
+}
+
+.list-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.list-action:active {
+  transform: scale(0.97);
+}
+
+.list-action--danger {
+  color: var(--danger);
+}
+
+.list-action--danger:hover {
+  background: var(--danger-soft);
+  border-color: rgba(255, 126, 121, 0.22);
+  color: var(--danger);
 }
 
 .row-menu {
@@ -907,7 +999,6 @@ textarea {
   .panel-actions,
   .diagnostics-row,
   .section-heading,
-  .runtime-summary,
   .history-item-topline {
     flex-direction: column;
     align-items: stretch;
@@ -923,7 +1014,15 @@ textarea {
   }
 
   .list-card-tools {
+    flex-direction: row;
+    align-items: center;
     justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  /* always show actions on small viewports (no hover) */
+  .list-card-actions {
+    opacity: 1;
   }
 
   .theme-toggle,

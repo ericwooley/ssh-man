@@ -5,30 +5,7 @@
   export let onCreate = () => {}
   export let onEdit = () => {}
   export let onDelete = () => {}
-
-  let openMenuId = ''
-
-  function toggleMenu(serverId) {
-    openMenuId = openMenuId === serverId ? '' : serverId
-  }
-
-  function closeMenu() {
-    openMenuId = ''
-  }
-
-  function handleWindowClick(event) {
-    if (event.target?.closest?.('.row-menu')) return
-    closeMenu()
-  }
-
-  function handleWindowKeydown(event) {
-    if (event.key === 'Escape') {
-      closeMenu()
-    }
-  }
 </script>
-
-<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
 <section class="p-card panel server-panel panel--compact" aria-labelledby="server-list-heading">
   <div class="p-card__header panel-header">
@@ -49,7 +26,7 @@
     <ul class="stack-list" aria-label="Saved servers">
       {#each servers as item}
         <li>
-          <article class="p-card list-item-shell list-item-shell--server" class:selected={selectedServerId === item.server.id} class:is-selected={selectedServerId === item.server.id} class:menu-open={openMenuId === item.server.id}>
+          <article class="p-card list-item-shell list-item-shell--server" class:selected={selectedServerId === item.server.id} class:is-selected={selectedServerId === item.server.id}>
             <div class="list-card-topline">
               <button
                 class="p-button--base list-card-main"
@@ -70,21 +47,19 @@
                   <span class="p-chip__value">{item.configurations.length}</span>
                 </span>
 
-                <div class="p-contextual-menu row-menu" class:open={openMenuId === item.server.id}>
+                <div class="list-card-actions">
                   <button
-                    class="p-button--base p-contextual-menu__toggle row-menu-trigger"
+                    class="list-action"
                     type="button"
-                    aria-label={`More actions for ${item.server.name}`}
-                    aria-expanded={openMenuId === item.server.id}
-                    aria-haspopup="menu"
-                    on:click={() => toggleMenu(item.server.id)}
-                  >More</button>
-                  <div class="p-contextual-menu__dropdown row-menu-popover" role="menu" aria-label={`Actions for ${item.server.name}`} aria-hidden={openMenuId === item.server.id ? 'false' : 'true'}>
-                    <span class="p-contextual-menu__group">
-                      <button class="p-contextual-menu__link" type="button" aria-label={`Edit ${item.server.name}`} on:click={() => { closeMenu(); onEdit(item.server) }}>Edit</button>
-                      <button class="p-contextual-menu__link danger" type="button" aria-label={`Delete ${item.server.name}`} on:click={() => { closeMenu(); onDelete(item.server.id) }}>Delete</button>
-                    </span>
-                  </div>
+                    aria-label={`Edit ${item.server.name}`}
+                    on:click={() => onEdit(item.server)}
+                  >Edit</button>
+                  <button
+                    class="list-action list-action--danger"
+                    type="button"
+                    aria-label={`Delete ${item.server.name}`}
+                    on:click={() => onDelete(item.server.id)}
+                  >Delete</button>
                 </div>
               </div>
             </div>

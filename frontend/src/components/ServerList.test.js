@@ -34,11 +34,9 @@ describe('ServerList', () => {
     const primaryButton = screen.getByRole('button', { name: 'Select server Primary' })
     expect(primaryButton.getAttribute('aria-pressed')).toBe('true')
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await fireEvent.click(primaryButton)
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Edit Primary' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete Primary' }))
 
     expect(onCreate).toHaveBeenCalledTimes(1)
@@ -47,7 +45,7 @@ describe('ServerList', () => {
     expect(onDelete).toHaveBeenCalledWith('server-1')
   })
 
-  it('closes the action menu on outside click and escape', async () => {
+  it('renders inline edit and delete actions for each server', () => {
     render(ServerList, {
       props: {
         servers: [{
@@ -57,14 +55,7 @@ describe('ServerList', () => {
       },
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
-    expect(screen.getByRole('menu', { name: 'Actions for Primary' })).toBeTruthy()
-
-    await fireEvent.click(window)
-    expect(screen.queryByRole('menu', { name: 'Actions for Primary' })).toBeNull()
-
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Primary' }))
-    await fireEvent.keyDown(window, { key: 'Escape' })
-    expect(screen.queryByRole('menu', { name: 'Actions for Primary' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit Primary' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Delete Primary' })).toBeTruthy()
   })
 })
