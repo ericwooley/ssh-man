@@ -91,6 +91,10 @@
         <div class="p-form__control">
           <input
             id="tunnel-local-port"
+            type="number"
+            min="1"
+            max="65535"
+            step="1"
             class={errors.localPort ? 'p-form-validation__input' : ''}
             bind:value={value.localPort}
             aria-label="Local port"
@@ -125,6 +129,10 @@
         <div class="p-form__control">
           <input
             id="tunnel-remote-port"
+            type="number"
+            min="1"
+            max="65535"
+            step="1"
             class={errors.remotePort ? 'p-form-validation__input' : ''}
             bind:value={value.remotePort}
             aria-label="Remote port"
@@ -158,6 +166,10 @@
           <div class="p-form__control">
             <input
               id="tunnel-socks-port"
+              type="number"
+              min="1"
+              max="65535"
+              step="1"
               class={errors.socksPort ? 'p-form-validation__input' : ''}
               bind:value={value.socksPort}
               aria-label="SOCKS port"

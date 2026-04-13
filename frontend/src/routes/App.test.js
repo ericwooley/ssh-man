@@ -64,15 +64,18 @@ describe('App', () => {
   it('opens the server dialog from the add button', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    expect(screen.queryByRole('heading', { name: 'Session status' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Storage and recovery' })).toBeNull()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add Host' }))
 
     expect(screen.getByRole('dialog', { name: 'New server' })).toBeTruthy()
   })
 
-  it('selects the saved server and unlocks the workspace after saving', async () => {
+  it('selects the saved server and reveals the tunnel panel after saving', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add Host' }))
 
     const dialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(dialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
@@ -80,15 +83,16 @@ describe('App', () => {
     await fireEvent.input(within(dialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Save server' }))
 
-    expect(screen.getByRole('heading', { name: 'Test server' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Tunnels' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add tunnel' }).hasAttribute('disabled')).toBe(false)
-    expect(screen.queryByRole('heading', { name: 'Select a server to continue' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Session status' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Storage and recovery' })).toBeNull()
   })
 
   it('shows a saved tunnel in the tunnel list', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add Host' }))
 
     const serverDialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
@@ -112,7 +116,7 @@ describe('App', () => {
   it('saves a SOCKS tunnel with auto port mode', async () => {
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add Host' }))
 
     const serverDialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Test server' } })
@@ -130,6 +134,43 @@ describe('App', () => {
 
     expect(api.saveConnectionConfiguration).toHaveBeenCalledWith(expect.objectContaining({ socksPort: 0 }))
     expect(screen.getByText('SOCKS Auto')).toBeTruthy()
+  })
+
+  it('keeps a dismissed notification hidden until a different message arrives', async () => {
+    api.loadInitialState.mockResolvedValue({
+      servers: [],
+      preferences: { theme: 'dark', lastSelectedServerId: '' },
+      sessions: [],
+      diagnostics: { appDataPath: '/tmp/ssh-man', databasePath: '/tmp/ssh-man/ssh-man.db' },
+      message: 'State restored.',
+      recoverable: false,
+    })
+
+    render(App)
+
+    expect(await screen.findByText('State restored.')).toBeTruthy()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }))
+
+    expect(screen.queryByText('State restored.')).toBeNull()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('State restored.')).toBeNull()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add Host' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'New server' })
+    await fireEvent.input(within(dialog).getByLabelText('Server name'), { target: { value: 'Banner test host' } })
+    await fireEvent.input(within(dialog).getByLabelText('Server host'), { target: { value: 'example.com' } })
+    await fireEvent.input(within(dialog).getByLabelText('SSH username'), { target: { value: 'eric' } })
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Save server' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Saved Banner test host.')).toBeTruthy()
+    })
   })
 
   it('refreshes runtime state after start and stop so all views stay in sync', async () => {
@@ -151,7 +192,9 @@ describe('App', () => {
 
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Start tunnel' }))
+    expect(screen.queryByRole('heading', { name: 'Session status' })).toBeNull()
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start Docs SOCKS' }))
 
     await waitFor(() => {
       expect(screen.getByLabelText('Tunnel status connected')).toBeTruthy()
@@ -161,11 +204,11 @@ describe('App', () => {
 
     api.listRuntimeSessions.mockResolvedValue([{ configurationId: 'config-1', status: 'stopped', statusDetail: 'Tunnel stopped' }])
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Stop tunnel' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop Docs SOCKS' }))
 
     await waitFor(() => {
       expect(screen.getByLabelText('Tunnel status stopped')).toBeTruthy()
-      expect(screen.getByLabelText('Session status stopped')).toBeTruthy()
+      expect(screen.queryByRole('heading', { name: 'Session status' })).toBeNull()
       expect(screen.queryByText('Listening on localhost:1080')).toBeNull()
     })
   })
@@ -190,7 +233,7 @@ describe('App', () => {
 
     expect(await screen.findByText('SOCKS Auto')).toBeTruthy()
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Start tunnel' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Start Auto SOCKS' }))
 
     await waitFor(() => {
       expect(screen.getByText('SOCKS proxy on :43123')).toBeTruthy()
@@ -240,7 +283,7 @@ describe('App', () => {
 
     render(App)
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add Host' }))
 
     const serverDialog = screen.getByRole('dialog', { name: 'New server' })
     await fireEvent.input(within(serverDialog).getByLabelText('Server name'), { target: { value: 'Primary' } })
@@ -268,7 +311,7 @@ describe('App', () => {
     await fireEvent.input(within(portDialog).getByLabelText('Remote port'), { target: { value: '5432' } })
     await fireEvent.click(within(portDialog).getByRole('button', { name: 'Save tunnel' }))
 
-    await fireEvent.click(within(screen.getByRole('region', { name: 'Primary' })).getByRole('button', { name: 'Start all' }))
+    await fireEvent.click(within(screen.getByRole('region', { name: 'Tunnels' })).getByRole('button', { name: 'Start all' }))
 
     const unlockDialog = await screen.findByRole('dialog', { name: 'SSH key passphrase required' })
     await fireEvent.input(within(unlockDialog).getByLabelText('SSH key passphrase'), { target: { value: 'hunter2' } })

@@ -82,4 +82,32 @@ describe('ConfigEditor', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onSubmit.mock.calls[0][0].socksPort).toBe('auto')
   })
+
+  it('uses numeric inputs for port fields', async () => {
+    render(ConfigEditor, {
+      props: {
+        server: { id: 'server-1', name: 'Primary' },
+        value: {
+          serverId: 'server-1',
+          label: 'Docs tunnel',
+          connectionType: 'local_forward',
+          localPort: '',
+          remoteHost: '127.0.0.1',
+          remotePort: '',
+          notes: '',
+          autoReconnectEnabled: true,
+        },
+      },
+    })
+
+    expect(screen.getByLabelText('Local port').getAttribute('type')).toBe('number')
+    expect(screen.getByLabelText('Local port').getAttribute('min')).toBe('1')
+    expect(screen.getByLabelText('Remote port').getAttribute('type')).toBe('number')
+
+    await fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'socks_proxy' } })
+    await fireEvent.change(screen.getByLabelText('SOCKS port mode'), { target: { value: 'manual' } })
+
+    expect(screen.getByLabelText('SOCKS port').getAttribute('type')).toBe('number')
+    expect(screen.getByLabelText('SOCKS port').getAttribute('max')).toBe('65535')
+  })
 })

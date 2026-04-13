@@ -2,6 +2,20 @@
 
 # ssh-man
 
+<table>
+  <tr>
+    <td width="120" valign="middle">
+      <a href="https://moonpixels.tech">
+        <img src="moonpixels.png" alt="MoonPixels" width="96" />
+      </a>
+    </td>
+    <td valign="middle">
+      <strong>Gifted with love by <a href="https://moonpixels.tech">MoonPixels.tech</a>.</strong><br />
+      MoonPixels builds custom apps for startups and small teams, helps non-technical founders launch MVPs quickly, and provides senior engineering help when you need to turn an idea into a real product.
+    </td>
+  </tr>
+</table>
+
 `ssh-man` is a desktop SSH tunnel manager for people who live on remote boxes.
 
 Save your servers once, keep your port forwards and SOCKS5 proxies organized under each host, and launch a browser through the remote network path when you need to test something exactly the way that server sees it.

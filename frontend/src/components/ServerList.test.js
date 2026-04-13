@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen, within } from '@testing-library/svelte'
 import { describe, expect, it, vi } from 'vitest'
 
 import ServerList from './ServerList.svelte'
@@ -34,7 +34,7 @@ describe('ServerList', () => {
     const primaryButton = screen.getByRole('button', { name: 'Select server Primary' })
     expect(primaryButton.getAttribute('aria-pressed')).toBe('true')
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Add Host' }))
     await fireEvent.click(primaryButton)
     await fireEvent.click(screen.getByRole('button', { name: 'Edit Primary' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete Primary' }))
@@ -43,6 +43,15 @@ describe('ServerList', () => {
     expect(onSelect).toHaveBeenCalledWith('server-1')
     expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledWith('server-1')
+  })
+
+  it('shows a hosts title and keeps the create action inside the server list container', () => {
+    render(ServerList, { props: { servers: [] } })
+
+    const section = screen.getByRole('region', { name: 'Servers' })
+    expect(within(section).getByRole('heading', { name: 'Hosts' })).toBeTruthy()
+    expect(within(section).getByRole('button', { name: 'Add Host' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Targets' })).toBeNull()
   })
 
   it('renders inline edit and delete actions for each server', () => {

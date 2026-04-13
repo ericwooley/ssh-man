@@ -68,6 +68,18 @@ describe('ServerEditorDialog', () => {
     expect(screen.queryByLabelText('Private key path')).toBeNull()
   })
 
+  it('uses a numeric input for server port', () => {
+    render(ServerEditorDialog, {
+      props: {
+        open: true,
+      },
+    })
+
+    expect(screen.getByLabelText('Server port').getAttribute('type')).toBe('number')
+    expect(screen.getByLabelText('Server port').getAttribute('min')).toBe('1')
+    expect(screen.getByLabelText('Server port').getAttribute('max')).toBe('65535')
+  })
+
   it('closes on escape and backdrop clicks', async () => {
     const onCancel = vi.fn()
 

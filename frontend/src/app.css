@@ -72,8 +72,8 @@ body {
 }
 
 .console-main {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 100vh;
@@ -97,6 +97,19 @@ body {
   backdrop-filter: blur(24px);
 }
 
+.console-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(24px);
+}
+
 /* ============================================================
  * Flex layout groups
  * ============================================================ */
@@ -104,7 +117,7 @@ body {
 /* Headers & toolbars (center-aligned) */
 .console-topbar-copy,
 .console-topbar-actions,
-.console-overview-header,
+.console-subbar,
 .panel-header,
 .dialog-header,
 .section-heading {
@@ -132,8 +145,8 @@ body {
 .panel-actions {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: flex-end;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
 
@@ -152,6 +165,36 @@ body {
 .console-topbar-copy {
   align-items: center;
   flex: 1;
+}
+
+.moonpixels-banner__copy,
+.moonpixels-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.moonpixels-banner__copy {
+  flex: 1;
+}
+
+.moonpixels-banner__logo {
+  display: block;
+  width: 2rem;
+  height: 2rem;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.moonpixels-banner__text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.moonpixels-banner__text strong {
+  color: var(--text-strong);
 }
 
 /* ============================================================
@@ -200,13 +243,21 @@ body {
 
 /* Action areas — align start */
 .console-topbar-actions,
-.panel-actions,
 .dialog-actions,
 .editor-actions,
 .button-row,
-.diagnostics-actions,
-.console-overview-actions {
+.diagnostics-actions {
   justify-content: flex-start;
+}
+
+.panel-actions--inline {
+  grid-auto-flow: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.panel-actions--compact {
+  gap: 0.35rem;
 }
 
 .console-topbar-actions {
@@ -253,8 +304,7 @@ body {
 .browser-command-block,
 .runtime-summary,
 .history-item,
-.dialog-detail,
-.console-overview {
+.dialog-detail {
   margin: 0;
 }
 
@@ -278,7 +328,6 @@ body {
  * Grid/list containers
  * ============================================================ */
 .panel,
-.console-overview,
 .stack-list,
 .history-list,
 .history-panel,
@@ -527,6 +576,56 @@ body {
   gap: 0.45rem;
 }
 
+.p-form__control {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.p-form-validation__message,
+.p-form-help-text {
+  display: block;
+  margin: 0.25rem 0 0;
+  line-height: 1.35;
+}
+
+.diagnostics-panel {
+  align-self: start;
+  gap: 0.75rem;
+}
+
+.banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.banner .p-notification__content {
+  min-width: 0;
+}
+
+.banner-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.banner-dismiss:hover,
+.banner-dismiss:focus-visible {
+  background: rgba(127, 141, 165, 0.12);
+  color: var(--text-strong);
+}
+
 .p-form__group > span:first-child {
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -681,9 +780,9 @@ body {
   }
 
   .console-topbar,
+  .console-subbar,
   .console-topbar-copy,
   .console-topbar-actions,
-  .console-overview-header,
   .panel-header,
   .dialog-header,
   .dialog-actions,
@@ -702,7 +801,8 @@ body {
   .field-grid,
   .server-field-grid,
   .runtime-actions-grid,
-  .list-card-topline {
+   .list-card-topline,
+   .banner {
     grid-template-columns: 1fr;
   }
 
@@ -722,6 +822,11 @@ body {
   .console-search-shell {
     width: 100%;
     max-width: none;
+  }
+
+  .moonpixels-banner__copy,
+  .moonpixels-banner__actions {
+    width: 100%;
   }
 
   .console-title-block h1 {

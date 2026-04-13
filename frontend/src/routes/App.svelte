@@ -1,5 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
+  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
+  import moonpixelsLogo from '../../../moonpixels.png'
   import {
     deleteConnectionConfiguration,
     deleteServer,
@@ -21,7 +23,6 @@
   } from '../lib/api'
   import ServerList from '../components/ServerList.svelte'
   import ConfigList from '../components/ConfigList.svelte'
-  import ActiveConnections from '../components/ActiveConnections.svelte'
   import ConfigEditor from '../components/ConfigEditor.svelte'
   import DiagnosticsPanel from '../components/DiagnosticsPanel.svelte'
   import ServerEditorDialog from '../components/ServerEditorDialog.svelte'
@@ -68,6 +69,7 @@
   let browserLaunchPreview = ''
   let banner = ''
   let bannerKind = 'info'
+  let dismissedBannerSignature = ''
   let loadRecoverable = false
   let isHydrating = false
   let unlockDialogOpen = false
@@ -85,17 +87,22 @@
   let unlockSession = null
   let runtimeSessionSnapshot = []
   let sessionHistory = []
-  let activeRuntimeConnections = []
-  let totalTunnelCount = 0
-  let connectedSessionCount = 0
-  let attentionSessionCount = 0
-  let selectedServerActiveCount = 0
   let canCreateTunnel = false
   let canStartSelectedServer = false
   let currentIssue = ''
+  let showDiagnostics = false
+  let showRuntimePane = false
   let browserDiscoveryKey = ''
   let browserPreviewKey = ''
   let historyConfigurationKey = ''
+
+  function openMoonpixels() {
+    BrowserOpenURL('https://moonpixels.tech')
+  }
+
+  function dismissBanner() {
+    dismissedBannerSignature = bannerSignature
+  }
 
   function normalizeHistoryEntry(entry) {
     if (!entry) return null
@@ -227,21 +234,6 @@
     return configurationsForServer(serverId)[0]?.id || ''
   }
 
-  const activeConnections = () => sessions
-    .map((session) => normalizeSession(session))
-    .filter(Boolean)
-    .filter((session) => !['stopped', 'failed'].includes(session.status))
-    .map((session) => {
-      const record = findConfigurationRecord(servers, session.configurationId)
-      return {
-        configurationId: session.configurationId,
-        configurationLabel: record?.configuration.label || 'Unknown tunnel',
-        serverName: record?.server.name || 'Unknown server',
-        status: session.status,
-        statusDetail: session.statusDetail,
-      }
-    })
-
   async function hydrate() {
     isHydrating = true
     try {
@@ -294,15 +286,27 @@
 
   function validateConfig(configuration) {
     const errors = {}
+    const localPort = String(configuration.localPort ?? '').trim()
+    const remotePort = String(configuration.remotePort ?? '').trim()
+    const socksPort = String(configuration.socksPort ?? '').trim()
+
     if (!configuration.label?.trim()) errors.label = 'A label is required.'
     if (configuration.connectionType === 'local_forward') {
-      if (!configuration.localPort) errors.localPort = 'Local port is required.'
+      if (!localPort) {
+        errors.localPort = 'Local port is required.'
+      } else if (!/^\d+$/.test(localPort) || Number(localPort) < 1 || Number(localPort) > 65535) {
+        errors.localPort = 'Local port must be between 1 and 65535.'
+      }
+
       if (!configuration.remoteHost?.trim()) errors.remoteHost = 'Remote host is required.'
-      if (!configuration.remotePort) errors.remotePort = 'Remote port is required.'
+      if (!remotePort) {
+        errors.remotePort = 'Remote port is required.'
+      } else if (!/^\d+$/.test(remotePort) || Number(remotePort) < 1 || Number(remotePort) > 65535) {
+        errors.remotePort = 'Remote port must be between 1 and 65535.'
+      }
     }
-    if (configuration.connectionType === 'socks_proxy' && configuration.socksPort !== '' && configuration.socksPort !== 'auto') {
-      const socksPort = Number(configuration.socksPort)
-      if (!Number.isInteger(socksPort) || socksPort < 1 || socksPort > 65535) {
+    if (configuration.connectionType === 'socks_proxy' && socksPort !== '' && socksPort !== 'auto') {
+      if (!/^\d+$/.test(socksPort) || Number(socksPort) < 1 || Number(socksPort) > 65535) {
         errors.socksPort = 'SOCKS port must be Auto or between 1 and 65535.'
       }
     }
@@ -311,11 +315,12 @@
 
   function validateServer(server) {
     const errors = {}
+    const port = String(server.port ?? '').trim()
+
     if (!server.name?.trim()) errors.name = 'A server name is required.'
     if (!server.host?.trim()) errors.host = 'A server host is required.'
     if (!server.username?.trim()) errors.username = 'An SSH username is required.'
-    const port = Number(server.port || 0)
-    if (!Number.isInteger(port) || port < 1 || port > 65535) errors.port = 'Port must be between 1 and 65535.'
+    if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) errors.port = 'Port must be between 1 and 65535.'
     if (server.authMode === 'private_key' && !server.keyReference?.trim()) errors.keyReference = 'A private key path is required.'
     return errors
   }
@@ -759,25 +764,13 @@
   $: selectedSession = runtimeSessionSnapshot.find((item) => item.configurationId === selectedConfigurationId) || null
   $: unlockConfiguration = findConfigurationRecord(servers, unlockConfigurationId)?.configuration || null
   $: unlockSession = runtimeSessionSnapshot.find((item) => item.configurationId === unlockConfigurationId) || null
-  $: totalTunnelCount = servers.reduce((count, item) => count + item.configurations.length, 0)
-  $: connectedSessionCount = runtimeSessionSnapshot.filter((item) => item.status === 'connected').length
-  $: attentionSessionCount = runtimeSessionSnapshot.filter((item) => item.status === 'needs_attention').length
-  $: activeRuntimeConnections = runtimeSessionSnapshot
-    .filter((session) => !['stopped', 'failed'].includes(session.status))
-    .map((session) => {
-      const record = findConfigurationRecord(servers, session.configurationId)
-      return {
-        configurationId: session.configurationId,
-        configurationLabel: record?.configuration.label || 'Unknown tunnel',
-        serverName: record?.server.name || 'Unknown server',
-        status: session.status,
-        statusDetail: session.statusDetail,
-      }
-    })
-  $: selectedServerActiveCount = activeRuntimeConnections.filter((item) => findConfigurationRecord(servers, item.configurationId)?.server.id === selectedServerId).length
   $: canCreateTunnel = Boolean(selectedServerId)
   $: canStartSelectedServer = canCreateTunnel && selectedConfigurations.length > 0
   $: currentIssue = bannerKind === 'info' && !loadRecoverable ? '' : diagnosticDetails || banner || ''
+  $: bannerSignature = `${bannerKind}:${banner}:${diagnosticDetails}`
+  $: showBanner = Boolean(banner) && bannerSignature !== dismissedBannerSignature
+  $: showDiagnostics = Boolean(currentIssue || loadRecoverable || bannerKind !== 'info')
+  $: showRuntimePane = Boolean(selectedServer && selectedConfiguration && selectedSession && !['stopped', 'failed'].includes(selectedSession.status))
   $: nextBrowserDiscoveryKey = selectedConfiguration?.connectionType === 'socks_proxy' ? selectedConfigurationId : ''
   $: if (nextBrowserDiscoveryKey && nextBrowserDiscoveryKey !== browserDiscoveryKey) {
     browserDiscoveryKey = nextBrowserDiscoveryKey
@@ -850,7 +843,23 @@
       </div>
     </header>
 
-    {#if banner}
+    <section class="console-subbar moonpixels-banner" aria-labelledby="moonpixels-heading">
+      <div class="moonpixels-banner__copy">
+        <img class="moonpixels-banner__logo" src={moonpixelsLogo} alt="MoonPixels" />
+        <div>
+          <p class="eyebrow">Gifted with love by</p>
+          <p class="moonpixels-banner__text" id="moonpixels-heading">
+            <strong>MoonPixels</strong> builds custom apps and fast MVPs for startups and small teams.
+          </p>
+        </div>
+      </div>
+
+      <div class="moonpixels-banner__actions">
+        <button class="p-button--base is-dense" type="button" on:click={openMoonpixels}>moonpixels.tech</button>
+      </div>
+    </section>
+
+    {#if showBanner}
       <div
         class={`p-notification banner ${bannerKind === 'danger' ? 'p-notification--negative' : bannerKind === 'warning' ? 'p-notification--caution' : ''}`}
         aria-live={bannerKind === 'danger' ? 'assertive' : 'polite'}
@@ -862,6 +871,7 @@
             <pre class="banner-detail">{diagnosticDetails}</pre>
           {/if}
         </div>
+        <button class="banner-dismiss" type="button" aria-label="Dismiss notification" on:click={dismissBanner}>×</button>
       </div>
     {/if}
 
@@ -876,101 +886,60 @@
           onDelete={handleDeleteServer}
         />
 
-        <DiagnosticsPanel
-          diagnostics={diagnostics}
-          issue={currentIssue}
-          hasWarning={loadRecoverable || bannerKind !== 'info'}
-          onReload={handleReloadState}
-          onOpenDevTools={handleOpenDevTools}
-          onCopyPath={handleCopyPath}
-        />
+        {#if showDiagnostics}
+          <DiagnosticsPanel
+            diagnostics={diagnostics}
+            issue={currentIssue}
+            hasWarning={loadRecoverable || bannerKind !== 'info'}
+            onReload={handleReloadState}
+            onOpenDevTools={handleOpenDevTools}
+            onCopyPath={handleCopyPath}
+          />
+        {/if}
       </div>
 
       <div class="console-pane console-pane--center" id="tunnels-pane">
-        <section class="p-card panel console-overview" aria-labelledby="summary-heading">
-          <div class="console-overview-header">
-            <div>
-              <p class="eyebrow">Workspace</p>
-              <h2 id="summary-heading">{selectedServer?.name || 'Select a server to continue'}</h2>
-              <p class="panel-copy">
-                {#if selectedServer}
-                  {selectedServer.username}@{selectedServer.host}:{selectedServer.port}
-                {:else}
-                  Create or select a server to unlock the main workspace.
-                {/if}
-              </p>
-            </div>
-
-            <div class="console-overview-actions">
-              <button class="p-button--base" type="button" disabled={!canStartSelectedServer} on:click={handleStartAll}>Start all</button>
-            </div>
-          </div>
-
-          <div class="summary-stats" aria-label="Workspace summary">
-            <span class="p-chip is-inline">
-              <span class="p-chip__lead">Servers</span>
-              <span class="p-chip__value">{servers.length}</span>
-            </span>
-            <span class="p-chip is-inline">
-              <span class="p-chip__lead">Tunnels</span>
-              <span class="p-chip__value">{totalTunnelCount}</span>
-            </span>
-            <span class={`p-chip is-inline ${connectedSessionCount > 0 ? 'p-chip--positive' : ''}`}>
-              <span class="p-chip__lead">Connected</span>
-              <span class="p-chip__value">{connectedSessionCount}</span>
-            </span>
-            <span class={`p-chip is-inline ${attentionSessionCount > 0 ? 'p-chip--caution' : ''}`}>
-              <span class="p-chip__lead">Attention</span>
-              <span class="p-chip__value">{attentionSessionCount}</span>
-            </span>
-          </div>
-
-          {#if selectedServer}
-            <div class="p-card--highlighted selection-summary" aria-label="Selected server summary">
-              <span class="selection-label">Focused target</span>
-              <p><strong>{selectedServer.name}</strong></p>
-              <p class="panel-copy">{selectedConfigurations.length} saved tunnel{selectedConfigurations.length === 1 ? '' : 's'} and {selectedServerActiveCount} active runtime session{selectedServerActiveCount === 1 ? '' : 's'}.</p>
-            </div>
-          {/if}
-        </section>
-
-        <ConfigList
-          enabled={Boolean(selectedServerId)}
-          configurations={selectedConfigurations}
-          {selectedConfigurationId}
-          sessions={runtimeSessionSnapshot}
-          onSelect={focusConfiguration}
-          onCreate={openCreateTunnelDialog}
-          onStartAll={handleStartAll}
-          onEdit={editConfiguration}
-          onDelete={handleDeleteConfiguration}
-        />
-
-        <ActiveConnections connections={activeRuntimeConnections} onSelect={focusConfiguration} onStop={handleStop} />
+        {#if selectedServer}
+          <ConfigList
+            enabled={true}
+            configurations={selectedConfigurations}
+            {selectedConfigurationId}
+            sessions={runtimeSessionSnapshot}
+            onSelect={focusConfiguration}
+            onCreate={openCreateTunnelDialog}
+            onStartAll={handleStartAll}
+            onStart={handleStart}
+            onStop={handleStop}
+            onEdit={editConfiguration}
+            onDelete={handleDeleteConfiguration}
+          />
+        {/if}
       </div>
 
       <div class="console-pane console-pane--right" id="runtime-pane">
-        {#if selectedConfiguration?.connectionType === 'socks_proxy'}
-          <BrowserLauncher
+        {#if showRuntimePane}
+          {#if selectedConfiguration?.connectionType === 'socks_proxy'}
+            <BrowserLauncher
+              configuration={selectedConfiguration}
+              session={selectedSession}
+              {browsers}
+              {selectedBrowserId}
+              launchPreview={browserLaunchPreview}
+              onSelect={(id) => (selectedBrowserId = id)}
+              onRefresh={handleDiscoverBrowsers}
+              onLaunch={handleLaunchBrowser}
+            />
+          {/if}
+
+          <SessionStatus
             configuration={selectedConfiguration}
             session={selectedSession}
-            {browsers}
-            {selectedBrowserId}
-            launchPreview={browserLaunchPreview}
-            onSelect={(id) => (selectedBrowserId = id)}
-            onRefresh={handleDiscoverBrowsers}
-            onLaunch={handleLaunchBrowser}
+            history={sessionHistory}
+            onStart={handleStart}
+            onStop={handleStop}
+            onCopyHistory={handleCopyHistory}
           />
         {/if}
-
-        <SessionStatus
-          configuration={selectedConfiguration}
-          session={selectedSession}
-          history={sessionHistory}
-          onStart={handleStart}
-          onStop={handleStop}
-          onCopyHistory={handleCopyHistory}
-        />
       </div>
     </section>
   </div>

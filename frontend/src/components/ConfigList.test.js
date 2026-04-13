@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen, within } from '@testing-library/svelte'
 import { describe, expect, it, vi } from 'vitest'
 
 import ConfigList from './ConfigList.svelte'
@@ -7,6 +7,8 @@ describe('ConfigList', () => {
   it('renders tunnel runtime status and actions', async () => {
     const onCreate = vi.fn()
     const onStartAll = vi.fn()
+    const onStart = vi.fn()
+    const onStop = vi.fn()
     const onSelect = vi.fn()
     const onEdit = vi.fn()
     const onDelete = vi.fn()
@@ -23,6 +25,8 @@ describe('ConfigList', () => {
         sessions: [{ configurationId: 'config-1', status: 'connected' }],
         onCreate,
         onStartAll,
+        onStart,
+        onStop,
         onSelect,
         onEdit,
         onDelete,
@@ -34,12 +38,14 @@ describe('ConfigList', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Start all' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Add tunnel' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Select tunnel SOCKS' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Edit SOCKS' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Delete SOCKS' }))
 
     expect(onStartAll).toHaveBeenCalledTimes(1)
     expect(onCreate).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith('config-1')
+    expect(onStop).toHaveBeenCalledWith('config-1')
     expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledWith('config-1')
   })
@@ -56,6 +62,21 @@ describe('ConfigList', () => {
     expect(screen.getByText('Select a target first')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add tunnel' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: 'Start all' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('shows a tunnels title and keeps tunnel actions inside the tunnel list container', () => {
+    render(ConfigList, {
+      props: {
+        enabled: true,
+        configurations: [],
+        sessions: [],
+      },
+    })
+
+    const section = screen.getByRole('region', { name: 'Tunnels' })
+    expect(within(section).getByRole('heading', { name: 'Tunnels' })).toBeTruthy()
+    expect(within(section).getByRole('button', { name: 'Add tunnel' })).toBeTruthy()
+    expect(within(section).getByRole('button', { name: 'Start all' })).toBeTruthy()
   })
 
   it('prefers the latest session when stale entries exist', () => {
@@ -78,7 +99,7 @@ describe('ConfigList', () => {
     expect(screen.getByLabelText('Tunnel status connected')).toBeTruthy()
   })
 
-  it('renders inline edit and delete actions for each tunnel', () => {
+  it('renders inline runtime and management actions for each tunnel', () => {
     render(ConfigList, {
       props: {
         configurations: [{
@@ -91,8 +112,34 @@ describe('ConfigList', () => {
       },
     })
 
+    expect(screen.getByRole('button', { name: 'Start SOCKS' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Stop SOCKS' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: 'Edit SOCKS' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Delete SOCKS' })).toBeTruthy()
+  })
+
+  it('starts a tunnel from the row action after selecting it', async () => {
+    const onSelect = vi.fn()
+    const onStart = vi.fn()
+
+    render(ConfigList, {
+      props: {
+        configurations: [{
+          id: 'config-1',
+          label: 'SOCKS',
+          connectionType: 'socks_proxy',
+          socksPort: 1080,
+        }],
+        sessions: [{ configurationId: 'config-1', status: 'stopped' }],
+        onSelect,
+        onStart,
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Start SOCKS' }))
+
+    expect(onSelect).toHaveBeenCalledWith('config-1')
+    expect(onStart).toHaveBeenCalledWith('config-1')
   })
 
   it('shows auto for SOCKS tunnels without a fixed port', () => {

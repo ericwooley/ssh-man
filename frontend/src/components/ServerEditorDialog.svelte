@@ -82,6 +82,10 @@
             <div class="p-form__control">
               <input
                 id="server-port"
+                type="number"
+                min="1"
+                max="65535"
+                step="1"
                 class={errors.port ? 'p-form-validation__input' : ''}
                 bind:value={value.port}
                 aria-label="Server port"
