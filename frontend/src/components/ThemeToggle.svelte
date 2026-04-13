@@ -4,7 +4,7 @@
 </script>
 
 <button
-  class="p-button--base theme-toggle is-compact-button"
+  class="p-button--base theme-toggle is-dense"
   type="button"
   on:click={onToggle}
   aria-label="Toggle light and dark theme"

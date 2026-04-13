@@ -88,8 +88,8 @@
   $: visibleHistory = historyExpanded ? history : history.slice(0, collapsedHistoryCount)
 </script>
 
-<section class="p-card panel status-panel panel--compact" aria-labelledby="session-status-heading">
-  <div class="p-card__header panel-header">
+<section class="p-card panel status-panel" aria-labelledby="session-status-heading">
+  <div class="panel-header">
     <div>
       <p class="eyebrow">Runtime</p>
       <h2 id="session-status-heading">Session status</h2>
@@ -120,8 +120,8 @@
     </div>
 
     <div class="runtime-actions-grid">
-      <button class="p-button is-compact-button" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
-      <button class="p-button--negative is-compact-button" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
+      <button class="p-button--positive is-dense" type="button" disabled={!canStart} on:click={() => onStart(configuration.id)}>Start tunnel</button>
+      <button class="p-button--negative is-dense" type="button" disabled={!canStop} on:click={() => onStop(configuration.id)}>Stop tunnel</button>
     </div>
 
     <div class="history-panel" aria-labelledby="session-history-heading">
@@ -130,7 +130,7 @@
           <h3 id="session-history-heading">Recent connection history</h3>
           <p>User-visible outcomes for this tunnel.</p>
         </div>
-        <button class="p-button--base is-compact-button" type="button" disabled={history.length === 0} on:click={() => onCopyHistory(configuration.id)}>Copy history</button>
+        <button class="p-button--base is-dense" type="button" disabled={history.length === 0} on:click={() => onCopyHistory(configuration.id)}>Copy history</button>
       </div>
 
       {#if history.length > 0}

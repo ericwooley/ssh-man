@@ -13,14 +13,14 @@
   $: canLaunchSelectedBrowser = Boolean(selectedBrowser?.supportsProxyLaunch)
 </script>
 
-<section class="p-card panel browser-panel panel--compact" aria-labelledby="browser-launch-heading">
-  <div class="p-card__header panel-header">
+<section class="p-card panel browser-panel" aria-labelledby="browser-launch-heading">
+  <div class="panel-header">
     <div>
       <p class="eyebrow">Browser launch</p>
       <h2 id="browser-launch-heading">SOCKS-aware browser</h2>
       <p class="panel-copy">Launch a browser inside the focused SOCKS tunnel.</p>
     </div>
-    <button class="p-button--base is-compact-button" type="button" on:click={onRefresh}>Refresh</button>
+    <button class="p-button--base is-dense" type="button" on:click={onRefresh}>Refresh</button>
   </div>
 
   {#if !canLaunch}
@@ -37,7 +37,7 @@
         </select>
       </label>
 
-      <button class="p-button is-compact-button" disabled={!selectedBrowserId || !canLaunchSelectedBrowser} type="button" on:click={() => onLaunch(configuration.id, selectedBrowserId)}>
+      <button class="p-button--positive is-dense" disabled={!selectedBrowserId || !canLaunchSelectedBrowser} type="button" on:click={() => onLaunch(configuration.id, selectedBrowserId)}>
         Launch through SOCKS
       </button>
     </div>

@@ -843,9 +843,9 @@
       </div>
 
       <div class="console-topbar-actions">
-        <button class="p-button--base is-compact-button" type="button" on:click={handleReloadState}>Reload</button>
-        <button class="p-button--base is-compact-button" type="button" on:click={openCreateServerDialog}>Server</button>
-        <button class="p-button is-compact-button" type="button" disabled={!canCreateTunnel} on:click={openCreateTunnelDialog}>Tunnel</button>
+        <button class="p-button--base is-dense" type="button" on:click={handleReloadState}>Reload</button>
+        <button class="p-button--base is-dense" type="button" on:click={openCreateServerDialog}>Server</button>
+        <button class="p-button--positive is-dense" type="button" disabled={!canCreateTunnel} on:click={openCreateTunnelDialog}>Tunnel</button>
         <ThemeToggle theme={preferences.theme} onToggle={handleToggleTheme} />
       </div>
     </header>
@@ -926,7 +926,7 @@
           </div>
 
           {#if selectedServer}
-            <div class="p-card selection-summary" aria-label="Selected server summary">
+            <div class="p-card--highlighted selection-summary" aria-label="Selected server summary">
               <span class="selection-label">Focused target</span>
               <p><strong>{selectedServer.name}</strong></p>
               <p class="panel-copy">{selectedConfigurations.length} saved tunnel{selectedConfigurations.length === 1 ? '' : 's'} and {selectedServerActiveCount} active runtime session{selectedServerActiveCount === 1 ? '' : 's'}.</p>

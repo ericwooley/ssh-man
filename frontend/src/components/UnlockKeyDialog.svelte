@@ -64,7 +64,7 @@
         </label>
 
         <div class="editor-actions dialog-actions">
-          <button class="p-button" type="submit" disabled={!secret.trim()}>Unlock key</button>
+          <button class="p-button--positive" type="submit" disabled={!secret.trim()}>Unlock key</button>
           <button class="p-button--base" type="button" on:click={onClose}>Close</button>
         </div>
       </form>

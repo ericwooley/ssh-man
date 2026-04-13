@@ -104,7 +104,7 @@
         </section>
 
         <div class="editor-actions dialog-actions">
-          <button class="p-button" type="submit">Save server</button>
+          <button class="p-button--positive" type="submit">Save server</button>
           <button class="p-button--base" type="button" on:click={onCancel}>Cancel</button>
         </div>
       </form>

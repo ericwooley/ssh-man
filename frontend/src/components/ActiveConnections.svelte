@@ -24,8 +24,8 @@
   }
 </script>
 
-<section class="p-card panel active-connections-panel panel--compact" aria-labelledby="active-connections-heading">
-  <div class="p-card__header panel-header">
+<section class="p-card panel active-connections-panel" aria-labelledby="active-connections-heading">
+  <div class="panel-header">
     <div>
       <p class="eyebrow">Connections</p>
       <h2 id="active-connections-heading">Active tunnels</h2>
@@ -46,7 +46,7 @@
     <ul class="stack-list" aria-label="Active tunnels">
       {#each connections as connection}
         <li>
-          <article class="p-card list-item-shell list-item-shell--runtime">
+          <article class="list-item-shell list-item-shell--runtime">
             <div class="list-card-topline">
               <button class="p-button--base list-card-main" type="button" aria-label={`Show ${connection.configurationLabel}`} on:click={() => onSelect(connection.configurationId)}>
                 <span class="list-primary">
@@ -61,7 +61,7 @@
 
                 <div class="list-card-actions">
                   <button
-                    class="list-action list-action--danger"
+                    class="p-button--negative is-dense"
                     type="button"
                     aria-label={`Disconnect ${connection.configurationLabel}`}
                     on:click={() => onStop(connection.configurationId)}
