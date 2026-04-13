@@ -49,8 +49,8 @@ case "$OS" in
 	    go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -clean -devtools -tags webkit2_41 "$@"
 	    ;;
 	Darwin)
-	    printf '==> Building macOS desktop app with production devtools\n'
-	    go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -clean -devtools "$@"
+	    printf '==> Building macOS desktop app\n'
+	    go run github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} build -clean "$@"
 	    ;;
   *)
     printf 'Unsupported OS for this project build script: %s\n' "$OS" >&2

@@ -22,7 +22,7 @@ func Build(ctx context.Context, app *bindings.AppBindings) *wmenu.Menu {
 		if err := app.OpenDevTools(); err != nil {
 			_, _ = wailsruntime.MessageDialog(ctx, wailsruntime.MessageDialogOptions{
 				Title:   "Open DevTools",
-				Message: fmt.Sprintf("%v\n\nIf you are using a packaged build, build it with production devtools enabled. This project’s build script now does that by default.", err),
+				Message: fmt.Sprintf("%v\n\nIf you need packaged devtools support, build the app with the Wails `-devtools` flag.", err),
 			})
 		}
 	}))
