@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,10 +103,13 @@ func (s *stubRunner) Disconnect(err error) {
 }
 
 type stubFactory struct {
+	mu      sync.Mutex
 	runners []*stubRunner
 }
 
 func (s *stubFactory) New(_ serverdomain.Server, _ configdomain.ConnectionConfiguration, _ string, onDisconnect func(error)) Runner {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if len(s.runners) == 0 {
 		return &stubRunner{}
 	}
@@ -218,6 +222,54 @@ func TestHandleDisconnectReconnectsWhenEnabled(t *testing.T) {
 	if !initialRunner.stopped {
 		t.Fatal("expected disconnected runner to be stopped before reconnect")
 	}
+}
+
+func TestHandleDisconnectKeepsRetryingUntilRecovery(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	history := &stubHistoryStore{}
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080, AutoReconnectEnabled: true}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		history,
+		runtimes,
+	)
+	service.reconnectDelay = func(int) time.Duration { return 10 * time.Millisecond }
+	service.reconnectTimeout = 100 * time.Millisecond
+
+	initialRunner := &stubRunner{}
+	failingReconnectOne := &stubRunner{startErr: errors.New("connect to ssh server: dial tcp example.com:22: network is unreachable")}
+	failingReconnectTwo := &stubRunner{startErr: errors.New("connect to ssh server: dial tcp example.com:22: network is unreachable")}
+	recoveredRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{initialRunner, failingReconnectOne, failingReconnectTwo, recoveredRunner}}
+
+	state, err := service.Start(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("start tunnel: %v", err)
+	}
+	if state.Status != StatusConnected {
+		t.Fatalf("expected connected state, got %s", state.Status)
+	}
+
+	initialRunner.Disconnect(errors.New("ssh keepalive timed out after 5s: context deadline exceeded"))
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		state, ok := runtimes.Get("config-1")
+		if ok && state.Status == StatusConnected {
+			if !recoveredRunner.started {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if state.ReconnectAttemptCount != 0 {
+				t.Fatalf("expected connected state to clear reconnect attempts, got %+v", state)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	state, _ = runtimes.Get("config-1")
+	t.Fatalf("expected reconnect loop to recover eventually, got %+v", state)
 }
 
 func TestStartStopsExistingRunnerBeforeRestart(t *testing.T) {
@@ -344,6 +396,7 @@ func TestHandleDisconnectDoesNotOverwriteManualStop(t *testing.T) {
 		nil,
 		runtimes,
 	)
+	service.reconnectDelay = func(int) time.Duration { return 200 * time.Millisecond }
 	initialRunner := &stubRunner{}
 	reconnectRunner := &stubRunner{}
 	service.factory = &stubFactory{runners: []*stubRunner{initialRunner, reconnectRunner}}

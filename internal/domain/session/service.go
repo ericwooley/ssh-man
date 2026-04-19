@@ -40,15 +40,25 @@ func (t tunnelFactory) New(server serverdomain.Server, config configdomain.Conne
 }
 
 type Service struct {
-	configs  ConfigStore
-	servers  ServerStore
-	history  HistoryStore
-	runtimes *RuntimeStore
-	factory  Factory
+	configs          ConfigStore
+	servers          ServerStore
+	history          HistoryStore
+	runtimes         *RuntimeStore
+	factory          Factory
+	reconnectDelay   func(int) time.Duration
+	reconnectTimeout time.Duration
 }
 
 func NewService(configs ConfigStore, servers ServerStore, history HistoryStore, runtimes *RuntimeStore) *Service {
-	return &Service{configs: configs, servers: servers, history: history, runtimes: runtimes, factory: tunnelFactory{}}
+	return &Service{
+		configs:          configs,
+		servers:          servers,
+		history:          history,
+		runtimes:         runtimes,
+		factory:          tunnelFactory{},
+		reconnectDelay:   nextReconnectDelay,
+		reconnectTimeout: 15 * time.Second,
+	}
 }
 
 func (s *Service) SetFactory(factory Factory) {
@@ -141,19 +151,9 @@ func (s *Service) stopExistingRunner(configurationID string) error {
 }
 
 func (s *Service) start(ctx context.Context, configurationID string, passphrase string) (RuntimeSession, error) {
-	configuration, err := s.configs.Get(ctx, configurationID)
+	configuration, server, err := s.loadConfigurationAndServer(ctx, configurationID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return RuntimeSession{}, fmt.Errorf("configuration no longer exists")
-		}
-		return RuntimeSession{}, fmt.Errorf("load configuration: %w", err)
-	}
-	server, err := s.servers.Get(ctx, configuration.ServerID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return RuntimeSession{}, fmt.Errorf("server no longer exists")
-		}
-		return RuntimeSession{}, fmt.Errorf("load server: %w", err)
+		return RuntimeSession{}, err
 	}
 	if err := s.stopExistingRunner(configurationID); err != nil {
 		return RuntimeSession{}, fmt.Errorf("stop existing tunnel: %w", err)
@@ -203,23 +203,24 @@ func (s *Service) handleDisconnect(configuration configdomain.ConnectionConfigur
 	}
 
 	go func() {
-		for attempt := 1; attempt <= 3; attempt++ {
+		for attempt := 1; ; attempt++ {
 			currentToken, ok := s.runtimes.Token(configuration.ID)
 			if !ok || currentToken != runtimeToken {
 				return
 			}
 
-			state := RuntimeSession{ConfigurationID: configuration.ID, Status: StatusReconnecting, StatusDetail: fmt.Sprintf("%s Reconnect attempt %d of 3.", detail, attempt), LastStateChangeAt: time.Now().UTC(), ReconnectAttemptCount: attempt, LastError: disconnectErr.Error()}
+			delay := s.reconnectDelay(attempt)
+			state := RuntimeSession{ConfigurationID: configuration.ID, Status: StatusReconnecting, StatusDetail: fmt.Sprintf("%s Reconnect attempt %d failed or is pending. Retrying in %s until the tunnel is restored or you stop it.", detail, attempt, delay.Round(time.Second)), LastStateChangeAt: time.Now().UTC(), ReconnectAttemptCount: attempt, LastError: disconnectErr.Error()}
 			s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
-			time.Sleep(time.Duration(attempt) * time.Second)
+			time.Sleep(delay)
 
 			currentToken, ok = s.runtimes.Token(configuration.ID)
 			if !ok || currentToken != runtimeToken {
 				return
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			nextState, err := s.start(ctx, configuration.ID, passphrase)
+			ctx, cancel := context.WithTimeout(context.Background(), s.reconnectTimeout)
+			nextState, err := s.restartWithToken(ctx, configuration.ID, passphrase, runtimeToken)
 			cancel()
 			if err != nil {
 				continue
@@ -228,11 +229,76 @@ func (s *Service) handleDisconnect(configuration configdomain.ConnectionConfigur
 				return
 			}
 		}
-
-		failed := RuntimeSession{ConfigurationID: configuration.ID, Status: StatusFailed, StatusDetail: fmt.Sprintf("%s Reconnect attempts exhausted.", detail), LastStateChangeAt: time.Now().UTC(), LastError: disconnectErr.Error()}
-		s.runtimes.SetWithToken(failed, nil, passphrase, runtimeToken)
-		_ = s.recordHistory(context.Background(), configuration.ID, time.Now().UTC(), OutcomeReconnectExhausted, failed.StatusDetail)
 	}()
+}
+
+func (s *Service) restartWithToken(ctx context.Context, configurationID string, passphrase string, runtimeToken string) (RuntimeSession, error) {
+	configuration, server, err := s.loadConfigurationAndServer(ctx, configurationID)
+	if err != nil {
+		return RuntimeSession{}, err
+	}
+	if err := s.stopExistingRunner(configurationID); err != nil {
+		return RuntimeSession{}, fmt.Errorf("stop existing tunnel: %w", err)
+	}
+
+	current, _ := s.runtimes.Get(configurationID)
+	startedAt := current.StartedAt
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+
+	runner := s.factory.New(server, configuration, passphrase, func(disconnectErr error) {
+		s.handleDisconnect(configuration, passphrase, runtimeToken, disconnectErr)
+	})
+	if err := runner.Start(); err != nil {
+		if errors.Is(err, auth.ErrPassphraseRequired) {
+			state := RuntimeSession{ConfigurationID: configurationID, Status: StatusNeedsAttention, StatusDetail: "Unlock the SSH key to continue", StartedAt: startedAt, LastStateChangeAt: time.Now().UTC(), LastError: err.Error(), NeedsUserInput: true}
+			s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
+			_ = s.recordHistory(ctx, configurationID, startedAt, OutcomeFailedAuth, state.StatusDetail)
+			return state, nil
+		}
+
+		detail := tunnel.DescribeStartError(err, server, configuration)
+		state := RuntimeSession{ConfigurationID: configurationID, Status: StatusReconnecting, StatusDetail: detail, StartedAt: startedAt, LastStateChangeAt: time.Now().UTC(), LastError: err.Error()}
+		s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
+		return state, nil
+	}
+
+	connectedPort := runner.BoundPort()
+	connected := RuntimeSession{ConfigurationID: configurationID, Status: StatusConnected, BoundPort: connectedPort, StatusDetail: fmt.Sprintf("Listening on localhost:%d", connectedPort), StartedAt: startedAt, LastStateChangeAt: time.Now().UTC()}
+	s.runtimes.SetWithToken(connected, runner, passphrase, runtimeToken)
+	_ = s.recordHistory(ctx, configurationID, startedAt, OutcomeConnected, connected.StatusDetail)
+	return connected, nil
+}
+
+func (s *Service) loadConfigurationAndServer(ctx context.Context, configurationID string) (configdomain.ConnectionConfiguration, serverdomain.Server, error) {
+	configuration, err := s.configs.Get(ctx, configurationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return configdomain.ConnectionConfiguration{}, serverdomain.Server{}, fmt.Errorf("configuration no longer exists")
+		}
+		return configdomain.ConnectionConfiguration{}, serverdomain.Server{}, fmt.Errorf("load configuration: %w", err)
+	}
+
+	server, err := s.servers.Get(ctx, configuration.ServerID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return configdomain.ConnectionConfiguration{}, serverdomain.Server{}, fmt.Errorf("server no longer exists")
+		}
+		return configdomain.ConnectionConfiguration{}, serverdomain.Server{}, fmt.Errorf("load server: %w", err)
+	}
+
+	return configuration, server, nil
+}
+
+func nextReconnectDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	if attempt > 30 {
+		attempt = 30
+	}
+	return time.Duration(attempt) * time.Second
 }
 
 func stoppedState(configurationID string, detail string) RuntimeSession {

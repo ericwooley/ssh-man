@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -45,5 +46,49 @@ func TestDescribeStartErrorForMissingSSHAgentSocket(t *testing.T) {
 	)
 	if want := "cannot reach your local SSH agent"; !strings.Contains(message, want) {
 		t.Fatalf("expected %q in %q", want, message)
+	}
+}
+
+func TestDescribeDisconnectErrorForSOCKSHealthCheckFailure(t *testing.T) {
+	message := DescribeDisconnectError(errors.New("socks proxy health check failed: read socks handshake response: EOF"))
+	if want := "SOCKS5 proxy"; !strings.Contains(message, want) {
+		t.Fatalf("expected %q in %q", want, message)
+	}
+}
+
+func TestDescribeDisconnectErrorForLocalForwardHealthCheckFailure(t *testing.T) {
+	message := DescribeDisconnectError(errors.New("local forward health check failed: connection closed immediately after accept"))
+	if want := "forwarded port"; !strings.Contains(message, want) {
+		t.Fatalf("expected %q in %q", want, message)
+	}
+}
+
+func TestBuildSOCKSConnectRequestForIPv4(t *testing.T) {
+	request, err := buildSOCKSConnectRequest("127.0.0.1", 22)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	want := []byte{0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0x00, 0x16}
+	if !bytes.Equal(request, want) {
+		t.Fatalf("unexpected request bytes: got %v want %v", request, want)
+	}
+}
+
+func TestBuildSOCKSConnectRequestForDomain(t *testing.T) {
+	request, err := buildSOCKSConnectRequest("example.com", 443)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	prefix := []byte{0x05, 0x01, 0x00, 0x03, byte(len("example.com"))}
+	if !bytes.Equal(request[:len(prefix)], prefix) {
+		t.Fatalf("unexpected request prefix: got %v want %v", request[:len(prefix)], prefix)
+	}
+	if got := string(request[len(prefix) : len(prefix)+len("example.com")]); got != "example.com" {
+		t.Fatalf("unexpected host encoding: %q", got)
+	}
+	if request[len(request)-2] != 0x01 || request[len(request)-1] != 0xbb {
+		t.Fatalf("unexpected port encoding: %v", request[len(request)-2:])
 	}
 }

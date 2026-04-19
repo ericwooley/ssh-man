@@ -3,9 +3,11 @@ package tunnel
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	configdomain "ssh-man/internal/domain/config"
@@ -16,20 +18,23 @@ import (
 )
 
 type Session struct {
-	server       serverdomain.Server
-	config       configdomain.ConnectionConfiguration
-	passphrase   string
-	onDisconnect func(error)
-	client       *ssh.Client
-	listener     net.Listener
-	stopCh       chan struct{}
-	stopped      bool
-	stopOnce     sync.Once
+	server         serverdomain.Server
+	config         configdomain.ConnectionConfiguration
+	passphrase     string
+	onDisconnect   func(error)
+	client         *ssh.Client
+	listener       net.Listener
+	stopCh         chan struct{}
+	stopped        atomic.Bool
+	stopOnce       sync.Once
+	disconnectOnce sync.Once
 }
 
 const (
 	keepaliveInterval = 15 * time.Second
 	keepaliveTimeout  = 5 * time.Second
+	probeTimeout      = 5 * time.Second
+	probeReadWindow   = 750 * time.Millisecond
 )
 
 func NewSession(server serverdomain.Server, config configdomain.ConnectionConfiguration, passphrase string, onDisconnect func(error)) *Session {
@@ -69,7 +74,7 @@ func (s *Session) Start() error {
 func (s *Session) Stop() error {
 	var stopErr error
 	s.stopOnce.Do(func() {
-		s.stopped = true
+		s.stopped.Store(true)
 		close(s.stopCh)
 		if s.listener != nil {
 			_ = s.listener.Close()
@@ -102,9 +107,7 @@ func (s *Session) serve() {
 			case <-s.stopCh:
 				return
 			default:
-				if !s.stopped && s.onDisconnect != nil {
-					s.onDisconnect(err)
-				}
+				s.reportDisconnect(err)
 				return
 			}
 		}
@@ -136,10 +139,12 @@ func (s *Session) watchConnection() {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			if err := s.sendKeepalive(); err != nil && !s.stopped {
-				if s.onDisconnect != nil {
-					s.onDisconnect(err)
-				}
+			if err := s.sendKeepalive(); err != nil {
+				s.reportDisconnect(err)
+				return
+			}
+			if err := s.probeTunnel(); err != nil {
+				s.reportDisconnect(err)
 				return
 			}
 		}
@@ -167,6 +172,152 @@ func (s *Session) sendKeepalive() error {
 		_ = s.client.Close()
 		return fmt.Errorf("ssh keepalive timed out after %s: %w", keepaliveTimeout, context.DeadlineExceeded)
 	}
+}
+
+func (s *Session) probeTunnel() error {
+	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.BoundPort()), probeTimeout)
+	if err != nil {
+		return fmt.Errorf("tunnel health check failed: connect local listener: %w", err)
+	}
+	defer localConn.Close()
+
+	switch s.config.ConnectionType {
+	case configdomain.ConnectionTypeSOCKSProxy:
+		if err := s.probeSOCKSProxy(localConn); err != nil {
+			return fmt.Errorf("socks proxy health check failed: %w", err)
+		}
+		return nil
+	case configdomain.ConnectionTypeLocalForward:
+		if err := verifyConnectionStaysOpen(localConn); err != nil {
+			return fmt.Errorf("local forward health check failed: %w", err)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func (s *Session) probeSOCKSProxy(conn net.Conn) error {
+	if err := conn.SetDeadline(time.Now().Add(probeTimeout)); err != nil {
+		return err
+	}
+
+	if _, err := conn.Write([]byte{0x05, 0x01, 0x00}); err != nil {
+		return fmt.Errorf("write socks handshake: %w", err)
+	}
+
+	response := make([]byte, 2)
+	if _, err := io.ReadFull(conn, response); err != nil {
+		return fmt.Errorf("read socks handshake response: %w", err)
+	}
+	if response[0] != 0x05 || response[1] != 0x00 {
+		return fmt.Errorf("unexpected socks handshake response %v", response)
+	}
+
+	targetHost := "127.0.0.1"
+
+	request, err := buildSOCKSConnectRequest(targetHost, s.server.Port)
+	if err != nil {
+		return err
+	}
+	if _, err := conn.Write(request); err != nil {
+		return fmt.Errorf("write socks connect request: %w", err)
+	}
+
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(conn, header); err != nil {
+		return fmt.Errorf("read socks connect response: %w", err)
+	}
+	if header[0] != 0x05 {
+		return fmt.Errorf("unexpected socks response version %d", header[0])
+	}
+	if header[1] != 0x00 {
+		return fmt.Errorf("socks connect request failed with code 0x%02x", header[1])
+	}
+
+	if err := discardSOCKSAddress(conn, header[3]); err != nil {
+		return fmt.Errorf("read socks bind address: %w", err)
+	}
+
+	return nil
+}
+
+func verifyConnectionStaysOpen(conn net.Conn) error {
+	if err := conn.SetReadDeadline(time.Now().Add(probeReadWindow)); err != nil {
+		return err
+	}
+
+	buf := make([]byte, 1)
+	_, err := conn.Read(buf)
+	if err == nil {
+		return nil
+	}
+
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return nil
+	}
+
+	if err == io.EOF {
+		return fmt.Errorf("connection closed immediately after accept")
+	}
+
+	return err
+}
+
+func buildSOCKSConnectRequest(host string, port int) ([]byte, error) {
+	request := []byte{0x05, 0x01, 0x00}
+	ip := net.ParseIP(host)
+	switch {
+	case ip != nil && ip.To4() != nil:
+		request = append(request, 0x01)
+		request = append(request, ip.To4()...)
+	case ip != nil && ip.To16() != nil:
+		request = append(request, 0x04)
+		request = append(request, ip.To16()...)
+	default:
+		if len(host) > 255 {
+			return nil, fmt.Errorf("socks health check host is too long")
+		}
+		request = append(request, 0x03, byte(len(host)))
+		request = append(request, []byte(host)...)
+	}
+
+	request = append(request, byte(port>>8), byte(port))
+	return request, nil
+}
+
+func discardSOCKSAddress(conn net.Conn, addressType byte) error {
+	var discard []byte
+	switch addressType {
+	case 0x01:
+		discard = make([]byte, 4+2)
+	case 0x04:
+		discard = make([]byte, 16+2)
+	case 0x03:
+		length := make([]byte, 1)
+		if _, err := io.ReadFull(conn, length); err != nil {
+			return err
+		}
+		discard = make([]byte, int(length[0])+2)
+	default:
+		return fmt.Errorf("unsupported socks address type %d", addressType)
+	}
+
+	_, err := io.ReadFull(conn, discard)
+	return err
+}
+
+func (s *Session) reportDisconnect(err error) {
+	if s.stopped.Load() || s.onDisconnect == nil {
+		return
+	}
+
+	s.disconnectOnce.Do(func() {
+		if s.stopped.Load() {
+			return
+		}
+		s.onDisconnect(err)
+	})
 }
 
 func (s *Session) authMethod() (ssh.AuthMethod, error) {
@@ -219,6 +370,12 @@ func DescribeDisconnectError(err error) string {
 		return "The SSH connection health check timed out, likely because the computer slept or the network path stalled."
 	case strings.Contains(message, "keepalive"):
 		return "The SSH connection stopped responding to keepalive checks."
+	case strings.Contains(message, "socks proxy health check"):
+		return "The SOCKS5 proxy stopped accepting or completing health-check requests."
+	case strings.Contains(message, "local forward health check"):
+		return "The forwarded port stopped accepting or holding health-check connections."
+	case strings.Contains(message, "tunnel health check"):
+		return "The local tunnel listener stopped responding to health checks."
 	case strings.Contains(message, "use of closed network connection"):
 		return "The local tunnel listener closed unexpectedly."
 	case strings.Contains(message, "connection reset"), strings.Contains(message, "broken pipe"), strings.Contains(message, "eof"):
