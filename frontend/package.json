@@ -13,7 +13,7 @@
     "validate": "pnpm run check:css && pnpm run test && pnpm run build"
   },
   "dependencies": {
-    "svelte": "^5.28.2"
+    "svelte": "^5.55.7"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
