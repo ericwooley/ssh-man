@@ -43,7 +43,7 @@ Represents a saved tunnel definition under a server.
 - `remote_port`: Remote destination port for local forwards only.
 - `socks_port`: Local SOCKS listening port for SOCKS configurations.
 - `auto_reconnect_enabled`: Whether reconnect should continue after transient disconnect.
-- `start_on_launch`: Reserved MVP boolean, default false; not acted on in MVP.
+- `start_on_launch`: Boolean, default false. When enabled, the application starts the tunnel automatically during app startup.
 - `notes`: Optional user-facing description.
 - `created_at`: Creation timestamp.
 - `updated_at`: Last modification timestamp.

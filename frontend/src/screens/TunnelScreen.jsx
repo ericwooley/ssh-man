@@ -196,6 +196,7 @@ export function TunnelDetailScreen({
         <section className="connection-facts card" aria-label="Tunnel settings summary">
           <div><span>Type</span><strong>{configuration.connectionType === 'socks_proxy' ? 'SOCKS proxy' : 'Local forward'}</strong></div>
           <div><span>Reconnect</span><strong>{configuration.autoReconnectEnabled ? <><Check aria-hidden="true" /> Automatic</> : 'Off'}</strong></div>
+          <div><span>On app start</span><strong>{configuration.startOnLaunch ? <><Check aria-hidden="true" /> Connect</> : 'Off'}</strong></div>
           {session?.boundPort ? <div><span>Bound port</span><strong>{session.boundPort}</strong></div> : null}
           {session?.reconnectAttemptCount ? <div><span>Retry attempts</span><strong>{session.reconnectAttemptCount}</strong></div> : null}
           {configuration.notes ? <div className="connection-facts__notes"><span>Notes</span><p>{configuration.notes}</p></div> : null}

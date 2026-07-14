@@ -51,6 +51,7 @@ describe('emptyTunnel', () => {
       remotePort: '',
       socksPort: '',
       autoReconnectEnabled: true,
+      startOnLaunch: false,
       notes: '',
     })
   })

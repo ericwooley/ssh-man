@@ -75,6 +75,7 @@ export function emptyTunnel(serverId = '') {
     remotePort: '',
     socksPort: '',
     autoReconnectEnabled: true,
+    startOnLaunch: false,
     notes: '',
   }
 }

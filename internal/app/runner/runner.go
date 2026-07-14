@@ -53,10 +53,14 @@ type ownershipDependencies struct {
 type applicationLifecycle struct {
 	control             controlLifecycle
 	bar                 menuBar
+	startOnLaunch       func(context.Context) error
 	shutdownApplication func(context.Context) error
 
-	shutdownOnce sync.Once
-	shutdownErr  error
+	startOnLaunchOnce sync.Once
+	startOnLaunchWait sync.WaitGroup
+	startOnLaunchStop context.CancelFunc
+	shutdownOnce      sync.Once
+	shutdownErr       error
 }
 
 func defaultOwnershipDependencies() ownershipDependencies {
@@ -113,10 +117,11 @@ func showExistingOwner(parent context.Context, socketPath string) error {
 	return nil
 }
 
-func newApplicationLifecycle(controlServer controlLifecycle, bar menuBar, shutdownApplication func(context.Context) error) *applicationLifecycle {
+func newApplicationLifecycle(controlServer controlLifecycle, bar menuBar, startOnLaunch func(context.Context) error, shutdownApplication func(context.Context) error) *applicationLifecycle {
 	return &applicationLifecycle{
 		control:             controlServer,
 		bar:                 bar,
+		startOnLaunch:       startOnLaunch,
 		shutdownApplication: shutdownApplication,
 	}
 }
@@ -126,6 +131,23 @@ func (l *applicationLifecycle) Start() error {
 		return nil
 	}
 	return l.control.Start()
+}
+
+func (l *applicationLifecycle) StartConfiguredTunnels() {
+	if l == nil || l.startOnLaunch == nil {
+		return
+	}
+	l.startOnLaunchOnce.Do(func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		l.startOnLaunchStop = cancel
+		l.startOnLaunchWait.Add(1)
+		go func() {
+			defer l.startOnLaunchWait.Done()
+			if err := l.startOnLaunch(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("start configured tunnels: %v", err)
+			}
+		}()
+	})
 }
 
 func (l *applicationLifecycle) Shutdown(parent context.Context) error {
@@ -140,6 +162,10 @@ func (l *applicationLifecycle) Shutdown(parent context.Context) error {
 		}
 		ctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 		defer cancel()
+		if l.startOnLaunchStop != nil {
+			l.startOnLaunchStop()
+		}
+		l.startOnLaunchWait.Wait()
 
 		if l.bar != nil {
 			l.bar.Stop()
@@ -191,7 +217,7 @@ func Run(assets fs.FS) (runErr error) {
 		paths.ControlSocketPath(application.ConfigDir),
 		newControlBackend(application, window, show),
 	)
-	lifecycle := newApplicationLifecycle(controlServer, bar, app.Shutdown)
+	lifecycle := newApplicationLifecycle(controlServer, bar, application.SessionService.StartOnLaunch, app.Shutdown)
 	defer func() {
 		cleanupErr := lifecycle.Shutdown(context.Background())
 		releaseErr := lease.Release()
@@ -225,6 +251,7 @@ func newOptions(assets fs.FS, app *bindings.AppBindings, window *appwindow.Contr
 		},
 		OnStartup: func(ctx context.Context) {
 			app.SetContext(ctx)
+			lifecycle.StartConfiguredTunnels()
 		},
 		OnDomReady: func(ctx context.Context) {
 			// Set the context again to make this hook self-contained if lifecycle

@@ -195,11 +195,11 @@ func TestTunnelAddLocalBuildsValidatedControlRequest(t *testing.T) {
 			return nil, fmt.Errorf("unexpected command %s", request.Command)
 		}
 	}}
-	code, stdout, stderr, _ := runWithCaller(t, caller, "", "--output", "json", "tunnel", "add", "local", "Admin", "--server", "production", "--listen", "9000", "--remote", "internal.example:443", "--reconnect=false", "--notes", "admin endpoint")
+	code, stdout, stderr, _ := runWithCaller(t, caller, "", "--output", "json", "tunnel", "add", "local", "Admin", "--server", "production", "--listen", "9000", "--remote", "internal.example:443", "--reconnect=false", "--start-on-launch", "--notes", "admin endpoint")
 	if code != ExitOK || stderr != "" {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if saved.ServerID != "server-prod" || saved.LocalPort != 9000 || saved.RemoteHost != "internal.example" || saved.RemotePort != 443 || saved.AutoReconnectEnabled {
+	if saved.ServerID != "server-prod" || saved.LocalPort != 9000 || saved.RemoteHost != "internal.example" || saved.RemotePort != 443 || saved.AutoReconnectEnabled || !saved.StartOnLaunch {
 		t.Fatalf("saved configuration = %+v", saved)
 	}
 	if !strings.Contains(stdout, `"id": "new-tunnel"`) {

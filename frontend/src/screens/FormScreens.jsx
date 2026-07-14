@@ -280,6 +280,12 @@ export function TunnelFormScreen({ server, initialValue, pending, onCancel, onSa
             <span><strong>Reconnect automatically</strong><small>Recover after sleep or a transient network change.</small></span>
           </label>
 
+          <label className="toggle-row">
+            <input type="checkbox" checked={Boolean(draft.startOnLaunch)} onChange={(event) => update('startOnLaunch', event.target.checked)} />
+            <span className="toggle" aria-hidden="true"><span /></span>
+            <span><strong>Connect when SSH Man starts</strong><small>Start this tunnel automatically when the app launches.</small></span>
+          </label>
+
           <Field id="tunnel-notes" label="Notes" hint="Optional context for the next time you use this tunnel.">
             {({ describedBy }) => (
               <textarea id="tunnel-notes" rows="3" value={draft.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Production admin UI" aria-describedby={describedBy} />

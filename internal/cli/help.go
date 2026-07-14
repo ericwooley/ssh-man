@@ -39,9 +39,9 @@ const serverUsage = `Usage:
 const tunnelUsage = `Usage:
   ssh-man tunnel list [--server SERVER] [--type local|socks] [--status STATUS] [--active]
   ssh-man tunnel get TUNNEL [--server SERVER]
-  ssh-man tunnel add local LABEL --server SERVER --listen PORT --remote HOST:PORT [--reconnect=true|false] [--notes TEXT]
-  ssh-man tunnel add socks LABEL --server SERVER [--listen auto|PORT] [--reconnect=true|false] [--notes TEXT]
-  ssh-man tunnel update TUNNEL [--server SERVER] [--label LABEL] [--type local|socks] [--listen auto|PORT] [--remote HOST:PORT] [--reconnect=true|false] [--notes TEXT|--clear-notes]
+  ssh-man tunnel add local LABEL --server SERVER --listen PORT --remote HOST:PORT [--reconnect=true|false] [--start-on-launch=true|false] [--notes TEXT]
+  ssh-man tunnel add socks LABEL --server SERVER [--listen auto|PORT] [--reconnect=true|false] [--start-on-launch=true|false] [--notes TEXT]
+  ssh-man tunnel update TUNNEL [--server SERVER] [--label LABEL] [--type local|socks] [--listen auto|PORT] [--remote HOST:PORT] [--reconnect=true|false] [--start-on-launch=true|false] [--notes TEXT|--clear-notes]
   ssh-man tunnel delete TUNNEL --yes [--server SERVER] [--stop-active]
   ssh-man tunnel start|stop|restart TUNNEL [--server SERVER]
   ssh-man tunnel unlock TUNNEL [--server SERVER] [--passphrase-stdin]

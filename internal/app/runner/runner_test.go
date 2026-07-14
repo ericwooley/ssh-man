@@ -90,7 +90,7 @@ func (f *fakeOwnerLease) Release() error {
 }
 
 func testLifecycle(bar menuBar) *applicationLifecycle {
-	return newApplicationLifecycle(&fakeControlLifecycle{}, bar, func(context.Context) error { return nil })
+	return newApplicationLifecycle(&fakeControlLifecycle{}, bar, nil, func(context.Context) error { return nil })
 }
 
 func TestNewOptionsConfiguresCompactSingleInstanceApp(t *testing.T) {
@@ -166,12 +166,41 @@ func TestDomReadyShowsFallbackWindowWhenMenuBarStartFails(t *testing.T) {
 	}
 }
 
+func TestStartupStartsConfiguredTunnelsOnceAndShutdownCancelsIt(t *testing.T) {
+	started := make(chan struct{})
+	startCalls := 0
+	lifecycle := newApplicationLifecycle(
+		&fakeControlLifecycle{},
+		&fakeMenuBar{},
+		func(ctx context.Context) error {
+			startCalls++
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		func(context.Context) error { return nil },
+	)
+	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
+	got := newOptions(nil, &bindings.AppBindings{}, window, &fakeMenuBar{}, lifecycle)
+
+	got.OnStartup(context.Background())
+	got.OnStartup(context.Background())
+	<-started
+	got.OnShutdown(context.Background())
+
+	if startCalls != 1 {
+		t.Fatalf("start-on-launch calls = %d, want 1", startCalls)
+	}
+}
+
 func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 	events := []string{}
 	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
 	bar := &fakeMenuBar{events: &events}
 	controlServer := &fakeControlLifecycle{events: &events}
 	lifecycle := newApplicationLifecycle(controlServer, bar, func(context.Context) error {
+		return nil
+	}, func(context.Context) error {
 		events = append(events, "application.shutdown")
 		return nil
 	})
@@ -199,6 +228,7 @@ func TestApplicationLifecycleReturnsControlAndApplicationShutdownErrors(t *testi
 	lifecycle := newApplicationLifecycle(
 		&fakeControlLifecycle{stopErr: controlErr},
 		&fakeMenuBar{},
+		nil,
 		func(context.Context) error { return applicationErr },
 	)
 

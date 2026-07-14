@@ -19,6 +19,7 @@ import (
 type ConfigStore interface {
 	Get(ctx context.Context, id string) (configdomain.ConnectionConfiguration, error)
 	ListByServer(ctx context.Context, serverID string) ([]configdomain.ConnectionConfiguration, error)
+	ListAll(ctx context.Context) ([]configdomain.ConnectionConfiguration, error)
 }
 
 type ServerStore interface {
@@ -133,6 +134,31 @@ func (s *Service) StartAll(ctx context.Context, serverID string) ([]RuntimeSessi
 		}
 	}
 	return states, errors.Join(startErrors...)
+}
+
+func (s *Service) StartOnLaunch(ctx context.Context) error {
+	configurations, err := s.configs.ListAll(ctx)
+	if err != nil {
+		return fmt.Errorf("load start-on-launch configurations: %w", err)
+	}
+
+	startErrors := make([]error, 0)
+	for _, configuration := range configurationsStartingOnLaunch(configurations) {
+		if _, _, err := s.startIfInactive(ctx, configuration.ID); err != nil {
+			startErrors = append(startErrors, fmt.Errorf("%s: %w", configuration.Label, err))
+		}
+	}
+	return errors.Join(startErrors...)
+}
+
+func configurationsStartingOnLaunch(configurations []configdomain.ConnectionConfiguration) []configdomain.ConnectionConfiguration {
+	selected := make([]configdomain.ConnectionConfiguration, 0, len(configurations))
+	for _, configuration := range configurations {
+		if configuration.StartOnLaunch {
+			selected = append(selected, configuration)
+		}
+	}
+	return selected
 }
 
 func canBulkStart(state RuntimeSession, exists bool) bool {

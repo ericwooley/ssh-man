@@ -38,6 +38,7 @@ func TestConfigStoreCRUD(t *testing.T) {
 		ConnectionType:       configdomain.ConnectionTypeSOCKSProxy,
 		SocksPort:            1080,
 		AutoReconnectEnabled: true,
+		StartOnLaunch:        true,
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
@@ -49,7 +50,7 @@ func TestConfigStoreCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get configuration: %v", err)
 	}
-	if loaded.Label != item.Label || loaded.SocksPort != item.SocksPort {
+	if loaded.Label != item.Label || loaded.SocksPort != item.SocksPort || !loaded.StartOnLaunch {
 		t.Fatalf("unexpected loaded configuration: %+v", loaded)
 	}
 

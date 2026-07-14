@@ -23,6 +23,7 @@ const savedTunnel = {
   remotePort: 5432,
   socksPort: 0,
   autoReconnectEnabled: true,
+  startOnLaunch: false,
   notes: 'Use for production maintenance.',
 }
 
@@ -240,6 +241,7 @@ describe('React application flows', () => {
     await user.type(screen.getByLabelText(/^Remote host/), '127.0.0.1')
     await user.type(screen.getByLabelText(/^Remote port/), '6379')
     await user.type(screen.getByLabelText(/^Notes/), 'Temporary production access')
+    await user.click(screen.getByRole('checkbox', { name: /Connect when SSH Man starts/ }))
     await user.click(screen.getByRole('button', { name: 'Save tunnel' }))
 
     await screen.findByRole('heading', { name: 'Redis admin', level: 1 })
@@ -250,6 +252,7 @@ describe('React application flows', () => {
       localPort: 16379,
       remoteHost: '127.0.0.1',
       remotePort: 6379,
+      startOnLaunch: true,
       notes: 'Temporary production access',
     })
     expect(screen.getByRole('button', { name: 'Start tunnel' })).toBeTruthy()

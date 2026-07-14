@@ -48,6 +48,7 @@ That means you can develop on a remote machine while keeping a workflow that sti
 - Use the local SSH agent by default
 - Support encrypted private keys when you need file-based auth
 - Auto-reconnect interrupted tunnels and surface clear runtime state
+- Optionally connect selected tunnels automatically when SSH Man starts
 - Keep browser profiles, session history, and app data in the normal OS config directory
 - Live in the macOS menu bar and open as a compact 420 x 720 control window
 - Stay minimal: no terminal juggling, no shell-script graveyard, no memorizing flags

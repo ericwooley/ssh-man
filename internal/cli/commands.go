@@ -506,13 +506,13 @@ func (r *commandRuntime) tunnelGet(args []string) error {
 
 var tunnelAddOptionSpecs = map[string]optionKind{
 	"--server": stringOption, "--listen": stringOption, "--remote": stringOption,
-	"--reconnect": boolOption, "--notes": stringOption,
+	"--reconnect": boolOption, "--start-on-launch": boolOption, "--notes": stringOption,
 }
 
 var tunnelUpdateOptionSpecs = map[string]optionKind{
 	"--server": stringOption, "--listen": stringOption, "--remote": stringOption,
 	"--reconnect": boolOption, "--notes": stringOption, "--label": stringOption,
-	"--type": stringOption, "--clear-notes": boolOption,
+	"--type": stringOption, "--clear-notes": boolOption, "--start-on-launch": boolOption,
 }
 
 func (r *commandRuntime) tunnelAdd(args []string) error {
@@ -540,6 +540,9 @@ func (r *commandRuntime) tunnelAdd(args []string) error {
 	}
 	if parsed.has("--reconnect") {
 		input.AutoReconnectEnabled = parsed.bool("--reconnect")
+	}
+	if parsed.has("--start-on-launch") {
+		input.StartOnLaunch = parsed.bool("--start-on-launch")
 	}
 	if err := applyTunnelRouting(&input, parsed, true); err != nil {
 		return err
@@ -587,6 +590,9 @@ func (r *commandRuntime) tunnelUpdate(args []string) error {
 	}
 	if parsed.has("--reconnect") {
 		input.AutoReconnectEnabled = parsed.bool("--reconnect")
+	}
+	if parsed.has("--start-on-launch") {
+		input.StartOnLaunch = parsed.bool("--start-on-launch")
 	}
 	if parsed.has("--notes") {
 		input.Notes = parsed.string("--notes")
