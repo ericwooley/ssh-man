@@ -16,7 +16,7 @@ func (a *AppBindings) StartConfiguration(configurationID string) (any, error) {
 func (a *AppBindings) StartServerConfigurations(serverID string) (any, error) {
 	states, err := a.app.SessionService.StartAll(context.Background(), serverID)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't start all tunnels for this server. %w", err)
+		return nil, fmt.Errorf("couldn't start every inactive tunnel for this server. %w", err)
 	}
 	results := make([]any, 0, len(states))
 	for _, state := range states {

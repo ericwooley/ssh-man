@@ -49,6 +49,7 @@ That means you can develop on a remote machine while keeping a workflow that sti
 - Support encrypted private keys when you need file-based auth
 - Auto-reconnect interrupted tunnels and surface clear runtime state
 - Keep browser profiles, session history, and app data in the normal OS config directory
+- Live in the macOS menu bar and open as a compact 420 x 720 control window
 - Stay minimal: no terminal juggling, no shell-script graveyard, no memorizing flags
 
 ## Remote dev, but smoother
@@ -86,9 +87,9 @@ On your machine, that usually means `ssh-man` sits under roughly `150 MB` of RAM
 
 ## Screenshots
 
-### Overview
+### Menu-bar active connections
 
-![Overview](docs/overview.png)
+<img src="docs/ux-audit-2026-07-13/14-react-active-mobile.png" alt="Menu-bar active connections" width="420" />
 
 ### Memory usage
 
@@ -96,11 +97,15 @@ On your machine, that usually means `ssh-man` sits under roughly `150 MB` of RAM
 
 ### Tunnel editor
 
-<img src="docs/tunnel-editor.png" alt="Tunnel editor" width="500" />
+<img src="docs/ux-audit-2026-07-13/11-react-tunnel-form-mobile.png" alt="Tunnel editor" width="420" />
+
+### Tunnel status and history
+
+<img src="docs/ux-audit-2026-07-13/12-react-tunnel-stopped-mobile.png" alt="Stopped tunnel status and history" width="420" />
 
 ### SOCKS browser launcher
 
-<img src="docs/socks-browser-launcher.png" alt="SOCKS browser launcher" width="500" />
+<img src="docs/ux-audit-2026-07-13/16-react-socks-browser-mobile.png" alt="SOCKS browser launcher" width="420" />
 
 ## How it works
 
@@ -152,9 +157,10 @@ Use Homebrew for the standard macOS install path.
 brew tap ericwooley/homebrew-apps
 brew install --cask ssh-man
 xattr -d com.apple.quarantine /Applications/ssh-man.app
+ssh-man version
 ```
 
-The app is currently distributed unsigned, so remove the quarantine attribute after install before first launch. If Homebrew replaces the app bundle during a later upgrade, run the same `xattr -d com.apple.quarantine /Applications/ssh-man.app` command again before opening the updated copy.
+Homebrew installs the menu-bar app and links its full CLI into your `PATH` as `ssh-man`. The app is currently distributed unsigned, so remove the quarantine attribute before first launch or CLI use. If Homebrew replaces the app bundle during a later upgrade, run the same `xattr -d com.apple.quarantine /Applications/ssh-man.app` command again before opening the updated copy.
 
 ### Upgrade
 
@@ -165,9 +171,54 @@ xattr -d com.apple.quarantine /Applications/ssh-man.app
 
 ### macOS notes
 
+- Launching `ssh-man` adds its terminal icon to the menu bar instead of opening a normal Dock window. Click the icon to show or hide the compact controls.
+- Hiding the popup leaves tunnels running. Use **Settings → Quit SSH Man** or the icon's context menu when you want to stop sessions and exit cleanly.
 - If Gatekeeper warns because the app is unsigned, open it from Finder with `Open` and confirm once.
 - `ssh-man` uses your local SSH agent by default, so make sure your agent is running and `SSH_AUTH_SOCK` is available to GUI apps.
 - App data is stored under `~/Library/Application Support/ssh-man`.
+- Homebrew creates the automatic CLI link. A direct DMG copy keeps the CLI inside `ssh-man.app/Contents/MacOS/ssh-man` but does not modify your shell `PATH`.
+
+## Command line
+
+The CLI controls the same saved servers, tunnels, and live sessions as the menu-bar app. Commands accept an exact ID or exact name. When tunnel labels are duplicated, add `--server` to select the intended server.
+
+```bash
+# Inspect saved and live state
+ssh-man status
+ssh-man server list
+ssh-man tunnel list
+ssh-man tunnel history "Docs proxy" --server "Production" --limit 10
+
+# Control tunnels
+ssh-man tunnel start "Docs proxy" --server "Production"
+ssh-man tunnel stop "Docs proxy" --server "Production"
+ssh-man tunnel restart "Docs proxy" --server "Production"
+
+# Control the menu-bar app and collect diagnostics
+ssh-man app show
+ssh-man app hide
+ssh-man app status
+ssh-man diagnostics
+```
+
+Use machine-readable output for scripts and automation:
+
+```bash
+ssh-man --output json status
+ssh-man --output json tunnel list --server "Production"
+```
+
+Stable exit codes make tunnel state safe to branch on in scripts: `0` success, `1` operation or partial-bulk failure, `2` invalid CLI usage, `3` selector not found or ambiguous, `4` menu-bar agent unavailable, `5` tunnel failed, `6` key unlock or other user attention required, and `7` connect or request timeout. A read-only status command still exits `0` when it reports a failed tunnel.
+
+Server and tunnel creation are also available without opening the UI:
+
+```bash
+ssh-man server add "Production" --host ssh.example.com --user deploy --auth agent
+ssh-man tunnel add local "Docs proxy" --server "Production" --listen 3000 --remote 127.0.0.1:3000
+ssh-man tunnel add socks "Browser proxy" --server "Production" --listen auto
+```
+
+Server and tunnel deletion require `--yes`; `app quit` requires it when tunnels are active. Key passphrases are accepted through a hidden terminal prompt or `--passphrase-stdin`; they are never accepted as command-line arguments where process listings or shell history could expose them. Run `ssh-man --help` for the complete command reference.
 
 ## Linux
 
@@ -176,7 +227,7 @@ Linux is currently supported through a clone-and-build workflow.
 ### Requirements
 
 - Go `1.24.x`
-- Node.js and pnpm
+- Node.js with Corepack (or pnpm)
 - `pkg-config`
 - GTK 3 development headers
 - WebKitGTK 4.1 development headers
@@ -186,7 +237,8 @@ Ubuntu or Debian example:
 ```bash
 sudo apt update
 sudo apt install -y golang-go pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
-npm install -g pnpm
+npm install -g corepack
+corepack enable
 ```
 
 ### Build and run
@@ -196,6 +248,13 @@ git clone git@github.com:ericwooley/ssh-man.git
 cd ssh-man
 ./scripts/build-current-os.sh
 ./build/bin/ssh-man
+```
+
+The same binary provides the CLI. For example:
+
+```bash
+./build/bin/ssh-man --help
+./build/bin/ssh-man status
 ```
 
 If your distro needs the explicit Linux Wails build path, use:
@@ -217,7 +276,7 @@ If your distro needs the explicit Linux Wails build path, use:
 
 - Go `1.24.x`
 - Node.js
-- pnpm
+- Corepack (or pnpm)
 - Xcode Command Line Tools on macOS
 
 Install the Xcode tools if needed:
@@ -226,10 +285,11 @@ Install the Xcode tools if needed:
 xcode-select --install
 ```
 
-Install pnpm if needed:
+Install Corepack if your Node.js distribution does not include it:
 
 ```bash
-npm install -g pnpm
+npm install -g corepack
+corepack enable
 ```
 
 ### macOS build and run
@@ -239,9 +299,10 @@ git clone git@github.com:ericwooley/ssh-man.git
 cd ssh-man
 ./scripts/build-current-os.sh
 open build/bin/ssh-man.app
+build/bin/ssh-man.app/Contents/MacOS/ssh-man --help
 ```
 
-The packaged app bundle is written to `build/bin/ssh-man.app`.
+The packaged app bundle is written to `build/bin/ssh-man.app`; its executable serves both the desktop and CLI entrypoints. Homebrew links that executable automatically. Source builds can invoke the path above directly or create their own `ssh-man` symlink in a directory already on `PATH`.
 
 ## Development
 
@@ -257,11 +318,24 @@ The packaged app bundle is written to `build/bin/ssh-man.app`.
 ./scripts/validate.sh
 ```
 
+### Release credential
+
+The privileged release job reads `TAP_GITHUB_TOKEN` from the protected `release` GitHub environment. Do not create this as a repository-wide secret. For the current workflow, use a fine-grained personal access token with:
+
+- resource owner `ericwooley`
+- access to only `ericwooley/homebrew-apps`
+- repository permission **Contents: Read and write**; no other write permissions
+- the shortest practical expiration, such as 90 days or less
+
+In the `ssh-man` repository, create an environment named `release`, require a reviewer, restrict it to version-tag deployments, and add the token under **Environment secrets** with the exact name `TAP_GITHUB_TOKEN`. A tagged release can build and validate without this credential; the tap-publishing job pauses for approval, and GitHub does not provide the environment secret until that approval is granted. Approve only a release tag and commit you recognize.
+
+Rotate the credential before it expires: create a replacement token, update the environment secret, verify a release, and then revoke the old token. Prefer a GitHub App installed only on `homebrew-apps` with **Contents: Read and write** if the workflow is updated to mint a short-lived installation token at runtime; do not store an installation token as a long-lived secret.
+
 ### Frontend-only checks
 
 ```bash
-pnpm install --dir frontend
-pnpm --dir frontend run validate
+./scripts/pnpm.sh install
+./scripts/pnpm.sh run validate
 ```
 
 ## First-run tips
@@ -274,7 +348,7 @@ pnpm --dir frontend run validate
 ## Project layout
 
 ```text
-frontend/   Svelte UI
+frontend/   React UI
 internal/   Go application code
 scripts/    build, dev, and validation helpers
 tests/      integration and smoke coverage

@@ -6,14 +6,15 @@ import (
 	"os/user"
 
 	"ssh-man/internal/app/bootstrap"
+	appwindow "ssh-man/internal/app/window"
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
 )
 
 type AppBindings struct {
-	app *bootstrap.Application
-	ctx context.Context
+	app    *bootstrap.Application
+	window *appwindow.Controller
 }
 
 type ServerWithConfigurations struct {
@@ -37,19 +38,44 @@ type LoadInitialStateResult struct {
 }
 
 func NewAppBindings() (*AppBindings, error) {
+	return NewAppBindingsWithWindow(appwindow.New())
+}
+
+func NewAppBindingsWithWindow(window *appwindow.Controller) (*AppBindings, error) {
+	if window == nil {
+		window = appwindow.New()
+	}
 	app, err := bootstrap.New(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	return &AppBindings{app: app}, nil
+	return NewAppBindingsWithApplication(app, window), nil
+}
+
+func NewAppBindingsWithApplication(app *bootstrap.Application, window *appwindow.Controller) *AppBindings {
+	if window == nil {
+		window = appwindow.New()
+	}
+	return &AppBindings{app: app, window: window}
 }
 
 func (a *AppBindings) SetContext(ctx context.Context) {
-	a.ctx = ctx
+	a.window.SetContext(ctx)
 }
 
 func (a *AppBindings) Shutdown(ctx context.Context) error {
 	return a.app.Shutdown(ctx)
+}
+
+// HideWindow hides the application UI without stopping active SSH sessions.
+func (a *AppBindings) HideWindow() error {
+	return a.window.Hide()
+}
+
+// Quit exits through the Wails lifecycle so OnShutdown can stop sessions and
+// close the database cleanly.
+func (a *AppBindings) Quit() error {
+	return a.window.Quit()
 }
 
 func (a *AppBindings) storageError(action string, err error) error {

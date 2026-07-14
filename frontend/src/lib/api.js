@@ -31,6 +31,10 @@ function syncSession(session) {
   return session
 }
 
+function canStartSession(session) {
+  return !session || session.status === 'stopped' || session.status === 'failed'
+}
+
 function cloneState(value) {
   if (typeof structuredClone === 'function') {
     return structuredClone(value)
@@ -62,8 +66,10 @@ export async function saveServer(server) {
     return appBindings().SaveServer(server)
   }
   const next = { ...server, id: server.id || id() }
-  memoryState.servers = memoryState.servers.filter((item) => item.server.id !== next.id)
-  memoryState.servers.push({ server: next, configurations: [] })
+  const existing = memoryState.servers.find((item) => item.server.id === next.id)
+  memoryState.servers = existing
+    ? memoryState.servers.map((item) => item.server.id === next.id ? { ...item, server: next } : item)
+    : memoryState.servers.concat({ server: next, configurations: [] })
   return next
 }
 
@@ -110,6 +116,9 @@ export async function startConfiguration(configurationId) {
   if (hasWailsRuntime()) {
     return appBindings().StartConfiguration(configurationId)
   }
+  const current = memoryState.sessions.find((item) => item.configurationId === configurationId)
+  if (!canStartSession(current)) return cloneState(current)
+
   const configuration = memoryState.servers.flatMap((item) => item.configurations).find((item) => item.id === configurationId)
   const boundPort = configuration?.connectionType === 'socks_proxy' ? (configuration.socksPort || 43123) : (configuration?.localPort || 0)
   return syncSession({ configurationId, status: 'connected', boundPort, statusDetail: configuration?.connectionType === 'socks_proxy' ? `Listening on localhost:${boundPort}` : 'Mock tunnel connected' })
@@ -121,7 +130,10 @@ export async function startServerConfigurations(serverId) {
   }
   const server = memoryState.servers.find((item) => item.server.id === serverId)
   if (!server) return []
-  return server.configurations.map((configuration, index) => {
+  return server.configurations.filter((configuration) => {
+    const current = memoryState.sessions.find((item) => item.configurationId === configuration.id)
+    return canStartSession(current)
+  }).map((configuration, index) => {
     if (server.server.authMode === 'private_key' && server.server.keyReference && !memoryState.preferences.__mockPassphraseUnlocked) {
       return syncSession({ configurationId: configuration.id, status: 'needs_attention', boundPort: 0, statusDetail: 'Unlock the SSH key to continue' })
     }
@@ -196,6 +208,28 @@ export async function launchBrowserThroughSocks(configurationId, browserId) {
 export async function openDevTools() {
   if (hasWailsRuntime()) {
     return appBindings().OpenDevTools()
+  }
+}
+
+export async function hideApplicationWindow() {
+  if (hasWailsRuntime()) {
+    return appBindings().HideWindow()
+  }
+}
+
+export async function quitApplication() {
+  if (hasWailsRuntime()) {
+    return appBindings().Quit()
+  }
+}
+
+export async function openExternalURL(url) {
+  if (typeof window !== 'undefined' && window.runtime?.BrowserOpenURL) {
+    return window.runtime.BrowserOpenURL(url)
+  }
+
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 }
 

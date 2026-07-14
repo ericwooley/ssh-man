@@ -18,10 +18,9 @@ require_command() {
 }
 
 require_command go
-require_command pnpm
 
 printf '==> Installing frontend dependencies\n'
-pnpm install --dir frontend --frozen-lockfile
+"$ROOT_DIR/scripts/pnpm.sh" install --frozen-lockfile
 
 case "$OS" in
   Linux)

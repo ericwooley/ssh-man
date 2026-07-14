@@ -60,6 +60,7 @@ The official Homebrew path is a cask in a project-owned tap.
 - `url`
 - `homepage`
 - `appBundleReference`
+- `binaryReference`
 
 **Update rules**
 - Update the cask only after the macOS artifact has been published successfully.
@@ -68,6 +69,7 @@ The official Homebrew path is a cask in a project-owned tap.
 
 **User flow requirements**
 - The documented Homebrew path must support install and upgrade on supported macOS environments.
+- Installing the cask must make the app's version-matched `ssh-man` CLI available on `PATH` without a second package install.
 - The documentation must clearly state if the macOS app is unsigned.
 
 ## Linux Support Contract
@@ -103,5 +105,6 @@ Validation for this feature must confirm:
 - Repository quality gates pass for the release commit.
 - The macOS artifact is generated and attached to the GitHub Release.
 - The Homebrew cask metadata references the correct version and checksum.
+- The Homebrew cask binary link resolves to the executable inside the installed app bundle, and its reported version matches the release.
 - The documented Homebrew install and upgrade flow is usable on macOS.
 - The documented Linux clone-and-build path remains accurate and reproducible.

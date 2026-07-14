@@ -8,16 +8,17 @@ import (
 )
 
 func (a *AppBindings) OpenDevTools() error {
-	if a.ctx == nil {
-		return fmt.Errorf("the application window is not ready yet")
+	ctx, err := a.window.Context()
+	if err != nil {
+		return err
 	}
 
 	switch runtime.GOOS {
 	case "darwin":
-		wailsruntime.WindowExecJS(a.ctx, "window.WailsInvoke && window.WailsInvoke('wails:openInspector')")
+		wailsruntime.WindowExecJS(ctx, "window.WailsInvoke && window.WailsInvoke('wails:openInspector')")
 		return nil
 	case "linux":
-		wailsruntime.WindowExecJS(a.ctx, "window.WailsInvoke && window.WailsInvoke('wails:showInspector')")
+		wailsruntime.WindowExecJS(ctx, "window.WailsInvoke && window.WailsInvoke('wails:showInspector')")
 		return nil
 	default:
 		return fmt.Errorf("use Ctrl+Shift+F12 to open frontend devtools in this build")

@@ -15,12 +15,9 @@ require_command() {
 
 cd "$ROOT_DIR"
 
-require_command pnpm
-
 gofmt -w main.go cmd/app internal tests
-pnpm install --dir frontend --frozen-lockfile
-pnpm --dir frontend run check:css
-pnpm --dir frontend run build
+"$ROOT_DIR/scripts/pnpm.sh" install --frozen-lockfile
+"$ROOT_DIR/scripts/pnpm.sh" run build
 go vet ./...
 go test ./...
-pnpm --dir frontend run test
+"$ROOT_DIR/scripts/pnpm.sh" run test

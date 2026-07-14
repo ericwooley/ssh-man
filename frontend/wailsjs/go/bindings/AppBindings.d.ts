@@ -12,6 +12,8 @@ export function DeleteServer(arg1:string):Promise<void>;
 
 export function DiscoverBrowsers():Promise<any>;
 
+export function HideWindow():Promise<void>;
+
 export function LaunchBrowserThroughSocks(arg1:string,arg2:string):Promise<void>;
 
 export function ListRuntimeSessions():Promise<any>;
@@ -23,6 +25,8 @@ export function LoadInitialState():Promise<bindings.LoadInitialStateResult>;
 export function OpenDevTools():Promise<void>;
 
 export function PreviewBrowserLaunchThroughSocks(arg1:string,arg2:string):Promise<any>;
+
+export function Quit():Promise<void>;
 
 export function RetryConfiguration(arg1:string):Promise<any>;
 

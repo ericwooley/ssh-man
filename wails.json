@@ -2,9 +2,9 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "ssh-man",
   "outputfilename": "ssh-man",
-  "frontend:install": "pnpm install",
-  "frontend:build": "pnpm run build",
-  "frontend:dev:watcher": "pnpm run dev",
+  "frontend:install": "../scripts/pnpm.sh install --frozen-lockfile",
+  "frontend:build": "../scripts/pnpm.sh run build",
+  "frontend:dev:watcher": "../scripts/pnpm.sh run dev",
   "frontend:dir": "frontend",
   "author": {
     "name": "OpenCode"

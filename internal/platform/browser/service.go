@@ -49,6 +49,9 @@ func (s *Service) Discover(ctx context.Context) ([]BrowserOption, error) {
 }
 
 func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string, browserID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	runtimeState, ok := s.runtimes.Get(configurationID)
 	if !ok || runtimeState.Status != sessiondomain.StatusConnected {
 		return fmt.Errorf("start the socks configuration before launching a browser")
@@ -73,6 +76,9 @@ func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string
 		if runtimeState.BoundPort < 1 {
 			return fmt.Errorf("the SOCKS tunnel is connected, but its local port is unavailable")
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		return launchBrowser(s.appDataDir, configuration.ServerID, option, runtimeState.BoundPort)
 	}
 
@@ -80,6 +86,9 @@ func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string
 }
 
 func (s *Service) PreviewLaunchThroughSOCKS(ctx context.Context, configurationID string, browserID string) (LaunchPreview, error) {
+	if err := ctx.Err(); err != nil {
+		return LaunchPreview{}, err
+	}
 	runtimeState, ok := s.runtimes.Get(configurationID)
 	if !ok || runtimeState.Status != sessiondomain.StatusConnected {
 		return LaunchPreview{}, fmt.Errorf("start the socks configuration before launching a browser")

@@ -3,25 +3,34 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "check": "vite build",
-    "check:css": "node ./scripts/check-css-contract.mjs",
     "test": "vitest run",
-    "validate": "pnpm run check:css && pnpm run test && pnpm run build"
+    "test:watch": "vitest",
+    "validate": "pnpm run test && pnpm run build"
   },
   "dependencies": {
-    "svelte": "^5.55.7"
+    "lucide-react": "^1.24.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.0.3",
-    "@testing-library/svelte": "^5.2.8",
+    "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@vitejs/plugin-react": "^6.0.3",
     "jsdom": "^26.1.0",
     "playwright": "^1.59.1",
-    "vite": "^6.4.3",
-    "vitest": "^3.2.6"
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
   }
 }

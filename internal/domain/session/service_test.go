@@ -19,7 +19,12 @@ type stubConfigStore struct {
 	items []configdomain.ConnectionConfiguration
 }
 
-func (s stubConfigStore) Get(context.Context, string) (configdomain.ConnectionConfiguration, error) {
+func (s stubConfigStore) Get(_ context.Context, id string) (configdomain.ConnectionConfiguration, error) {
+	for _, item := range s.items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
 	return s.item, nil
 }
 
@@ -31,6 +36,18 @@ func (s stubConfigStore) ListByServer(context.Context, string) ([]configdomain.C
 		return nil, nil
 	}
 	return []configdomain.ConnectionConfiguration{s.item}, nil
+}
+
+type selectiveErrorConfigStore struct {
+	stubConfigStore
+	errorID string
+}
+
+func (s selectiveErrorConfigStore) Get(ctx context.Context, id string) (configdomain.ConnectionConfiguration, error) {
+	if id == s.errorID {
+		return configdomain.ConnectionConfiguration{}, errors.New("configuration read failed")
+	}
+	return s.stubConfigStore.Get(ctx, id)
 }
 
 type stubServerStore struct {
@@ -69,16 +86,24 @@ func (s *stubHistoryStore) ListByConfiguration(_ context.Context, configurationI
 }
 
 type stubRunner struct {
-	startErr  error
-	stopErr   error
-	started   bool
-	stopped   bool
-	stopCalls int
-	onDisc    func(error)
-	boundPort int
+	startErr     error
+	stopErr      error
+	started      bool
+	stopped      bool
+	stopCalls    int
+	onDisc       func(error)
+	boundPort    int
+	startEntered chan struct{}
+	startRelease <-chan struct{}
 }
 
 func (s *stubRunner) Start() error {
+	if s.startEntered != nil {
+		close(s.startEntered)
+	}
+	if s.startRelease != nil {
+		<-s.startRelease
+	}
 	s.started = true
 	return s.startErr
 }
@@ -272,7 +297,7 @@ func TestHandleDisconnectKeepsRetryingUntilRecovery(t *testing.T) {
 	t.Fatalf("expected reconnect loop to recover eventually, got %+v", state)
 }
 
-func TestStartStopsExistingRunnerBeforeRestart(t *testing.T) {
+func TestStartLeavesAnActiveTunnelRunning(t *testing.T) {
 	runtimes := NewRuntimeStore()
 	service := NewService(
 		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
@@ -282,17 +307,92 @@ func TestStartStopsExistingRunnerBeforeRestart(t *testing.T) {
 	)
 	existingRunner := &stubRunner{}
 	runtimes.Set(RuntimeSession{ConfigurationID: "config-1", Status: StatusConnected}, existingRunner, "")
-	service.factory = &stubFactory{runners: []*stubRunner{{}}}
+	replacementRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{replacementRunner}}
 
 	state, err := service.Start(context.Background(), "config-1")
 	if err != nil {
-		t.Fatalf("restart tunnel: %v", err)
+		t.Fatalf("start active tunnel: %v", err)
+	}
+	if state.Status != StatusConnected {
+		t.Fatalf("expected connected state, got %s", state.Status)
+	}
+	if existingRunner.stopCalls != 0 {
+		t.Fatalf("expected existing runner to stay connected, got %d stop calls", existingRunner.stopCalls)
+	}
+	if replacementRunner.started {
+		t.Fatal("expected start to be idempotent while the tunnel is active")
+	}
+}
+
+func TestConcurrentStartsWaitForTheSameTunnelOperation(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	firstRunner := &stubRunner{startEntered: entered, startRelease: release}
+	replacementRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{firstRunner, replacementRunner}}
+
+	firstDone := make(chan RuntimeSession, 1)
+	secondDone := make(chan RuntimeSession, 1)
+	go func() {
+		state, _ := service.Start(context.Background(), "config-1")
+		firstDone <- state
+	}()
+	<-entered
+	go func() {
+		state, _ := service.Start(context.Background(), "config-1")
+		secondDone <- state
+	}()
+
+	select {
+	case state := <-secondDone:
+		t.Fatalf("second start returned before the first completed: %+v", state)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	close(release)
+	firstState := <-firstDone
+	secondState := <-secondDone
+	if firstState.Status != StatusConnected || secondState.Status != StatusConnected {
+		t.Fatalf("expected both callers to observe the connected state, got %+v and %+v", firstState, secondState)
+	}
+	if replacementRunner.started || firstRunner.stopCalls != 0 {
+		t.Fatal("expected concurrent start to reuse the completed tunnel operation")
+	}
+}
+
+func TestRetryStopsExistingRunnerBeforeRestart(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	existingRunner := &stubRunner{}
+	runtimes.Set(RuntimeSession{ConfigurationID: "config-1", Status: StatusConnected}, existingRunner, "passphrase")
+	replacementRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{replacementRunner}}
+
+	state, err := service.Retry(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("retry tunnel: %v", err)
 	}
 	if state.Status != StatusConnected {
 		t.Fatalf("expected connected state, got %s", state.Status)
 	}
 	if existingRunner.stopCalls != 1 {
 		t.Fatalf("expected existing runner to be stopped once, got %d", existingRunner.stopCalls)
+	}
+	if !replacementRunner.started {
+		t.Fatal("expected retry to start a replacement runner")
 	}
 }
 
@@ -360,6 +460,94 @@ func TestStartAllStartsEachConfigurationForServer(t *testing.T) {
 		if state.Status != StatusConnected {
 			t.Fatalf("expected connected state, got %+v", state)
 		}
+	}
+}
+
+func TestCanBulkStartOnlyAllowsInactiveTunnels(t *testing.T) {
+	tests := []struct {
+		name   string
+		status Status
+		exists bool
+		want   bool
+	}{
+		{name: "missing runtime", exists: false, want: true},
+		{name: "stopped", status: StatusStopped, exists: true, want: true},
+		{name: "failed", status: StatusFailed, exists: true, want: true},
+		{name: "starting", status: StatusStarting, exists: true, want: false},
+		{name: "connected", status: StatusConnected, exists: true, want: false},
+		{name: "reconnecting", status: StatusReconnecting, exists: true, want: false},
+		{name: "needs attention", status: StatusNeedsAttention, exists: true, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canBulkStart(RuntimeSession{Status: tt.status}, tt.exists); got != tt.want {
+				t.Fatalf("canBulkStart() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStartAllLeavesActiveTunnelsRunning(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{items: []configdomain.ConnectionConfiguration{
+			{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080},
+			{ID: "config-2", ServerID: "server-1", Label: "Docs", ConnectionType: configdomain.ConnectionTypeLocalForward, LocalPort: 9000, RemoteHost: "127.0.0.1", RemotePort: 3000},
+		}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	existingRunner := &stubRunner{}
+	runtimes.Set(RuntimeSession{ConfigurationID: "config-1", Status: StatusConnected}, existingRunner, "")
+	newRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{newRunner}}
+
+	states, err := service.StartAll(context.Background(), "server-1")
+	if err != nil {
+		t.Fatalf("start inactive tunnels: %v", err)
+	}
+	if len(states) != 1 || states[0].ConfigurationID != "config-2" {
+		t.Fatalf("expected only config-2 to start, got %+v", states)
+	}
+	if existingRunner.stopCalls != 0 {
+		t.Fatalf("expected connected tunnel to keep running, got %d stop calls", existingRunner.stopCalls)
+	}
+	if !newRunner.started {
+		t.Fatal("expected inactive tunnel to start")
+	}
+}
+
+func TestStartAllContinuesAfterOneConfigurationFails(t *testing.T) {
+	configurations := []configdomain.ConnectionConfiguration{
+		{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080},
+		{ID: "config-2", ServerID: "server-1", Label: "Broken", ConnectionType: configdomain.ConnectionTypeLocalForward, LocalPort: 9000, RemoteHost: "127.0.0.1", RemotePort: 3000},
+		{ID: "config-3", ServerID: "server-1", Label: "Docs", ConnectionType: configdomain.ConnectionTypeLocalForward, LocalPort: 9001, RemoteHost: "127.0.0.1", RemotePort: 3001},
+	}
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		selectiveErrorConfigStore{
+			stubConfigStore: stubConfigStore{items: configurations},
+			errorID:         "config-2",
+		},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	firstRunner := &stubRunner{}
+	thirdRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{firstRunner, thirdRunner}}
+
+	states, err := service.StartAll(context.Background(), "server-1")
+	if err == nil || !strings.Contains(err.Error(), "Broken: load configuration") {
+		t.Fatalf("expected labeled partial failure, got %v", err)
+	}
+	if len(states) != 2 || states[0].ConfigurationID != "config-1" || states[1].ConfigurationID != "config-3" {
+		t.Fatalf("expected the other tunnels to start, got %+v", states)
+	}
+	if !firstRunner.started || !thirdRunner.started {
+		t.Fatal("expected start-all to continue after the failed configuration")
 	}
 }
 
@@ -431,6 +619,204 @@ func TestHandleDisconnectDoesNotOverwriteManualStop(t *testing.T) {
 	}
 	if reconnectRunner.started {
 		t.Fatal("expected reconnect runner not to start after manual stop")
+	}
+}
+
+func TestManualStopWinsWhileReconnectStartIsInFlight(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080, AutoReconnectEnabled: true}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	service.reconnectDelay = func(int) time.Duration { return 0 }
+	service.reconnectTimeout = time.Second
+
+	reconnectEntered := make(chan struct{})
+	reconnectRelease := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseReconnect := func() {
+		releaseOnce.Do(func() { close(reconnectRelease) })
+	}
+	defer releaseReconnect()
+
+	initialRunner := &stubRunner{}
+	reconnectRunner := &stubRunner{startEntered: reconnectEntered, startRelease: reconnectRelease}
+	service.factory = &stubFactory{runners: []*stubRunner{initialRunner, reconnectRunner}}
+
+	state, err := service.Start(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("start tunnel: %v", err)
+	}
+	if state.Status != StatusConnected {
+		t.Fatalf("expected connected state, got %s", state.Status)
+	}
+
+	initialRunner.Disconnect(errors.New("network dropped"))
+	select {
+	case <-reconnectEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reconnect did not enter runner start")
+	}
+
+	operationLock := service.operationLock("config-1")
+	if operationLock.TryLock() {
+		operationLock.Unlock()
+		t.Fatal("reconnect start did not hold the per-configuration operation lock")
+	}
+
+	type stopResult struct {
+		state RuntimeSession
+		err   error
+	}
+	stopInvoked := make(chan struct{})
+	stopDone := make(chan stopResult, 1)
+	go func() {
+		close(stopInvoked)
+		stopped, stopErr := service.Stop(context.Background(), "config-1")
+		stopDone <- stopResult{state: stopped, err: stopErr}
+	}()
+	<-stopInvoked
+	releaseReconnect()
+
+	var result stopResult
+	select {
+	case result = <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("manual stop did not complete after reconnect start was released")
+	}
+	if result.err != nil {
+		t.Fatalf("stop tunnel: %v", result.err)
+	}
+	if result.state.Status != StatusStopped {
+		t.Fatalf("expected stop to return stopped state, got %+v", result.state)
+	}
+
+	state, ok := runtimes.Get("config-1")
+	if !ok || state.Status != StatusStopped {
+		t.Fatalf("expected manual stop to remain authoritative, got %+v", state)
+	}
+	storedRunner, _, _ := runtimes.Runner("config-1")
+	if storedRunner != nil {
+		t.Fatal("expected stopped runtime not to retain the reconnect runner")
+	}
+	if !reconnectRunner.stopped || reconnectRunner.stopCalls != 1 {
+		t.Fatalf("expected manual stop to stop the reconnect runner once, stopped=%v calls=%d", reconnectRunner.stopped, reconnectRunner.stopCalls)
+	}
+}
+
+func TestReconnectRevalidatesTokenAfterManualStop(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080, AutoReconnectEnabled: true}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "~/.ssh/id_ed25519"}},
+		nil,
+		runtimes,
+	)
+	reconnectRunner := &stubRunner{}
+	service.factory = &stubFactory{runners: []*stubRunner{reconnectRunner}}
+	runtimes.SetWithToken(RuntimeSession{ConfigurationID: "config-1", Status: StatusReconnecting}, nil, "", "reconnect-token")
+
+	stopped, err := service.Stop(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("stop tunnel: %v", err)
+	}
+	if stopped.Status != StatusStopped {
+		t.Fatalf("expected stopped state, got %+v", stopped)
+	}
+
+	_, restarted, err := service.restartWithToken(context.Background(), "config-1", "", "reconnect-token")
+	if err != nil {
+		t.Fatalf("restart stale reconnect generation: %v", err)
+	}
+	if restarted {
+		t.Fatal("expected stale reconnect generation to be rejected")
+	}
+	if reconnectRunner.started {
+		t.Fatal("expected stale reconnect generation not to create a runner")
+	}
+
+	state, ok := runtimes.Get("config-1")
+	if !ok || state.Status != StatusStopped {
+		t.Fatalf("expected manual stop to remain authoritative, got %+v", state)
+	}
+}
+
+func TestCanceledStartStopsRunnerAndDoesNotPublishConnected(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModeAgent}},
+		nil,
+		runtimes,
+	)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	runner := &stubRunner{startEntered: entered, startRelease: release}
+	service.factory = &stubFactory{runners: []*stubRunner{runner}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Start(ctx, "config-1")
+		done <- err
+	}()
+	<-entered
+	cancel()
+	close(release)
+
+	err := <-done
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start() error = %v, want context canceled", err)
+	}
+	if !runner.stopped {
+		t.Fatal("runner was not stopped after request cancellation")
+	}
+	state, ok := runtimes.Get("config-1")
+	if !ok || state.Status != StatusStopped {
+		t.Fatalf("runtime state = %+v, %v; want stopped", state, ok)
+	}
+}
+
+func TestCanceledExclusiveMutationNeverRunsAfterWaitingForStart(t *testing.T) {
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, Username: "eric", AuthMode: serverdomain.AuthModeAgent}},
+		nil,
+		NewRuntimeStore(),
+	)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	service.factory = &stubFactory{runners: []*stubRunner{{startEntered: entered, startRelease: release}}}
+
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := service.Start(context.Background(), "config-1")
+		startDone <- err
+	}()
+	<-entered
+
+	ctx, cancel := context.WithCancel(context.Background())
+	mutationCalled := false
+	mutationDone := make(chan error, 1)
+	go func() {
+		mutationDone <- service.WithExclusiveMutation(ctx, func(context.Context) error {
+			mutationCalled = true
+			return nil
+		})
+	}()
+	cancel()
+	close(release)
+
+	if err := <-startDone; err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := <-mutationDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("WithExclusiveMutation() error = %v, want context canceled", err)
+	}
+	if mutationCalled {
+		t.Fatal("mutation callback ran after its request was canceled")
 	}
 }
 

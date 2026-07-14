@@ -24,7 +24,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.34.5
           run_install: false
 
       - name: Set up Node.js
@@ -36,7 +36,11 @@ jobs:
 
       - name: Resolve release version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$GITHUB_REF_NAME"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Release tag must match x.y.z, got: %s\n' "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
@@ -80,12 +84,54 @@ jobs:
           path = "homebrew-apps/Casks/ssh-man.rb"
           content = File.read(path)
 
-          content.sub!(/version ".*"/, %(version "#{ENV.fetch("VERSION")}"))
-          content.sub!(/sha256 ".*"/, %(sha256 "#{ENV.fetch("SHA")}"))
-          content.sub!(%r{url ".*"}, %(url "https://github.com/ericwooley/ssh-man/releases/download/#{ENV.fetch("GITHUB_REF_NAME")}/ssh-man.dmg"))
+          replacements = {
+            /version ".*"/ => %(version "#{ENV.fetch("VERSION")}"),
+            /sha256 ".*"/ => %(sha256 "#{ENV.fetch("SHA")}"),
+            %r{url ".*"} => %(url "https://github.com/ericwooley/ssh-man/releases/download/#{ENV.fetch("GITHUB_REF_NAME")}/ssh-man.dmg"),
+          }
+          replacements.each do |pattern, replacement|
+            raise "Missing expected cask field matching #{pattern.inspect}" unless content.sub!(pattern, replacement)
+          end
+
+          app_stanza = %(  app "ssh-man.app")
+          binary_stanza = %(  binary "\#{appdir}/ssh-man.app/Contents/MacOS/ssh-man")
+          macos_dependency = %(  depends_on :macos)
+
+          content.sub!(
+            %(  desc "Manage your SSH tunnels and SOCKS5 proxies."),
+            %(  desc "Manage your SSH tunnels and SOCKS5 proxies"),
+          )
+          unless content.include?(macos_dependency)
+            raise "Missing expected app stanza" unless content.include?(app_stanza)
+
+            content.sub!(app_stanza, "#{macos_dependency}\n\n#{app_stanza}")
+          end
+          unless content.include?(binary_stanza)
+            raise "Missing expected app stanza" unless content.include?(app_stanza)
+
+            content.sub!(app_stanza, "#{app_stanza}\n#{binary_stanza}")
+          end
 
           File.write(path, content)
           RUBY
+
+      - name: Validate Homebrew cask
+        run: |
+          ruby -c homebrew-apps/Casks/ssh-man.rb
+          grep -F 'binary "#{appdir}/ssh-man.app/Contents/MacOS/ssh-man"' homebrew-apps/Casks/ssh-man.rb
+
+          TAP_ROOT="$(brew --repository)/Library/Taps/ericwooley"
+          TAP_PATH="$TAP_ROOT/homebrew-apps"
+          if [ -e "$TAP_PATH" ]; then
+            printf 'Unexpected pre-existing Homebrew tap path: %s\n' "$TAP_PATH" >&2
+            exit 1
+          fi
+          mkdir -p "$TAP_ROOT"
+          ln -s "$GITHUB_WORKSPACE/homebrew-apps" "$TAP_PATH"
+          trap 'rm -f "$TAP_PATH"' EXIT
+          HOMEBREW_NO_AUTO_UPDATE=1 brew style --cask ericwooley/apps/ssh-man
+          rm -f "$TAP_PATH"
+          trap - EXIT
 
       - name: Commit and push tap update
         run: |
