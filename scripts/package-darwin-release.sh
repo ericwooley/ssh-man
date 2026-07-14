@@ -135,9 +135,8 @@ run_cli_smoke "help" "Usage:" --help
 run_cli_smoke "version" "$VERSION" version --output json
 
 printf '==> Creating DMG\n'
-rm -rf "$ROOT_DIR/dist"
 mkdir -p "$ROOT_DIR/dist"
 rm -f "$DMG_PATH"
-hdiutil create -volname "ssh-man" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"
+bash "$ROOT_DIR/scripts/create-dmg.sh" "$APP_PATH" "ssh-man" "$DMG_PATH"
 
 printf '==> Release artifact ready: %s\n' "$DMG_PATH"
