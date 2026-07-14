@@ -50,6 +50,7 @@ export namespace bindings {
 	    servers: ServerWithConfigurations[];
 	    preferences: preferences.UserPreference;
 	    sessions: any[];
+	    sshKeys: bindings.SSHKeyOption[];
 	    diagnostics: Diagnostics;
 	    currentUsername?: string;
 	    message?: string;
@@ -64,6 +65,7 @@ export namespace bindings {
 	        this.servers = this.convertValues(source["servers"], ServerWithConfigurations);
 	        this.preferences = this.convertValues(source["preferences"], preferences.UserPreference);
 	        this.sessions = source["sessions"];
+	        this.sshKeys = this.convertValues(source["sshKeys"], SSHKeyOption);
 	        this.diagnostics = this.convertValues(source["diagnostics"], Diagnostics);
 	        this.currentUsername = source["currentUsername"];
 	        this.message = source["message"];
@@ -87,6 +89,20 @@ export namespace bindings {
 		    }
 		    return a;
 		}
+	}
+	export class SSHKeyOption {
+	    name: string;
+	    path: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SSHKeyOption(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	    }
 	}
 
 }
@@ -244,4 +260,3 @@ export namespace server {
 	}
 
 }
-

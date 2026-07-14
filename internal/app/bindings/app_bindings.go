@@ -3,13 +3,16 @@ package bindings
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/user"
+	"path/filepath"
 
 	"ssh-man/internal/app/bootstrap"
 	appwindow "ssh-man/internal/app/window"
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
+	"ssh-man/internal/ssh/auth"
 )
 
 type AppBindings struct {
@@ -27,10 +30,16 @@ type Diagnostics struct {
 	DatabasePath string `json:"databasePath"`
 }
 
+type SSHKeyOption struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 type LoadInitialStateResult struct {
 	Servers         []ServerWithConfigurations       `json:"servers"`
 	Preferences     preferencesdomain.UserPreference `json:"preferences"`
 	Sessions        []any                            `json:"sessions"`
+	SSHKeys         []SSHKeyOption                   `json:"sshKeys"`
 	Diagnostics     Diagnostics                      `json:"diagnostics"`
 	CurrentUsername string                           `json:"currentUsername,omitempty"`
 	Message         string                           `json:"message,omitempty"`
@@ -94,6 +103,7 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 	result := LoadInitialStateResult{
 		Preferences:     preferencesdomain.Default(),
 		Sessions:        []any{},
+		SSHKeys:         discoverSSHKeyOptions(),
 		Diagnostics:     Diagnostics{AppDataPath: a.app.ConfigDir, DatabasePath: a.app.DatabasePath},
 		CurrentUsername: currentUsername,
 	}
@@ -137,9 +147,27 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 		Servers:         items,
 		Preferences:     pref,
 		Sessions:        sessions,
+		SSHKeys:         result.SSHKeys,
 		Diagnostics:     result.Diagnostics,
 		CurrentUsername: currentUsername,
 		Message:         message,
 		Recoverable:     prefErr != nil,
 	}, nil
+}
+
+func discoverSSHKeyOptions() []SSHKeyOption {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return []SSHKeyOption{}
+	}
+	paths, err := auth.DiscoverPrivateKeys(filepath.Join(home, ".ssh"))
+	if err != nil {
+		return []SSHKeyOption{}
+	}
+
+	options := make([]SSHKeyOption, 0, len(paths))
+	for _, path := range paths {
+		options = append(options, SSHKeyOption{Name: filepath.Base(path), Path: path})
+	}
+	return options
 }

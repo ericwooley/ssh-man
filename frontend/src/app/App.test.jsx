@@ -61,6 +61,7 @@ function createFakeApi({
   servers = [],
   sessions = [],
   history = [],
+  sshKeys = [],
   currentUsername = 'eric',
 } = {}) {
   const state = {
@@ -76,6 +77,7 @@ function createFakeApi({
     loadInitialState: vi.fn(async () => ({
       servers: clone(state.servers),
       sessions: clone(state.sessions),
+      sshKeys: clone(sshKeys),
       preferences: clone(state.preferences),
       diagnostics: {
         appDataPath: '/tmp/ssh-man',
@@ -217,6 +219,24 @@ describe('React application flows', () => {
       port: 2222,
     })
     expect(screen.getByText('deploy@staging.example.com:2222')).toBeTruthy()
+  })
+
+  test('offers discovered SSH keys and a custom path option', async () => {
+    const user = userEvent.setup()
+    const discoveredKey = { name: 'id_ed25519', path: '/Users/eric/.ssh/id_ed25519' }
+    const { api } = createFakeApi({ sshKeys: [discoveredKey] })
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Add server' }))
+    await user.click(screen.getByRole('radio', { name: /Private key/ }))
+
+    const keySelect = screen.getByRole('combobox')
+    expect(screen.getByRole('option', { name: 'id_ed25519' })).toBeTruthy()
+    await user.selectOptions(keySelect, discoveredKey.path)
+    expect(keySelect.value).toBe(discoveredKey.path)
+
+    await user.selectOptions(keySelect, '__custom__')
+    expect(screen.getByPlaceholderText('/Users/you/.ssh/id_ed25519')).toBeTruthy()
   })
 
   test('validates and saves a tunnel beneath its selected server', async () => {

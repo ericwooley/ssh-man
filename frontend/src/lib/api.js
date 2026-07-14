@@ -52,6 +52,7 @@ export async function loadInitialState() {
   }
   return {
     ...cloneState(memoryState),
+    sshKeys: [],
     diagnostics: {
       appDataPath: '~/.config/ssh-man',
       databasePath: '~/.config/ssh-man/ssh-man.db',

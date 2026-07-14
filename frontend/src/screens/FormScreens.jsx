@@ -35,8 +35,16 @@ function FormHeader({ title, subtitle, onCancel }) {
   )
 }
 
-export function ServerFormScreen({ initialValue, currentUsername, pending, onCancel, onSave }) {
+const CUSTOM_KEY_VALUE = '__custom__'
+
+function initialKeyChoice(value, sshKeys) {
+  if (!value?.keyReference) return ''
+  return sshKeys.some((key) => key.path === value.keyReference) ? value.keyReference : CUSTOM_KEY_VALUE
+}
+
+export function ServerFormScreen({ initialValue, currentUsername, sshKeys = [], pending, onCancel, onSave }) {
   const [draft, setDraft] = useState(() => ({ ...emptyServer(currentUsername), ...(initialValue || {}) }))
+  const [keyChoice, setKeyChoice] = useState(() => initialKeyChoice(initialValue, sshKeys))
   const [errors, setErrors] = useState({})
   const refs = useRef({})
   const isEditing = Boolean(draft.id)
@@ -53,6 +61,11 @@ export function ServerFormScreen({ initialValue, currentUsername, pending, onCan
       delete next[field]
       return next
     })
+  }
+
+  function changeKeyChoice(value) {
+    setKeyChoice(value)
+    update('keyReference', value === CUSTOM_KEY_VALUE ? '' : value)
   }
 
   async function handleSubmit(event) {
@@ -124,11 +137,24 @@ export function ServerFormScreen({ initialValue, currentUsername, pending, onCan
           </div>
 
           {draft.authMode === 'private_key' ? (
-            <Field id="server-key-reference" label="Private key path" error={errors.keyReference} hint="The passphrase is requested only when a tunnel starts.">
-              {({ describedBy }) => (
-                <input id="server-key-reference" ref={(node) => { refs.current.keyReference = node }} value={draft.keyReference} onChange={(event) => update('keyReference', event.target.value)} placeholder="~/.ssh/id_ed25519" autoCapitalize="none" spellCheck="false" aria-invalid={Boolean(errors.keyReference)} aria-describedby={describedBy} />
-              )}
-            </Field>
+            <>
+              <Field id="server-key-choice" label="Private key" error={keyChoice === CUSTOM_KEY_VALUE ? undefined : errors.keyReference} hint="Choose a key from ~/.ssh or use a custom path.">
+                {({ describedBy }) => (
+                  <select id="server-key-choice" ref={(node) => { refs.current.keyReference = node }} value={keyChoice} onChange={(event) => changeKeyChoice(event.target.value)} aria-invalid={Boolean(errors.keyReference && keyChoice !== CUSTOM_KEY_VALUE)} aria-describedby={describedBy}>
+                    <option value="">Choose a private key…</option>
+                    {sshKeys.map((key) => <option key={key.path} value={key.path}>{key.name}</option>)}
+                    <option value={CUSTOM_KEY_VALUE}>Custom path…</option>
+                  </select>
+                )}
+              </Field>
+              {keyChoice === CUSTOM_KEY_VALUE ? (
+                <Field id="server-key-reference" label="Private key path" error={errors.keyReference} hint="The passphrase is requested only when a tunnel starts.">
+                  {({ describedBy }) => (
+                    <input id="server-key-reference" ref={(node) => { refs.current.keyReference = node }} value={draft.keyReference} onChange={(event) => update('keyReference', event.target.value)} placeholder="/Users/you/.ssh/id_ed25519" autoCapitalize="none" spellCheck="false" aria-invalid={Boolean(errors.keyReference)} aria-describedby={describedBy} />
+                  )}
+                </Field>
+              ) : null}
+            </>
           ) : null}
         </section>
       </div>

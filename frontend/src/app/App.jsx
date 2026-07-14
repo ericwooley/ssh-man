@@ -137,6 +137,7 @@ export default function App({ api, controllerOptions }) {
           <ServerFormScreen
             initialValue={form.value}
             currentUsername={app.currentUsername}
+            sshKeys={app.sshKeys}
             pending={Boolean(app.pending[`save-server:${form.value.id || 'new'}`])}
             onCancel={closeForm}
             onSave={app.saveServer}

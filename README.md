@@ -342,7 +342,7 @@ Rotate the credential before it expires: create a replacement token, update the 
 ## First-run tips
 
 - New servers default to `localhost`, your current OS username, and `SSH agent` auth.
-- If you want file-based auth instead, switch the server to `Private key` and enter the key path.
+- If you want file-based auth instead, switch the server to `Private key` and choose a detected key from `~/.ssh` or enter a custom path.
 - Browser profiles are persisted per server under the app config directory so bookmarks, extensions, and other browser state survive restarts.
 - SOCKS browser launch only works for a running SOCKS tunnel, so start the tunnel first.
 

@@ -37,6 +37,7 @@ export function useSshMan(api = defaultApi, options = {}) {
   const [selectedConfigurationId, setSelectedConfigurationId] = useState('')
   const [diagnostics, setDiagnostics] = useState({ appDataPath: '', databasePath: '' })
   const [currentUsername, setCurrentUsername] = useState('')
+  const [sshKeys, setSshKeys] = useState([])
   const [storageIssue, setStorageIssue] = useState('')
   const [runtimeFresh, setRuntimeFresh] = useState(true)
   const [notification, setNotification] = useState(null)
@@ -105,6 +106,7 @@ export function useSshMan(api = defaultApi, options = {}) {
       setSessions(buildRuntimeSessions(state.sessions || []))
       setDiagnostics(state.diagnostics || { appDataPath: '', databasePath: '' })
       setCurrentUsername(state.currentUsername || '')
+      setSshKeys(state.sshKeys || [])
       setStorageIssue(state.recoverable ? state.message || 'Saved data needs attention.' : '')
       setSelectedServerId(nextServerId)
       setSelectedConfigurationId(firstConfigurationId(nextServers, nextServerId))
@@ -140,6 +142,7 @@ export function useSshMan(api = defaultApi, options = {}) {
         setSessions(buildRuntimeSessions(state.sessions || []))
         setDiagnostics(state.diagnostics || { appDataPath: '', databasePath: '' })
         setCurrentUsername(state.currentUsername || '')
+        setSshKeys(state.sshKeys || [])
         setStorageIssue(state.recoverable ? state.message || 'Saved data needs attention.' : '')
         setSelectedServerId(nextServerId)
         setSelectedConfigurationId(firstConfigurationId(nextServers, nextServerId))
@@ -546,6 +549,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     selectedHistory,
     diagnostics,
     currentUsername,
+    sshKeys,
     storageIssue,
     runtimeFresh,
     notification,
