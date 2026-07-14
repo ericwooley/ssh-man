@@ -5,43 +5,57 @@ on:
     tags:
       - '*.*.*'
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release-macos:
+  build-macos:
+    name: Build and test macOS release
     runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.34.5
           run_install: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 25
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Resolve release version
+        id: version
+        shell: bash
         run: |
+          set -euo pipefail
           VERSION="$GITHUB_REF_NAME"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             printf 'Release tag must match x.y.z, got: %s\n' "$GITHUB_REF_NAME" >&2
             exit 1
           fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install frontend dependencies
         run: pnpm install --dir frontend --frozen-lockfile
@@ -56,30 +70,64 @@ jobs:
         run: pnpm --dir frontend run test
 
       - name: Build release artifact
-        run: bash ./scripts/package-darwin-release.sh "$VERSION"
+        run: bash ./scripts/package-darwin-release.sh "${{ steps.version.outputs.version }}"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ssh-man-dmg-${{ steps.version.outputs.version }}
+          path: dist/ssh-man.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish-release:
+    name: Publish release and update Homebrew
+    needs: build-macos
+    if: github.repository == 'ericwooley/ssh-man'
+    runs-on: macos-latest
+    timeout-minutes: 25
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build-macos.outputs.version }}
+
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ssh-man-dmg-${{ needs.build-macos.outputs.version }}
+          path: dist
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ssh-man ${{ env.VERSION }}
+          tag_name: ${{ needs.build-macos.outputs.version }}
+          name: ssh-man ${{ needs.build-macos.outputs.version }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: dist/ssh-man.dmg
 
       - name: Checkout tap repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: ericwooley/homebrew-apps
-          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          ref: main
           path: homebrew-apps
+          persist-credentials: false
 
       - name: Calculate release SHA256
+        shell: bash
         run: |
+          set -euo pipefail
           SHA="$(shasum -a 256 dist/ssh-man.dmg | awk '{print $1}')"
-          echo "SHA=$SHA" >> "$GITHUB_ENV"
+          printf 'SHA=%s\n' "$SHA" >> "$GITHUB_ENV"
 
       - name: Update Homebrew cask
+        shell: bash
         run: |
+          set -euo pipefail
           ruby <<'RUBY'
           path = "homebrew-apps/Casks/ssh-man.rb"
           content = File.read(path)
@@ -87,7 +135,7 @@ jobs:
           replacements = {
             /version ".*"/ => %(version "#{ENV.fetch("VERSION")}"),
             /sha256 ".*"/ => %(sha256 "#{ENV.fetch("SHA")}"),
-            %r{url ".*"} => %(url "https://github.com/ericwooley/ssh-man/releases/download/#{ENV.fetch("GITHUB_REF_NAME")}/ssh-man.dmg"),
+            %r{url ".*"} => %(url "https://github.com/ericwooley/ssh-man/releases/download/#{ENV.fetch("VERSION")}/ssh-man.dmg"),
           }
           replacements.each do |pattern, replacement|
             raise "Missing expected cask field matching #{pattern.inspect}" unless content.sub!(pattern, replacement)
@@ -116,7 +164,9 @@ jobs:
           RUBY
 
       - name: Validate Homebrew cask
+        shell: bash
         run: |
+          set -euo pipefail
           ruby -c homebrew-apps/Casks/ssh-man.rb
           grep -F 'binary "#{appdir}/ssh-man.app/Contents/MacOS/ssh-man"' homebrew-apps/Casks/ssh-man.rb
 
@@ -133,8 +183,10 @@ jobs:
           rm -f "$TAP_PATH"
           trap - EXIT
 
-      - name: Commit and push tap update
+      - name: Commit tap update
+        shell: bash
         run: |
+          set -euo pipefail
           cd homebrew-apps
 
           if git diff --quiet -- Casks/ssh-man.rb; then
@@ -144,4 +196,19 @@ jobs:
 
           git add Casks/ssh-man.rb
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Update ssh-man to ${VERSION}"
-          git push
+
+      - name: Push tap update
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd homebrew-apps
+
+          if git diff --quiet HEAD origin/main; then
+            printf 'No Homebrew tap commit to push.\n'
+            exit 0
+          fi
+
+          gh auth setup-git
+          git push origin HEAD:main
