@@ -50,7 +50,12 @@ function fakeApi() {
 }
 
 describe('server explorer window', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => window.localStorage.clear())
+
+  test('uses browser-compatible local storage', () => {
+    expect(typeof window.localStorage.clear).toBe('function')
+    expect(typeof window.localStorage.getItem).toBe('function')
+  })
 
   test('browses folders and renders remote markdown', async () => {
     const user = userEvent.setup()
@@ -105,7 +110,7 @@ describe('server explorer window', () => {
     await user.click(await screen.findByRole('button', { name: 'Source' }))
     await user.click(screen.getByRole('checkbox', { name: 'Vim controls' }))
 
-    expect(localStorage.getItem('ssh-man:explorer:vim-enabled')).toBe('true')
+    expect(window.localStorage.getItem('ssh-man:explorer:vim-enabled')).toBe('true')
     expect(screen.getByTestId('monaco-editor').dataset.vim).toBe('enabled')
   })
 
@@ -120,6 +125,6 @@ describe('server explorer window', () => {
     await user.click(screen.getByRole('button', { name: 'Open favorite site' }))
 
     await waitFor(() => expect(api.listDirectory).toHaveBeenLastCalledWith('/home/deploy/site'))
-    expect(JSON.parse(localStorage.getItem('ssh-man:explorer:favorites:server-1'))).toEqual(['/home/deploy/site'])
+    expect(JSON.parse(window.localStorage.getItem('ssh-man:explorer:favorites:server-1'))).toEqual(['/home/deploy/site'])
   })
 })

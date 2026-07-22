@@ -13,6 +13,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    execArgv: ['--no-experimental-webstorage'],
     setupFiles: ['./vitest.setup.js'],
   },
   build: {

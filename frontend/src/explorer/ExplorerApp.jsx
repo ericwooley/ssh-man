@@ -68,6 +68,7 @@ function favoriteName(remotePath) {
 }
 
 export default function ExplorerApp({ api = defaultApi }) {
+  const storage = window.localStorage
   const [server, setServer] = useState(null)
   const [phase, setPhase] = useState('connecting')
   const [homePath, setHomePath] = useState('')
@@ -80,7 +81,7 @@ export default function ExplorerApp({ api = defaultApi }) {
   const [draftContent, setDraftContent] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [vimMode, setVimMode] = useState(() => readVimMode(globalThis.localStorage))
+  const [vimMode, setVimMode] = useState(() => readVimMode(storage))
   const [favoritePaths, setFavoritePaths] = useState([])
   const [error, setError] = useState('')
   const [passphrase, setPassphrase] = useState('')
@@ -123,14 +124,14 @@ export default function ExplorerApp({ api = defaultApi }) {
       setDirty(false)
       setPhase('ready')
       commitHistory(next.path, mode)
-      if (server?.id) localStorage.setItem(`ssh-man:explorer:path:${server.id}`, next.path)
+      if (server?.id) storage.setItem(`ssh-man:explorer:path:${server.id}`, next.path)
       return next
     } catch (nextError) {
       setError(nextError.message || 'The remote folder could not be opened.')
       setPhase('error')
       return null
     }
-  }, [api, commitHistory, confirmDiscard, server?.id])
+  }, [api, commitHistory, confirmDiscard, server?.id, storage])
 
   const connect = useCallback(async (secret = '') => {
     setError('')
@@ -143,7 +144,7 @@ export default function ExplorerApp({ api = defaultApi }) {
       }
       setHomePath(result.homePath)
       setPassphrase('')
-      const savedPath = server?.id ? localStorage.getItem(`ssh-man:explorer:path:${server.id}`) : ''
+      const savedPath = server?.id ? storage.getItem(`ssh-man:explorer:path:${server.id}`) : ''
       const opened = await openDirectory(savedPath || result.homePath, 'replace')
       if (!opened && savedPath && savedPath !== result.homePath) {
         await openDirectory(result.homePath, 'replace')
@@ -152,7 +153,7 @@ export default function ExplorerApp({ api = defaultApi }) {
       setError(nextError.message || 'The SSH connection could not be opened.')
       setPhase('error')
     }
-  }, [api, openDirectory, server?.id])
+  }, [api, openDirectory, server?.id, storage])
 
   useEffect(() => {
     if (startedRef.current) return
@@ -163,7 +164,7 @@ export default function ExplorerApp({ api = defaultApi }) {
         const state = await api.initialState()
         if (!active) return
         setServer(state.server)
-        setFavoritePaths(readFavoritePaths(localStorage, state.server.id))
+        setFavoritePaths(readFavoritePaths(storage, state.server.id))
         document.title = `${state.server.name} — SSH Man Explorer`
         const result = await api.connect('')
         if (!active) return
@@ -172,7 +173,7 @@ export default function ExplorerApp({ api = defaultApi }) {
           return
         }
         setHomePath(result.homePath)
-        const savedPath = localStorage.getItem(`ssh-man:explorer:path:${state.server.id}`)
+        const savedPath = storage.getItem(`ssh-man:explorer:path:${state.server.id}`)
         let next
         try {
           next = await api.listDirectory(savedPath || result.homePath)
@@ -193,7 +194,7 @@ export default function ExplorerApp({ api = defaultApi }) {
     }
     start()
     return () => { active = false }
-  }, [api, commitHistory])
+  }, [api, commitHistory, storage])
 
   const selectedEntries = useMemo(() => directory.entries.filter((entry) => selectedPaths.includes(entry.path)), [directory.entries, selectedPaths])
   const selectedEntry = selectedEntries.length === 1 ? selectedEntries[0] : null
@@ -293,7 +294,7 @@ export default function ExplorerApp({ api = defaultApi }) {
   function toggleVimMode(event) {
     const enabled = event.target.checked
     setVimMode(enabled)
-    writeVimMode(localStorage, enabled)
+    writeVimMode(storage, enabled)
   }
 
   function toggleCurrentFavorite() {
@@ -301,12 +302,12 @@ export default function ExplorerApp({ api = defaultApi }) {
     const next = favoritePaths.includes(directory.path)
       ? removeFavorite(favoritePaths, directory.path)
       : addFavorite(favoritePaths, directory.path)
-    setFavoritePaths(writeFavoritePaths(localStorage, server.id, next))
+    setFavoritePaths(writeFavoritePaths(storage, server.id, next))
   }
 
   function removeFavoritePath(remotePath) {
     if (!server?.id) return
-    setFavoritePaths(writeFavoritePaths(localStorage, server.id, removeFavorite(favoritePaths, remotePath)))
+    setFavoritePaths(writeFavoritePaths(storage, server.id, removeFavorite(favoritePaths, remotePath)))
   }
 
   const canGoBack = historyVersion >= 0 && historyIndexRef.current > 0
