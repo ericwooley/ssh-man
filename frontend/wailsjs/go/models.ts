@@ -201,9 +201,26 @@ export namespace config {
 
 export namespace preferences {
 
+	export class BrowserAppearance {
+	    icon?: string;
+	    primaryColor?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new BrowserAppearance(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.icon = source["icon"];
+	        this.primaryColor = source["primaryColor"];
+	    }
+	}
 	export class UserPreference {
 	    theme: string;
 	    lastSelectedServerId?: string;
+	    browserSwitcherShortcut: string;
+	    browserSwitcherBackwardShortcut: string;
+	    browserAppearances: Record<string, BrowserAppearance>;
 	    // Go type: time
 	    updatedAt: any;
 
@@ -215,6 +232,9 @@ export namespace preferences {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.theme = source["theme"];
 	        this.lastSelectedServerId = source["lastSelectedServerId"];
+	        this.browserSwitcherShortcut = source["browserSwitcherShortcut"];
+	        this.browserSwitcherBackwardShortcut = source["browserSwitcherBackwardShortcut"];
+	        this.browserAppearances = this.convertValues(source["browserAppearances"], BrowserAppearance, true);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
 

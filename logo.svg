@@ -1,0 +1,9 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">ssh-man</title>
+  <desc id="desc">A rounded terminal window containing a command prompt and cursor.</desc>
+  <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="21" width="76" height="58" rx="11"/>
+    <path d="m30 40 12 10-12 10"/>
+    <path d="M53 60h17"/>
+  </g>
+</svg>

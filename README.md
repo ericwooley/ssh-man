@@ -48,6 +48,7 @@ That means you can develop on a remote machine while keeping a workflow that sti
 - Edit and safely save remote source in Monaco with optional Vim controls
 - Favorite per-server folders, render Markdown, and safely render HTML with relative assets
 - Download remote files or complete folders over SFTP
+- Switch directly between proxy-launched and regular browser instances with a configurable global shortcut on macOS
 - Preview the exact browser command before launch
 - Use the local SSH agent by default
 - Support encrypted private keys when you need file-based auth
@@ -159,6 +160,10 @@ Text and source files open in Monaco and can be saved back through SFTP. Enable 
 
 Markdown has rendered and source views. HTML, SVG, PDF, images, audio, and video use the native browser renderer; relative HTML assets resolve against the remote file's directory. Active scripts are disabled in HTML previews so a remote document cannot call SSH Man's native bindings. Download the file and open it in a normal browser when script execution is required.
 
+### Quick browser switching
+
+On macOS, hold `Alt` and press `X` by default to move forward through running browsers, or `Z` to move backward. Keep `Alt` held while cycling, then release it to activate the selected browser, like the macOS application switcher; press `Escape` to cancel. Proxy-launched instances are labeled with their SSH Man server, while ordinary instances of the same browser are labeled `Regular`. Both directions wrap and recently activated targets are ordered first. Record either global shortcut under **Settings → Quick browser switching**; the two shortcuts must share the same held `Control`, `Alt`, and `Command` modifiers. Choose **Customize** there to give each proxy or regular browser a persistent primary color and either a built-in icon or emoji mark.
+
 ## Install
 
 ## macOS
@@ -186,6 +191,7 @@ xattr -d com.apple.quarantine /Applications/ssh-man.app
 ### macOS notes
 
 - Launching `ssh-man` adds its terminal icon to the menu bar instead of opening a normal Dock window. Click the icon to show or hide the compact controls.
+- The browser switcher shortcut is registered only while SSH Man is running and does not require Accessibility permission.
 - Hiding the popup leaves tunnels running. Use **Settings → Quit SSH Man** or the icon's context menu when you want to stop sessions and exit cleanly.
 - If Gatekeeper warns because the app is unsigned, open it from Finder with `Open` and confirm once.
 - `ssh-man` uses your local SSH agent by default, so make sure your agent is running and `SSH_AUTH_SOCK` is available to GUI apps.

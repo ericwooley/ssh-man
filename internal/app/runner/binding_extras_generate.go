@@ -17,7 +17,12 @@ type bindingsMenuBar struct{}
 
 func (bindingsMenuBar) Start() error { return nil }
 func (bindingsMenuBar) Show() bool   { return false }
-func (bindingsMenuBar) Stop()        {}
+func (bindingsMenuBar) ShowBrowserSwitcher() bool {
+	return false
+}
+func (bindingsMenuBar) CancelBrowserSwitchSession()              {}
+func (bindingsMenuBar) SetBrowserShortcuts(string, string) error { return nil }
+func (bindingsMenuBar) Stop()                                    {}
 
 func additionalBindingsForGeneration() []interface{} {
 	explorer, _ := bindings.NewExplorerBindings(

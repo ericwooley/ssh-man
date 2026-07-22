@@ -12,7 +12,13 @@ const hasWailsRuntime = () => getRuntimeBindings() !== null
 
 const memoryState = {
   servers: [],
-  preferences: { theme: 'dark', lastSelectedServerId: '' },
+  preferences: {
+    theme: 'dark',
+    lastSelectedServerId: '',
+    browserSwitcherShortcut: 'Alt+X',
+    browserSwitcherBackwardShortcut: 'Alt+Z',
+    browserAppearances: {},
+  },
   sessions: [],
   sessionHistory: [],
 }
@@ -118,6 +124,22 @@ export async function savePreferences(preferences) {
   return memoryState.preferences
 }
 
+export async function saveBrowserAppearance(appearanceKey, appearance) {
+  if (hasWailsRuntime()) {
+    return appBindings().SaveBrowserAppearance(appearanceKey, appearance)
+  }
+  const browserAppearances = { ...(memoryState.preferences.browserAppearances || {}) }
+  const icon = String(appearance?.icon || '').trim()
+  const primaryColor = String(appearance?.primaryColor || '').trim().toUpperCase()
+  if (!icon && !primaryColor) {
+    delete browserAppearances[appearanceKey]
+  } else {
+    browserAppearances[appearanceKey] = { icon, primaryColor }
+  }
+  memoryState.preferences = { ...memoryState.preferences, browserAppearances }
+  return cloneState(memoryState.preferences)
+}
+
 export async function startConfiguration(configurationId) {
   if (hasWailsRuntime()) {
     return appBindings().StartConfiguration(configurationId)
@@ -209,6 +231,56 @@ export async function launchBrowserThroughSocks(configurationId, browserId) {
     return appBindings().LaunchBrowserThroughSocks(configurationId, browserId)
   }
   return { configurationId, browserId, success: true }
+}
+
+export async function listRunningBrowsers() {
+  if (hasWailsRuntime()) {
+    return appBindings().ListRunningBrowsers()
+  }
+  return []
+}
+
+export async function activateRunningBrowser(targetId) {
+  if (hasWailsRuntime()) {
+    return appBindings().ActivateRunningBrowser(targetId)
+  }
+}
+
+export function onBrowserSwitcherRequested(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('browser-switcher:open', (request) => {
+      const direction = typeof request === 'object' ? request?.direction : request
+      const sessionId = typeof request === 'object' ? String(request?.sessionId || '') : ''
+      callback({ direction: direction === 'backward' ? 'backward' : 'forward', sessionId })
+    })
+  }
+  return () => {}
+}
+
+export function onBrowserSwitcherCommitRequested(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('browser-switcher:commit', (request) => {
+      const sessionId = typeof request === 'object' ? request?.sessionId : request
+      callback({ sessionId: String(sessionId || '') })
+    })
+  }
+  return () => {}
+}
+
+export function onBrowserSwitcherCancelRequested(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('browser-switcher:cancel', (request) => {
+      const sessionId = typeof request === 'object' ? request?.sessionId : request
+      callback({ sessionId: String(sessionId || '') })
+    })
+  }
+  return () => {}
+}
+
+export async function showBrowserSwitcherWindow() {
+  if (hasWailsRuntime()) {
+    return appBindings().ShowBrowserSwitcher()
+  }
 }
 
 export async function openDevTools() {

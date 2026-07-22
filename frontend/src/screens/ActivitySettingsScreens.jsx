@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   ArrowRight,
   Check,
@@ -6,6 +7,7 @@ import {
   ExternalLink,
   FolderOpen,
   LoaderCircle,
+  Keyboard,
   Moon,
   Power,
   RefreshCw,
@@ -17,7 +19,7 @@ import {
   WifiOff,
 } from 'lucide-react'
 import moonpixelsLogo from '../../../moonpixels.png'
-import { configurationEndpoint, findConfigurationRecord } from '../model/appModel'
+import { configurationEndpoint, findConfigurationRecord, shortcutFromKeyboardEvent } from '../model/appModel'
 import { EmptyState, IconButton, StatusPill } from '../components/AppChrome'
 
 export function ActivityScreen({ servers, sessions, pending, runtimeFresh, onOpen, onStop, onRefresh }) {
@@ -96,12 +98,70 @@ function PathCard({ icon: Icon, label, value, onCopy }) {
   )
 }
 
+function ShortcutRecorder({ id, label, description, ariaLabel, value, fallback, onChange }) {
+  const [recording, setRecording] = useState(false)
+  const [message, setMessage] = useState('')
+  const messageId = `${id}-message`
+
+  function handleKeyDown(event) {
+    if (!recording) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.key === 'Escape') {
+      setRecording(false)
+      setMessage('')
+      return
+    }
+    const shortcut = shortcutFromKeyboardEvent(event)
+    if (!shortcut) {
+      setMessage('Include Control, Alt, or Command plus a supported key.')
+      return
+    }
+    setRecording(false)
+    setMessage('')
+    void onChange(shortcut)
+  }
+
+  return (
+    <div className="shortcut-setting">
+      <div className="shortcut-setting__copy">
+        <span className="shortcut-setting__icon" aria-hidden="true"><Keyboard /></span>
+        <div>
+          <strong>{label}</strong>
+          <span>{description}</span>
+        </div>
+      </div>
+      <button
+        className={`shortcut-recorder ${recording ? 'is-recording' : ''}`}
+        type="button"
+        aria-label={ariaLabel}
+        aria-describedby={message ? messageId : undefined}
+        onClick={() => {
+          setRecording(true)
+          setMessage('Press the new shortcut. Escape cancels.')
+        }}
+        onKeyDown={handleKeyDown}
+        onBlur={() => {
+          setRecording(false)
+          setMessage('')
+        }}
+      >
+        {recording ? 'Press keys…' : <kbd>{value || fallback}</kbd>}
+      </button>
+      {message ? <p id={messageId} className="shortcut-setting__message">{message}</p> : null}
+    </div>
+  )
+}
+
 export function SettingsScreen({
   preferences,
   diagnostics,
   storageIssue,
   runtimeFresh,
   onToggleTheme,
+  onSetBrowserSwitcherShortcut,
+  onSetBrowserSwitcherBackwardShortcut,
+  onOpenBrowserSwitcher,
   onReload,
   onRefreshRuntime,
   onCopyPath,
@@ -126,6 +186,35 @@ export function SettingsScreen({
             <Moon aria-hidden="true" /> Dark {preferences.theme === 'dark' ? <Check aria-hidden="true" /> : null}
           </button>
         </div>
+      </section>
+
+      <section className="section-block" aria-labelledby="shortcuts-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Keyboard</span>
+            <h2 id="shortcuts-heading">Quick browser switching</h2>
+          </div>
+          <button className="text-button" type="button" onClick={onOpenBrowserSwitcher}>Customize</button>
+        </div>
+        <p className="section-description">Set a recognizable icon and color for each browser, or preview the centered selector.</p>
+        <ShortcutRecorder
+          id="browser-switcher-forward-shortcut"
+          label="Next browser"
+          description="Opens the switcher and moves the selection forward."
+          ariaLabel="Next browser shortcut"
+          value={preferences.browserSwitcherShortcut}
+          fallback="Alt+X"
+          onChange={onSetBrowserSwitcherShortcut}
+        />
+        <ShortcutRecorder
+          id="browser-switcher-backward-shortcut"
+          label="Previous browser"
+          description="Opens the switcher and moves the selection backward."
+          ariaLabel="Previous browser shortcut"
+          value={preferences.browserSwitcherBackwardShortcut}
+          fallback="Alt+Z"
+          onChange={onSetBrowserSwitcherBackwardShortcut}
+        />
       </section>
 
       <section className="section-block" aria-labelledby="health-heading">

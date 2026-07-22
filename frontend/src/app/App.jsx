@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CircleAlert, Server } from 'lucide-react'
 import {
   AppHeader,
@@ -8,11 +8,21 @@ import {
   ToastRegion,
 } from '../components/AppChrome'
 import { ConfirmDialog, UnlockDialog } from '../components/Dialogs'
+import { BrowserSwitcher } from '../components/BrowserSwitcher'
 import { ActivityScreen, SettingsScreen } from '../screens/ActivitySettingsScreens'
 import { ServerFormScreen, TunnelFormScreen } from '../screens/FormScreens'
 import { ServerDetailScreen, ServersScreen } from '../screens/ServersScreens'
 import { TunnelDetailScreen } from '../screens/TunnelScreen'
-import { emptyServer, emptyTunnel } from '../model/appModel'
+import {
+  browserSelectionIndexForDirections,
+  emptyServer,
+  emptyTunnel,
+  moveBrowserSelectionIndex,
+  normalizeBrowserSwitchDirection,
+  orderBrowsersByRecentActivation,
+  recordBrowserTargetActivation,
+} from '../model/appModel'
+import * as defaultApi from '../lib/api'
 import { useSshMan } from './useSshMan'
 
 const rootCopy = {
@@ -21,11 +31,233 @@ const rootCopy = {
   settings: { title: 'Settings', subtitle: 'Appearance and app health' },
 }
 
-export default function App({ api, controllerOptions }) {
+function emptyBrowserSwitcherState() {
+  return {
+    open: false,
+    items: [],
+    selectedIndex: 0,
+    loading: false,
+    activating: false,
+    error: '',
+    sessionId: '',
+    mode: 'shortcut',
+  }
+}
+
+export default function App({ api = defaultApi, controllerOptions }) {
   const app = useSshMan(api, controllerOptions)
   const [route, setRoute] = useState({ type: 'root', tab: 'servers' })
   const [form, setForm] = useState(null)
   const [confirmation, setConfirmation] = useState(null)
+  const [browserSwitcher, setBrowserSwitcher] = useState(emptyBrowserSwitcherState)
+  const browserSwitcherRef = useRef(browserSwitcher)
+  const pendingBrowserSwitcherDirectionsRef = useRef({ sessionId: '', directions: [] })
+  const pendingBrowserSwitcherCommitSessionRef = useRef('')
+  const recentBrowserTargetIdsRef = useRef([])
+  const browserSwitcherLoadIdRef = useRef(0)
+  const browserSwitcherActivationIdRef = useRef(0)
+  const browserSwitcherSessionCounterRef = useRef(0)
+
+  const updateBrowserSwitcher = useCallback((update) => {
+    const next = typeof update === 'function' ? update(browserSwitcherRef.current) : update
+    browserSwitcherRef.current = next
+    setBrowserSwitcher(next)
+    return next
+  }, [])
+
+  const resetBrowserSwitcher = useCallback(() => {
+    browserSwitcherLoadIdRef.current += 1
+    browserSwitcherActivationIdRef.current += 1
+    pendingBrowserSwitcherDirectionsRef.current = { sessionId: '', directions: [] }
+    pendingBrowserSwitcherCommitSessionRef.current = ''
+    updateBrowserSwitcher(emptyBrowserSwitcherState())
+  }, [updateBrowserSwitcher])
+
+  const refreshBrowserSwitcher = useCallback(async ({
+    cycleIfOpen = false,
+    direction = 'forward',
+    sessionId = '',
+    mode = 'shortcut',
+  } = {}) => {
+    const normalizedDirection = normalizeBrowserSwitchDirection(direction)
+    const current = browserSwitcherRef.current
+    const requestedSessionId = String(sessionId || current.sessionId || '')
+    if (!requestedSessionId) return
+    const sameSession = current.open && current.sessionId === requestedSessionId
+
+    if (cycleIfOpen && sameSession) {
+      if (current.activating) return
+      if (current.loading) {
+        const pending = pendingBrowserSwitcherDirectionsRef.current
+        if (pending.sessionId === requestedSessionId) {
+          pending.directions.push(normalizedDirection)
+        }
+        return
+      }
+      if (current.error) return
+      if (current.items.length) {
+        updateBrowserSwitcher((state) => ({
+          ...state,
+          selectedIndex: moveBrowserSelectionIndex(state.selectedIndex, state.items.length, normalizedDirection),
+        }))
+        return
+      }
+    }
+    if (sameSession && current.loading) return
+
+    if (!sameSession) {
+      browserSwitcherActivationIdRef.current += 1
+      pendingBrowserSwitcherCommitSessionRef.current = ''
+    }
+
+    const loadId = ++browserSwitcherLoadIdRef.current
+    pendingBrowserSwitcherDirectionsRef.current = {
+      sessionId: requestedSessionId,
+      directions: [normalizedDirection],
+    }
+    updateBrowserSwitcher({
+      open: true,
+      items: sameSession ? current.items : [],
+      selectedIndex: sameSession ? current.selectedIndex : 0,
+      loading: true,
+      activating: false,
+      error: '',
+      sessionId: requestedSessionId,
+      mode: sameSession ? current.mode : mode,
+    })
+    try {
+      const items = await api.listRunningBrowsers()
+      if (loadId !== browserSwitcherLoadIdRef.current || browserSwitcherRef.current.sessionId !== requestedSessionId) return
+      const nextItems = orderBrowsersByRecentActivation(items || [], recentBrowserTargetIdsRef.current)
+      const pending = pendingBrowserSwitcherDirectionsRef.current
+      const directions = pending.sessionId === requestedSessionId ? pending.directions : [normalizedDirection]
+      pendingBrowserSwitcherDirectionsRef.current = { sessionId: '', directions: [] }
+      const mostRecentTargetId = recentBrowserTargetIdsRef.current[0]
+      const currentTargetIndex = mostRecentTargetId
+        ? nextItems.findIndex((item) => item.id === mostRecentTargetId)
+        : -1
+      updateBrowserSwitcher({
+        open: true,
+        items: nextItems,
+        selectedIndex: browserSelectionIndexForDirections(nextItems.length, directions, currentTargetIndex),
+        loading: false,
+        activating: false,
+        error: '',
+        sessionId: requestedSessionId,
+        mode: sameSession ? current.mode : mode,
+      })
+    } catch (error) {
+      if (loadId !== browserSwitcherLoadIdRef.current || browserSwitcherRef.current.sessionId !== requestedSessionId) return
+      pendingBrowserSwitcherDirectionsRef.current = { sessionId: '', directions: [] }
+      updateBrowserSwitcher({
+        open: true,
+        items: [],
+        selectedIndex: 0,
+        loading: false,
+        activating: false,
+        error: error.message || 'Running browsers could not be listed.',
+        sessionId: requestedSessionId,
+        mode: sameSession ? current.mode : mode,
+      })
+    }
+  }, [api, updateBrowserSwitcher])
+
+  const openBrowserSwitcher = useCallback(async () => {
+    const sessionId = `manual-${++browserSwitcherSessionCounterRef.current}`
+    try {
+      await api.showBrowserSwitcherWindow?.()
+    } finally {
+      await refreshBrowserSwitcher({ sessionId, mode: 'manual' })
+    }
+  }, [api, refreshBrowserSwitcher])
+
+  const closeBrowserSwitcher = useCallback(() => {
+    resetBrowserSwitcher()
+    void api.hideApplicationWindow?.()
+  }, [api, resetBrowserSwitcher])
+
+  const activateBrowserTarget = useCallback(async (target, sessionId = browserSwitcherRef.current.sessionId) => {
+    const current = browserSwitcherRef.current
+    if (!target || !sessionId || current.sessionId !== sessionId || current.activating) return
+    const activationId = ++browserSwitcherActivationIdRef.current
+    pendingBrowserSwitcherCommitSessionRef.current = ''
+    updateBrowserSwitcher((state) => ({ ...state, activating: true, error: '' }))
+    try {
+      await api.activateRunningBrowser(target.id)
+      if (activationId !== browserSwitcherActivationIdRef.current || browserSwitcherRef.current.sessionId !== sessionId) return
+      recentBrowserTargetIdsRef.current = recordBrowserTargetActivation(recentBrowserTargetIdsRef.current, target.id)
+      browserSwitcherLoadIdRef.current += 1
+      pendingBrowserSwitcherDirectionsRef.current = { sessionId: '', directions: [] }
+      updateBrowserSwitcher(emptyBrowserSwitcherState())
+      await api.hideApplicationWindow?.()
+    } catch (error) {
+      if (activationId !== browserSwitcherActivationIdRef.current || browserSwitcherRef.current.sessionId !== sessionId) return
+      updateBrowserSwitcher((state) => ({ ...state, activating: false, error: error.message || 'The browser is no longer available.' }))
+    }
+  }, [api, updateBrowserSwitcher])
+
+  const commitBrowserSwitcher = useCallback((request = {}) => {
+    const current = browserSwitcherRef.current
+    const requestedSessionId = typeof request === 'object' ? String(request.sessionId || '') : ''
+    const sessionId = requestedSessionId || current.sessionId
+    if (!current.open || current.mode !== 'shortcut' || current.sessionId !== sessionId || current.activating) return
+    if (current.loading) {
+      pendingBrowserSwitcherCommitSessionRef.current = sessionId
+      return
+    }
+    void activateBrowserTarget(current.items[current.selectedIndex], sessionId)
+  }, [activateBrowserTarget])
+
+  const cancelBrowserSwitcher = useCallback((request = {}) => {
+    const current = browserSwitcherRef.current
+    const requestedSessionId = typeof request === 'object' ? String(request.sessionId || '') : ''
+    const sessionId = requestedSessionId || current.sessionId
+    if (!current.open || current.mode !== 'shortcut' || current.sessionId !== sessionId) return
+    resetBrowserSwitcher()
+  }, [resetBrowserSwitcher])
+
+  useEffect(() => {
+    if (!api.onBrowserSwitcherRequested) return undefined
+    return api.onBrowserSwitcherRequested((request = {}) => {
+      const current = browserSwitcherRef.current
+      const direction = typeof request === 'object' ? request.direction : request
+      const requestedSessionId = typeof request === 'object' ? String(request.sessionId || '') : ''
+      const sessionId = requestedSessionId || (
+        current.open && current.mode === 'shortcut'
+          ? current.sessionId
+          : `legacy-${++browserSwitcherSessionCounterRef.current}`
+      )
+      void refreshBrowserSwitcher({ cycleIfOpen: true, direction, sessionId, mode: 'shortcut' })
+    })
+  }, [api, refreshBrowserSwitcher])
+
+  useEffect(() => {
+    if (!api.onBrowserSwitcherCommitRequested) return undefined
+    return api.onBrowserSwitcherCommitRequested(commitBrowserSwitcher)
+  }, [api, commitBrowserSwitcher])
+
+  useEffect(() => {
+    if (!api.onBrowserSwitcherCancelRequested) return undefined
+    return api.onBrowserSwitcherCancelRequested(cancelBrowserSwitcher)
+  }, [api, cancelBrowserSwitcher])
+
+  useEffect(() => {
+    const pendingSessionId = pendingBrowserSwitcherCommitSessionRef.current
+    if (!pendingSessionId || browserSwitcher.loading) return
+    pendingBrowserSwitcherCommitSessionRef.current = ''
+    if (!browserSwitcher.open || browserSwitcher.mode !== 'shortcut' || browserSwitcher.activating || browserSwitcher.sessionId !== pendingSessionId) return
+    void activateBrowserTarget(browserSwitcher.items[browserSwitcher.selectedIndex], pendingSessionId)
+  }, [activateBrowserTarget, browserSwitcher])
+
+  useEffect(() => {
+    function handleWindowBlur() {
+      const current = browserSwitcherRef.current
+      if (!current.open || current.mode !== 'manual' || current.activating) return
+      resetBrowserSwitcher()
+    }
+    window.addEventListener('blur', handleWindowBlur)
+    return () => window.removeEventListener('blur', handleWindowBlur)
+  }, [resetBrowserSwitcher])
 
   useEffect(() => {
     document.documentElement.dataset.theme = app.preferences.theme
@@ -43,7 +275,7 @@ export default function App({ api, controllerOptions }) {
 
   useEffect(() => {
     function handleEscape(event) {
-      if (event.key !== 'Escape' || confirmation || app.unlockRequest) return
+      if (event.key !== 'Escape' || event.defaultPrevented || browserSwitcherRef.current.open || confirmation || app.unlockRequest) return
       if (form) {
         event.preventDefault()
         setForm(null)
@@ -129,6 +361,34 @@ export default function App({ api, controllerOptions }) {
     if (!confirmation) return false
     return Boolean(app.pending[`${confirmation.kind === 'server' ? 'delete-server' : 'delete-tunnel'}:${confirmation.id}`])
   }, [app.pending, confirmation])
+
+  if (browserSwitcher.open) {
+    return (
+      <div className="window-shell browser-switcher-mode">
+        <div className="app-frame browser-switcher-frame">
+          <BrowserSwitcher
+            items={browserSwitcher.items}
+            selectedIndex={browserSwitcher.selectedIndex}
+            loading={browserSwitcher.loading}
+            error={browserSwitcher.error}
+            activating={browserSwitcher.activating}
+            mode={browserSwitcher.mode}
+            forwardShortcut={app.preferences.browserSwitcherShortcut}
+            backwardShortcut={app.preferences.browserSwitcherBackwardShortcut}
+            appearances={app.preferences.browserAppearances}
+            onSelect={(selectedIndex) => updateBrowserSwitcher((state) => ({ ...state, selectedIndex }))}
+            onActivate={activateBrowserTarget}
+            onSaveAppearance={app.setBrowserAppearance}
+            onRefresh={() => refreshBrowserSwitcher({
+              sessionId: browserSwitcher.sessionId,
+              mode: browserSwitcher.mode,
+            })}
+            onClose={closeBrowserSwitcher}
+          />
+        </div>
+      </div>
+    )
+  }
 
   if (form?.type === 'server') {
     return (
@@ -220,6 +480,9 @@ export default function App({ api, controllerOptions }) {
               storageIssue={app.storageIssue}
               runtimeFresh={app.runtimeFresh}
               onToggleTheme={app.toggleTheme}
+              onSetBrowserSwitcherShortcut={app.setBrowserSwitcherShortcut}
+              onSetBrowserSwitcherBackwardShortcut={app.setBrowserSwitcherBackwardShortcut}
+              onOpenBrowserSwitcher={openBrowserSwitcher}
               onReload={app.hydrate}
               onRefreshRuntime={app.refreshRuntimeSessions}
               onCopyPath={app.copyPath}

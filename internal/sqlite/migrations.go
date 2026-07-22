@@ -5,8 +5,9 @@ import (
 	"fmt"
 )
 
-var migrations = []string{
-	`PRAGMA foreign_keys = ON;`,
+const enableForeignKeys = `PRAGMA foreign_keys = ON;`
+
+var schemaStatements = []string{
 	`CREATE TABLE IF NOT EXISTS servers (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL UNIQUE,
@@ -53,11 +54,99 @@ var migrations = []string{
 }
 
 func RunMigrations(db *sql.DB) error {
-	for _, migration := range migrations {
-		if _, err := db.Exec(migration); err != nil {
+	if _, err := db.Exec(enableForeignKeys); err != nil {
+		return fmt.Errorf("enable foreign keys: %w", err)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migrations: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	for _, statement := range schemaStatements {
+		if _, err := tx.Exec(statement); err != nil {
 			return fmt.Errorf("run migration: %w", err)
 		}
 	}
 
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"browser_switcher_shortcut",
+		`ALTER TABLE user_preferences ADD COLUMN browser_switcher_shortcut TEXT NOT NULL DEFAULT 'Alt+X';`,
+	); err != nil {
+		return err
+	}
+	backwardAdded, err := ensureUserPreferencesColumn(
+		tx,
+		"browser_switcher_backward_shortcut",
+		`ALTER TABLE user_preferences ADD COLUMN browser_switcher_backward_shortcut TEXT NOT NULL DEFAULT 'Alt+Z';`,
+	)
+	if err != nil {
+		return err
+	}
+	if backwardAdded {
+		if _, err := tx.Exec(`
+			UPDATE user_preferences
+			SET browser_switcher_shortcut = 'Alt+X'
+			WHERE browser_switcher_shortcut IN ('Alt+;', 'Alt+]')
+			   OR TRIM(browser_switcher_shortcut) = ''
+		`); err != nil {
+			return fmt.Errorf("upgrade browser switcher shortcut defaults: %w", err)
+		}
+	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"browser_appearances_json",
+		`ALTER TABLE user_preferences ADD COLUMN browser_appearances_json TEXT NOT NULL DEFAULT '{}';`,
+	); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migrations: %w", err)
+	}
 	return nil
+}
+
+func ensureUserPreferencesColumn(tx *sql.Tx, columnName, alterStatement string) (bool, error) {
+	rows, err := tx.Query(`PRAGMA table_info(user_preferences);`)
+	if err != nil {
+		return false, fmt.Errorf("inspect user_preferences columns: %w", err)
+	}
+
+	found := false
+	for rows.Next() {
+		var (
+			columnID     int
+			name         string
+			dataType     string
+			notNull      int
+			defaultValue sql.NullString
+			primaryKey   int
+		)
+		if err := rows.Scan(&columnID, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return false, fmt.Errorf("inspect user_preferences column: %w", err)
+		}
+		if name == columnName {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return false, fmt.Errorf("close user_preferences column inspection: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("inspect user_preferences columns: %w", err)
+	}
+	if found {
+		return false, nil
+	}
+
+	if _, err := tx.Exec(alterStatement); err != nil {
+		return false, fmt.Errorf("add user_preferences.%s: %w", columnName, err)
+	}
+	return true, nil
 }

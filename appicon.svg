@@ -1,0 +1,10 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">ssh-man app icon</title>
+  <desc id="desc">The ssh-man terminal mark in dark navy on a blue rounded square.</desc>
+  <rect x="4" y="4" width="92" height="92" rx="22" fill="#628cff"/>
+  <g fill="none" stroke="#07101f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="21" width="76" height="58" rx="11"/>
+    <path d="m30 40 12 10-12 10"/>
+    <path d="M53 60h17"/>
+  </g>
+</svg>

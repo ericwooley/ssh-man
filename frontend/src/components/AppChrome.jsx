@@ -20,6 +20,18 @@ export function IconButton({ label, children, className = '', ...props }) {
   )
 }
 
+export function BrandMark(props) {
+  return (
+    <svg viewBox="0 0 100 100" fill="none" focusable="false" {...props}>
+      <g stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="12" y="21" width="76" height="58" rx="11" />
+        <path d="m30 40 12 10-12 10" />
+        <path d="M53 60h17" />
+      </g>
+    </svg>
+  )
+}
+
 export function AppHeader({ title, subtitle, onBack, onHide, children }) {
   return (
     <header className="app-header">
@@ -29,7 +41,7 @@ export function AppHeader({ title, subtitle, onBack, onHide, children }) {
             <ChevronLeft aria-hidden="true" />
           </IconButton>
         ) : (
-          <div className="app-mark" aria-hidden="true"><Server /></div>
+          <div className="app-mark" aria-hidden="true"><BrandMark /></div>
         )}
       </div>
       <div className="app-header__copy">

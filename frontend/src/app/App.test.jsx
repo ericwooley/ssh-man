@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import App from './App'
@@ -63,12 +63,19 @@ function createFakeApi({
   history = [],
   sshKeys = [],
   currentUsername = 'eric',
+  runningBrowsers = [],
 } = {}) {
   const state = {
     servers: clone(servers),
     sessions: clone(sessions),
     history: clone(history),
-    preferences: { theme: 'dark', lastSelectedServerId: '' },
+    preferences: {
+      theme: 'dark',
+      lastSelectedServerId: '',
+      browserSwitcherShortcut: 'Alt+X',
+      browserSwitcherBackwardShortcut: 'Alt+Z',
+      browserAppearances: {},
+    },
     nextServerId: 2,
     nextTunnelId: 2,
   }
@@ -120,6 +127,13 @@ function createFakeApi({
       state.preferences = { ...state.preferences, ...preferences }
       return clone(state.preferences)
     }),
+    saveBrowserAppearance: vi.fn(async (appearanceKey, appearance) => {
+      const browserAppearances = { ...(state.preferences.browserAppearances || {}) }
+      if (!appearance.icon && !appearance.primaryColor) delete browserAppearances[appearanceKey]
+      else browserAppearances[appearanceKey] = appearance
+      state.preferences = { ...state.preferences, browserAppearances }
+      return clone(state.preferences)
+    }),
     listRuntimeSessions: vi.fn(async () => clone(state.sessions)),
     listSessionHistory: vi.fn(async (configurationId) => clone(
       state.history.filter((entry) => entry.configurationId === configurationId),
@@ -155,6 +169,21 @@ function createFakeApi({
     discoverBrowsers: vi.fn(async () => []),
     previewBrowserLaunchThroughSocks: vi.fn(async () => ({ command: '' })),
     launchBrowserThroughSocks: vi.fn(async () => ({ success: true })),
+    listRunningBrowsers: vi.fn(async () => clone(runningBrowsers)),
+    activateRunningBrowser: vi.fn(async () => undefined),
+    onBrowserSwitcherRequested: vi.fn((callback) => {
+      api.browserSwitcherListener = callback
+      return () => { api.browserSwitcherListener = null }
+    }),
+    onBrowserSwitcherCommitRequested: vi.fn((callback) => {
+      api.browserSwitcherCommitListener = callback
+      return () => { api.browserSwitcherCommitListener = null }
+    }),
+    onBrowserSwitcherCancelRequested: vi.fn((callback) => {
+      api.browserSwitcherCancelListener = callback
+      return () => { api.browserSwitcherCancelListener = null }
+    }),
+    showBrowserSwitcherWindow: vi.fn(async () => undefined),
     openDevTools: vi.fn(async () => undefined),
     openServerExplorer: vi.fn(async () => undefined),
     hideApplicationWindow: vi.fn(async () => undefined),
@@ -468,5 +497,306 @@ describe('React application flows', () => {
     expect(within(alert).getByText('The tunnel could not be started.')).toBeTruthy()
     expect(within(alert).getByText('SSH handshake timed out.')).toBeTruthy()
     expect(api.startConfiguration).toHaveBeenCalledTimes(2)
+  })
+
+  test('records and persists forward and backward browser switcher shortcuts', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Settings' }))
+    const nextRecorder = screen.getByRole('button', { name: 'Next browser shortcut' })
+    const previousRecorder = screen.getByRole('button', { name: 'Previous browser shortcut' })
+    expect(nextRecorder.textContent).toContain('Alt+X')
+    expect(previousRecorder.textContent).toContain('Alt+Z')
+
+    await user.click(nextRecorder)
+    fireEvent.keyDown(nextRecorder, { key: 'b', code: 'KeyB', altKey: true })
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      browserSwitcherShortcut: 'Alt+B',
+      browserSwitcherBackwardShortcut: 'Alt+Z',
+    })))
+    expect(nextRecorder.textContent).toContain('Alt+B')
+
+    await user.click(previousRecorder)
+    fireEvent.keyDown(previousRecorder, { key: 'c', code: 'KeyC', altKey: true })
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      browserSwitcherShortcut: 'Alt+B',
+      browserSwitcherBackwardShortcut: 'Alt+C',
+    })))
+    expect(previousRecorder.textContent).toContain('Alt+C')
+  })
+
+  test('customizes a running proxy browser with a persistent icon and color', async () => {
+    const user = userEvent.setup()
+    const proxyBrowser = {
+      id: 'browser:202',
+      pid: 202,
+      browserId: 'google-chrome',
+      browserName: 'Google Chrome',
+      kind: 'proxy',
+      serverId: savedServer.id,
+      serverName: savedServer.name,
+    }
+    const { api } = createFakeApi({ runningBrowsers: [proxyBrowser] })
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    await screen.findByRole('option', { name: /Google Chrome/ })
+    await user.click(screen.getByRole('button', { name: 'Customize selected' }))
+    await user.click(screen.getByRole('radio', { name: 'X icon' }))
+    await user.click(screen.getByRole('radio', { name: 'Green color' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(api.saveBrowserAppearance).toHaveBeenCalledWith(
+      `proxy:${savedServer.id}:google-chrome`,
+      { icon: 'icon:x', primaryColor: '#22C55E' },
+    ))
+    const tile = await screen.findByRole('option', { name: /Google Chrome/ })
+    expect(tile.classList.contains('has-custom-appearance')).toBe(true)
+    expect(tile.style.getPropertyValue('--browser-primary')).toBe('#22C55E')
+  })
+
+  test('opens and cycles the browser switcher in either requested direction', async () => {
+    const browsers = [
+      { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome one', kind: 'regular' },
+      { id: 'browser:202', pid: 202, browserId: 'google-chrome', browserName: 'Chrome two', kind: 'regular' },
+      { id: 'browser:303', pid: 303, browserId: 'google-chrome', browserName: 'Chrome three', kind: 'regular' },
+    ]
+    const { api } = createFakeApi({ runningBrowsers: browsers })
+    renderApp(api)
+    await waitFor(() => expect(api.browserSwitcherListener).toBeTypeOf('function'))
+    await waitFor(() => expect(api.browserSwitcherCommitListener).toBeTypeOf('function'))
+
+    await act(async () => {
+      api.browserSwitcherListener({ direction: 'backward', sessionId: 'switch-1' })
+    })
+
+    const dialog = await screen.findByRole('dialog', { name: 'Switch browser' })
+    const options = within(dialog).getAllByRole('option')
+    expect(within(dialog).getByRole('listbox').getAttribute('aria-orientation')).toBe('horizontal')
+    expect(options[2].getAttribute('aria-selected')).toBe('true')
+    expect(within(dialog).getByText('Alt+X')).toBeTruthy()
+    expect(within(dialog).getByText('Alt+Z')).toBeTruthy()
+
+    act(() => api.browserSwitcherListener({ direction: 'backward', sessionId: 'switch-1' }))
+    expect(options[1].getAttribute('aria-selected')).toBe('true')
+
+    act(() => api.browserSwitcherListener({ direction: 'forward', sessionId: 'switch-1' }))
+    expect(options[2].getAttribute('aria-selected')).toBe('true')
+
+    act(() => api.browserSwitcherListener({ direction: 'forward', sessionId: 'switch-1' }))
+    expect(options[0].getAttribute('aria-selected')).toBe('true')
+    expect(api.listRunningBrowsers).toHaveBeenCalledTimes(1)
+
+    act(() => api.browserSwitcherCommitListener({ sessionId: 'switch-1' }))
+    await waitFor(() => expect(api.activateRunningBrowser).toHaveBeenCalledWith('browser:101'))
+    await waitFor(() => expect(api.hideApplicationWindow).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
+
+    await act(async () => {
+      api.browserSwitcherListener({ direction: 'forward', sessionId: 'switch-2' })
+    })
+    const nextDialog = await screen.findByRole('dialog', { name: 'Switch browser' })
+    const nextOptions = within(nextDialog).getAllByRole('option')
+    expect(nextOptions[0].textContent).toContain('Chrome one')
+    expect(nextOptions[1].getAttribute('aria-selected')).toBe('true')
+    expect(nextOptions[1].textContent).toContain('Chrome two')
+    expect(api.listRunningBrowsers).toHaveBeenCalledTimes(2)
+  })
+
+  test('queues shortcut directions and commit received while browsers are loading', async () => {
+    let resolveBrowsers
+    const browserPromise = new Promise((resolve) => { resolveBrowsers = resolve })
+    const browsers = [
+      { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome one', kind: 'regular' },
+      { id: 'browser:202', pid: 202, browserId: 'google-chrome', browserName: 'Chrome two', kind: 'regular' },
+      { id: 'browser:303', pid: 303, browserId: 'google-chrome', browserName: 'Chrome three', kind: 'regular' },
+    ]
+    const { api } = createFakeApi()
+    api.listRunningBrowsers.mockImplementation(() => browserPromise)
+    renderApp(api)
+    await waitFor(() => expect(api.browserSwitcherListener).toBeTypeOf('function'))
+    await waitFor(() => expect(api.browserSwitcherCommitListener).toBeTypeOf('function'))
+
+    act(() => {
+      api.browserSwitcherListener({ direction: 'backward', sessionId: 'switch-loading' })
+      api.browserSwitcherListener({ direction: 'backward', sessionId: 'switch-loading' })
+      api.browserSwitcherCommitListener({ sessionId: 'switch-loading' })
+    })
+    await screen.findByRole('dialog', { name: 'Switch browser' })
+
+    await act(async () => {
+      resolveBrowsers(browsers)
+      await browserPromise
+    })
+
+    await waitFor(() => expect(api.activateRunningBrowser).toHaveBeenCalledWith('browser:202'))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
+    expect(api.listRunningBrowsers).toHaveBeenCalledTimes(1)
+  })
+
+  test('ignores stale native commit and cancel events, and native cancel does not hide again', async () => {
+    const browser = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome', kind: 'regular' }
+    const { api } = createFakeApi({ runningBrowsers: [browser] })
+    renderApp(api)
+    await waitFor(() => expect(api.browserSwitcherCancelListener).toBeTypeOf('function'))
+    await act(async () => api.browserSwitcherListener({ direction: 'forward', sessionId: 'current' }))
+    await screen.findByRole('dialog', { name: 'Switch browser' })
+
+    act(() => {
+      api.browserSwitcherCommitListener({ sessionId: 'stale' })
+      api.browserSwitcherCancelListener({ sessionId: 'stale' })
+    })
+    expect(screen.getByRole('dialog', { name: 'Switch browser' })).toBeTruthy()
+    expect(api.activateRunningBrowser).not.toHaveBeenCalled()
+
+    act(() => api.browserSwitcherCancelListener({ sessionId: 'current' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
+    expect(api.hideApplicationWindow).not.toHaveBeenCalled()
+  })
+
+  test('ignores browser discovery that resolves after a newer session', async () => {
+    let resolveStaleBrowsers
+    const staleBrowserPromise = new Promise((resolve) => { resolveStaleBrowsers = resolve })
+    const staleBrowser = { id: 'browser:old', pid: 101, browserId: 'google-chrome', browserName: 'Old Chrome', kind: 'regular' }
+    const currentBrowser = { id: 'browser:new', pid: 202, browserId: 'google-chrome', browserName: 'Current Chrome', kind: 'regular' }
+    const { api } = createFakeApi()
+    api.listRunningBrowsers
+      .mockImplementationOnce(() => staleBrowserPromise)
+      .mockResolvedValueOnce([currentBrowser])
+    renderApp(api)
+    await waitFor(() => expect(api.browserSwitcherListener).toBeTypeOf('function'))
+
+    act(() => api.browserSwitcherListener({ direction: 'forward', sessionId: 'stale-load' }))
+    await screen.findByRole('dialog', { name: 'Switch browser' })
+    await act(async () => api.browserSwitcherListener({ direction: 'forward', sessionId: 'current-load' }))
+    await screen.findByText('Current Chrome')
+
+    await act(async () => {
+      resolveStaleBrowsers([staleBrowser])
+      await staleBrowserPromise
+    })
+    expect(screen.queryByText('Old Chrome')).toBeNull()
+    expect(screen.getByText('Current Chrome')).toBeTruthy()
+  })
+
+  test('ignores activation completion after a newer session takes over', async () => {
+    let resolveStaleActivation
+    const staleActivationPromise = new Promise((resolve) => { resolveStaleActivation = resolve })
+    const browsers = [
+      { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome one', kind: 'regular' },
+      { id: 'browser:202', pid: 202, browserId: 'google-chrome', browserName: 'Chrome two', kind: 'regular' },
+    ]
+    const { api } = createFakeApi({ runningBrowsers: browsers })
+    api.activateRunningBrowser.mockImplementationOnce(() => staleActivationPromise)
+    renderApp(api)
+    await waitFor(() => expect(api.browserSwitcherCommitListener).toBeTypeOf('function'))
+
+    await act(async () => api.browserSwitcherListener({ direction: 'forward', sessionId: 'stale-activation' }))
+    act(() => api.browserSwitcherCommitListener({ sessionId: 'stale-activation' }))
+    await waitFor(() => expect(api.activateRunningBrowser).toHaveBeenCalledWith('browser:101'))
+
+    await act(async () => api.browserSwitcherListener({ direction: 'forward', sessionId: 'current-session' }))
+    const currentDialog = await screen.findByRole('dialog', { name: 'Switch browser' })
+    expect(within(currentDialog).getAllByRole('option')[0].getAttribute('aria-selected')).toBe('true')
+
+    await act(async () => {
+      resolveStaleActivation()
+      await staleActivationPromise
+    })
+    expect(screen.getByRole('dialog', { name: 'Switch browser' })).toBeTruthy()
+    expect(api.hideApplicationWindow).not.toHaveBeenCalled()
+  })
+
+  test('cancels browser switching with Escape without activating a browser', async () => {
+    const browser = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome', kind: 'regular' }
+    const { api } = createFakeApi({ runningBrowsers: [browser] })
+    renderApp(api)
+    await waitFor(() => expect(api.browserSwitcherListener).toBeTypeOf('function'))
+    await act(async () => api.browserSwitcherListener('forward'))
+    const dialog = await screen.findByRole('dialog', { name: 'Switch browser' })
+
+    expect(within(dialog).getByText('Release the shortcut modifier to activate')).toBeTruthy()
+    expect(within(dialog).queryByText('Enter')).toBeNull()
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
+    expect(api.activateRunningBrowser).not.toHaveBeenCalled()
+    expect(api.hideApplicationWindow).toHaveBeenCalledTimes(1)
+  })
+
+  test('clears a manual browser switcher when its native window loses focus', async () => {
+    const browser = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome', kind: 'regular' }
+    const { api } = createFakeApi({ runningBrowsers: [browser] })
+    const user = userEvent.setup()
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    await screen.findByRole('dialog', { name: 'Switch browser' })
+
+    fireEvent.blur(window)
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
+    expect(api.hideApplicationWindow).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Customize' })).toBeTruthy()
+
+    fireEvent.focus(window)
+    expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull()
+  })
+
+  test('does not cancel a manual activation when activating the browser blurs the window', async () => {
+    let resolveActivation
+    const activationPromise = new Promise((resolve) => { resolveActivation = resolve })
+    const browser = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome', kind: 'regular' }
+    const { api } = createFakeApi({ runningBrowsers: [browser] })
+    api.activateRunningBrowser.mockImplementation(() => activationPromise)
+    const user = userEvent.setup()
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Switch browser' })
+    const option = within(dialog).getByRole('option')
+    await user.click(option)
+    await waitFor(() => expect(api.activateRunningBrowser).toHaveBeenCalledWith('browser:101'))
+
+    fireEvent.blur(window)
+    expect(screen.getByRole('dialog', { name: 'Switch browser' })).toBeTruthy()
+
+    await act(async () => {
+      resolveActivation()
+      await activationPromise
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
+    expect(api.hideApplicationWindow).toHaveBeenCalledTimes(1)
+  })
+
+  test('switches between labeled proxy and regular browser instances', async () => {
+    const user = userEvent.setup()
+    const proxy = { id: 'browser:202', pid: 202, browserId: 'google-chrome', browserName: 'Google Chrome', kind: 'proxy', serverId: 'server-prod', serverName: 'Production' }
+    const regular = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Google Chrome', kind: 'regular' }
+    const { api } = createFakeApi({ runningBrowsers: [proxy, regular] })
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Settings' }))
+    await user.click(screen.getByRole('button', { name: 'Customize' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Switch browser' })
+    expect(within(dialog).getByText('Click a browser or select it with the arrow keys and press Enter.')).toBeTruthy()
+    expect(within(dialog).getByText('Click a tile or press', { exact: false })).toBeTruthy()
+    expect(within(dialog).queryByText('Release the shortcut modifier to activate')).toBeNull()
+    expect(within(dialog).getByText('Production proxy')).toBeTruthy()
+    expect(within(dialog).getByText('Regular browser')).toBeTruthy()
+    const options = within(dialog).getAllByRole('option')
+    expect(options[0].getAttribute('aria-selected')).toBe('true')
+
+    await user.click(options[1])
+    await waitFor(() => expect(api.activateRunningBrowser).toHaveBeenCalledWith('browser:101'))
+    expect(api.hideApplicationWindow).toHaveBeenCalled()
   })
 })

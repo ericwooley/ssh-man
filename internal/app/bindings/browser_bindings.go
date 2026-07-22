@@ -13,3 +13,11 @@ func (a *AppBindings) PreviewBrowserLaunchThroughSocks(configurationID string, b
 func (a *AppBindings) LaunchBrowserThroughSocks(configurationID string, browserID string) error {
 	return a.app.BrowserService.LaunchThroughSOCKS(context.Background(), configurationID, browserID)
 }
+
+func (a *AppBindings) ListRunningBrowsers() (any, error) {
+	return a.app.BrowserService.ListRunning(context.Background())
+}
+
+func (a *AppBindings) ActivateRunningBrowser(targetID string) error {
+	return a.app.BrowserService.ActivateRunning(context.Background(), targetID)
+}

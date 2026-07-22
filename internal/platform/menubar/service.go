@@ -5,9 +5,22 @@ package menubar
 type Service interface {
 	Start() error
 	Show() bool
+	ShowBrowserSwitcher() bool
+	CancelBrowserSwitchSession()
+	SetBrowserShortcuts(forward string, backward string) error
 	Stop()
 }
 
+type BrowserSwitchDirection string
+
+const (
+	BrowserSwitchForward  BrowserSwitchDirection = "forward"
+	BrowserSwitchBackward BrowserSwitchDirection = "backward"
+)
+
 type Callbacks struct {
-	Quit func()
+	Quit                func()
+	SwitchBrowsers      func(BrowserSwitchDirection, uint64)
+	CommitBrowserSwitch func(uint64)
+	CancelBrowserSwitch func(uint64)
 }
