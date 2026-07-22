@@ -16,8 +16,18 @@ import (
 )
 
 type AppBindings struct {
-	app    *bootstrap.Application
-	window *appwindow.Controller
+	app                 *bootstrap.Application
+	window              *appwindow.Controller
+	setBrowserShortcuts func(string, string) error
+	showBrowserSwitcher func() bool
+}
+
+func (a *AppBindings) SetBrowserShortcutsRegistrar(registrar func(string, string) error) {
+	a.setBrowserShortcuts = registrar
+}
+
+func (a *AppBindings) SetBrowserSwitcherPresenter(presenter func() bool) {
+	a.showBrowserSwitcher = presenter
 }
 
 type ServerWithConfigurations struct {
@@ -79,6 +89,13 @@ func (a *AppBindings) Shutdown(ctx context.Context) error {
 // HideWindow hides the application UI without stopping active SSH sessions.
 func (a *AppBindings) HideWindow() error {
 	return a.window.Hide()
+}
+
+func (a *AppBindings) ShowBrowserSwitcher() error {
+	if a.showBrowserSwitcher == nil || !a.showBrowserSwitcher() {
+		return fmt.Errorf("browser switcher window is unavailable")
+	}
+	return nil
 }
 
 // Quit exits through the Wails lifecycle so OnShutdown can stop sessions and

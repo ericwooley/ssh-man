@@ -1,17 +1,31 @@
 export namespace bindings {
-	
+
 	export class Diagnostics {
 	    appDataPath: string;
 	    databasePath: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Diagnostics(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.appDataPath = source["appDataPath"];
 	        this.databasePath = source["databasePath"];
+	    }
+	}
+	export class SSHKeyOption {
+	    name: string;
+	    path: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SSHKeyOption(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
 	    }
 	}
 	export class ServerWithConfigurations {
@@ -50,7 +64,7 @@ export namespace bindings {
 	    servers: ServerWithConfigurations[];
 	    preferences: preferences.UserPreference;
 	    sessions: any[];
-	    sshKeys: bindings.SSHKeyOption[];
+	    sshKeys: SSHKeyOption[];
 	    diagnostics: Diagnostics;
 	    currentUsername?: string;
 	    message?: string;
@@ -90,25 +104,12 @@ export namespace bindings {
 		    return a;
 		}
 	}
-	export class SSHKeyOption {
-	    name: string;
-	    path: string;
 
-	    static createFrom(source: any = {}) {
-	        return new SSHKeyOption(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.path = source["path"];
-	    }
-	}
 
 }
 
 export namespace config {
-	
+
 	export class ConnectionConfiguration {
 	    id: string;
 	    serverId: string;
@@ -167,12 +168,13 @@ export namespace config {
 	}
 
 }
-
 export namespace preferences {
 	
 	export class UserPreference {
 	    theme: string;
 	    lastSelectedServerId?: string;
+	    browserSwitcherShortcut: string;
+	    browserSwitcherBackwardShortcut: string;
 	    // Go type: time
 	    updatedAt: any;
 	
@@ -184,6 +186,8 @@ export namespace preferences {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.theme = source["theme"];
 	        this.lastSelectedServerId = source["lastSelectedServerId"];
+	        this.browserSwitcherShortcut = source["browserSwitcherShortcut"];
+	        this.browserSwitcherBackwardShortcut = source["browserSwitcherBackwardShortcut"];
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
 	

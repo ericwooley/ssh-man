@@ -7,11 +7,13 @@ import (
 	"io/fs"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"ssh-man/internal/app/bindings"
 	"ssh-man/internal/app/bootstrap"
@@ -23,15 +25,133 @@ import (
 )
 
 const (
-	singleInstanceID    = "com.wails.ssh-man"
-	ownerStartupTimeout = 5 * time.Second
-	shutdownTimeout     = 15 * time.Second
+	singleInstanceID               = "com.wails.ssh-man"
+	ownerStartupTimeout            = 5 * time.Second
+	shutdownTimeout                = 15 * time.Second
+	browserSwitchEventQueueSize    = 64
+	browserSwitcherOpenEventName   = "browser-switcher:open"
+	browserSwitcherCommitEventName = "browser-switcher:commit"
+	browserSwitcherCancelEventName = "browser-switcher:cancel"
 )
 
 type menuBar interface {
 	Start() error
 	Show() bool
+	ShowBrowserSwitcher() bool
+	CancelBrowserSwitchSession()
+	SetBrowserShortcuts(string, string) error
 	Stop()
+}
+
+type browserSwitchEventKind uint8
+
+const (
+	browserSwitchAdvance browserSwitchEventKind = iota + 1
+	browserSwitchCommit
+	browserSwitchCancel
+)
+
+type browserSwitchEvent struct {
+	kind      browserSwitchEventKind
+	direction menubar.BrowserSwitchDirection
+	sessionID uint64
+}
+
+type browserSwitchEventDispatcher struct {
+	mu            sync.Mutex
+	emitMu        sync.Mutex
+	ready         *sync.Cond
+	events        []browserSwitchEvent
+	done          chan struct{}
+	emit          func(browserSwitchEvent)
+	stopRequested atomic.Bool
+	closeOnce     sync.Once
+}
+
+func newBrowserSwitchEventDispatcher(emit func(browserSwitchEvent)) *browserSwitchEventDispatcher {
+	dispatcher := &browserSwitchEventDispatcher{
+		events: make([]browserSwitchEvent, 0, browserSwitchEventQueueSize),
+		done:   make(chan struct{}),
+		emit:   emit,
+	}
+	dispatcher.ready = sync.NewCond(&dispatcher.mu)
+	go dispatcher.run()
+	return dispatcher
+}
+
+func (d *browserSwitchEventDispatcher) Dispatch(direction menubar.BrowserSwitchDirection, sessionID uint64) bool {
+	return d.dispatch(browserSwitchEvent{kind: browserSwitchAdvance, direction: direction, sessionID: sessionID}, true)
+}
+
+func (d *browserSwitchEventDispatcher) Commit(sessionID uint64) bool {
+	return d.dispatch(browserSwitchEvent{kind: browserSwitchCommit, sessionID: sessionID}, false)
+}
+
+func (d *browserSwitchEventDispatcher) Cancel(sessionID uint64) bool {
+	return d.dispatch(browserSwitchEvent{kind: browserSwitchCancel, sessionID: sessionID}, false)
+}
+
+func (d *browserSwitchEventDispatcher) dispatch(event browserSwitchEvent, droppable bool) bool {
+	if d == nil || event.sessionID == 0 || d.stopRequested.Load() {
+		return false
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stopRequested.Load() {
+		return false
+	}
+	if droppable && len(d.events) >= browserSwitchEventQueueSize {
+		return false
+	}
+	d.events = append(d.events, event)
+	d.ready.Signal()
+	return true
+}
+
+func (d *browserSwitchEventDispatcher) Close() {
+	d.closeOnce.Do(func() {
+		d.stopRequested.Store(true)
+		// Wait for an in-flight emit, then hold the barrier until the queue
+		// is discarded. The worker rechecks stopRequested behind this lock.
+		d.emitMu.Lock()
+		d.mu.Lock()
+		d.events = nil
+		d.ready.Broadcast()
+		d.mu.Unlock()
+		d.emitMu.Unlock()
+		<-d.done
+	})
+}
+
+func (d *browserSwitchEventDispatcher) run() {
+	defer close(d.done)
+	for {
+		d.mu.Lock()
+		for len(d.events) == 0 && !d.stopRequested.Load() {
+			d.ready.Wait()
+		}
+		if d.stopRequested.Load() {
+			d.events = nil
+			d.mu.Unlock()
+			return
+		}
+
+		event := d.events[0]
+		copy(d.events, d.events[1:])
+		d.events = d.events[:len(d.events)-1]
+		d.mu.Unlock()
+
+		d.emitMu.Lock()
+		if d.stopRequested.Load() {
+			d.emitMu.Unlock()
+			return
+		}
+		if d.emit != nil {
+			d.emit(event)
+		}
+		d.emitMu.Unlock()
+	}
 }
 
 type controlLifecycle interface {
@@ -200,6 +320,24 @@ func Run(assets fs.FS) (runErr error) {
 
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
+	browserSwitchEvents := newBrowserSwitchEventDispatcher(func(event browserSwitchEvent) {
+		ctx, contextErr := window.Context()
+		if contextErr == nil {
+			// Wails' Darwin JavaScript bridge must be entered from a Go
+			// goroutine. Calling it directly from Carbon's AppKit callback can
+			// over-release the bridge's dispatch block and crash in objc_release.
+			payload := map[string]any{"sessionId": event.sessionID}
+			switch event.kind {
+			case browserSwitchAdvance:
+				payload["direction"] = string(event.direction)
+				wailsruntime.EventsEmit(ctx, browserSwitcherOpenEventName, payload)
+			case browserSwitchCommit:
+				wailsruntime.EventsEmit(ctx, browserSwitcherCommitEventName, payload)
+			case browserSwitchCancel:
+				wailsruntime.EventsEmit(ctx, browserSwitcherCancelEventName, payload)
+			}
+		}
+	})
 
 	var bar menuBar
 	bar = menubar.New(menubar.Callbacks{
@@ -209,7 +347,29 @@ func Run(assets fs.FS) (runErr error) {
 				log.Printf("quit from menu bar: %v", err)
 			}
 		},
+		SwitchBrowsers: func(direction menubar.BrowserSwitchDirection, sessionID uint64) {
+			if !bar.ShowBrowserSwitcher() {
+				bar.CancelBrowserSwitchSession()
+				return
+			}
+			if !browserSwitchEvents.Dispatch(direction, sessionID) {
+				log.Printf("browser switcher event queue is unavailable")
+				bar.CancelBrowserSwitchSession()
+			}
+		},
+		CommitBrowserSwitch: func(sessionID uint64) {
+			if !browserSwitchEvents.Commit(sessionID) {
+				log.Printf("browser switcher commit event queue is unavailable")
+			}
+		},
+		CancelBrowserSwitch: func(sessionID uint64) {
+			if !browserSwitchEvents.Cancel(sessionID) {
+				log.Printf("browser switcher cancel event queue is unavailable")
+			}
+		},
 	})
+	app.SetBrowserShortcutsRegistrar(bar.SetBrowserShortcuts)
+	app.SetBrowserSwitcherPresenter(bar.ShowBrowserSwitcher)
 	show := func() error {
 		return showApplication(bar, window)
 	}
@@ -219,6 +379,8 @@ func Run(assets fs.FS) (runErr error) {
 	)
 	lifecycle := newApplicationLifecycle(controlServer, bar, application.SessionService.StartOnLaunch, app.Shutdown)
 	defer func() {
+		bar.Stop()
+		browserSwitchEvents.Close()
 		cleanupErr := lifecycle.Shutdown(context.Background())
 		releaseErr := lease.Release()
 		runErr = errors.Join(runErr, cleanupErr, releaseErr)
@@ -262,6 +424,10 @@ func newOptions(assets fs.FS, app *bindings.AppBindings, window *appwindow.Contr
 				if showErr := window.Show(); showErr != nil {
 					log.Printf("show fallback application window: %v", showErr)
 				}
+				return
+			}
+			if shortcutErr := app.RegisterBrowserShortcuts(); shortcutErr != nil {
+				log.Printf("register browser switcher shortcuts: %v", shortcutErr)
 			}
 		},
 		OnBeforeClose: func(context.Context) bool {

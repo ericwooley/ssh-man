@@ -8,7 +8,13 @@ import {
   selectInitialServerId,
 } from '../model/appModel'
 
-const defaultPreferences = { theme: 'dark', lastSelectedServerId: '' }
+const defaultPreferences = {
+  theme: 'dark',
+  lastSelectedServerId: '',
+  browserSwitcherShortcut: 'Alt+X',
+  browserSwitcherBackwardShortcut: 'Alt+Z',
+  browserAppearances: {},
+}
 
 async function writeClipboard(text) {
   if (!navigator.clipboard?.writeText) {
@@ -98,7 +104,11 @@ export function useSshMan(api = defaultApi, options = {}) {
     try {
       const state = await api.loadInitialState()
       const nextServers = state.servers || []
-      const nextPreferences = { ...defaultPreferences, ...(state.preferences || {}) }
+      const nextPreferences = {
+        ...defaultPreferences,
+        ...(state.preferences || {}),
+        browserAppearances: state.preferences?.browserAppearances || {},
+      }
       const nextServerId = selectInitialServerId(nextServers, nextPreferences.lastSelectedServerId)
 
       setServers(nextServers)
@@ -179,15 +189,22 @@ export function useSshMan(api = defaultApi, options = {}) {
   const selectedHistory = historyByConfiguration[selectedConfigurationId] || []
   const liveSessions = useMemo(() => activeSessions(runtimeSessions), [runtimeSessions])
 
-  const savePreferencesQuietly = useCallback(async (next) => {
+  const savePreferencesQuietly = useCallback(async (next, persist = api.savePreferences) => {
     preferenceWriteCounter.current += 1
     const writeId = preferenceWriteCounter.current
-    setPreferences(next)
+    let previous
+    setPreferences((current) => {
+      previous = current
+      return next
+    })
     try {
-      const saved = await api.savePreferences(next)
+      const saved = await persist(next)
       if (writeId === preferenceWriteCounter.current) setPreferences(saved || next)
+      return saved || next
     } catch (error) {
+      if (writeId === preferenceWriteCounter.current && previous) setPreferences(previous)
       notify('warning', 'Your preference could not be saved.', error.message || '')
+      return null
     }
   }, [api, notify])
 
@@ -435,6 +452,32 @@ export function useSshMan(api = defaultApi, options = {}) {
     await savePreferencesQuietly(next)
   }, [preferences, savePreferencesQuietly])
 
+  const setBrowserSwitcherShortcut = useCallback(async (shortcut) => {
+    return savePreferencesQuietly({ ...preferences, browserSwitcherShortcut: shortcut })
+  }, [preferences, savePreferencesQuietly])
+
+  const setBrowserSwitcherBackwardShortcut = useCallback(async (shortcut) => {
+    return savePreferencesQuietly({ ...preferences, browserSwitcherBackwardShortcut: shortcut })
+  }, [preferences, savePreferencesQuietly])
+
+  const setBrowserAppearance = useCallback(async (appearanceKey, appearance = {}) => {
+    const key = String(appearanceKey || '').trim()
+    if (!key) return null
+    const icon = String(appearance.icon || '').trim()
+    const primaryColor = String(appearance.primaryColor || '').trim().toUpperCase()
+    const browserAppearances = { ...(preferences.browserAppearances || {}) }
+    if (!icon && !primaryColor) {
+      delete browserAppearances[key]
+    } else {
+      browserAppearances[key] = { icon, primaryColor }
+    }
+    const nextPreferences = { ...preferences, browserAppearances }
+    const persist = api.saveBrowserAppearance
+      ? () => api.saveBrowserAppearance(key, { icon, primaryColor })
+      : () => api.savePreferences(nextPreferences)
+    return savePreferencesQuietly(nextPreferences, persist)
+  }, [api, preferences, savePreferencesQuietly])
+
   const refreshBrowsers = useCallback(async (configurationId = selectedConfigurationId) => {
     if (!configurationId) return []
     setBrowserState((current) => ({ ...current, configurationId, loading: true, preview: '' }))
@@ -577,6 +620,9 @@ export function useSshMan(api = defaultApi, options = {}) {
     selectBrowser,
     launchBrowser,
     toggleTheme,
+    setBrowserSwitcherShortcut,
+    setBrowserSwitcherBackwardShortcut,
+    setBrowserAppearance,
     copyHistory,
     copyPath,
     openDevTools,

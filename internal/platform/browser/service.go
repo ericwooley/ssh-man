@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	configdomain "ssh-man/internal/domain/config"
+	serverdomain "ssh-man/internal/domain/server"
 	sessiondomain "ssh-man/internal/domain/session"
 )
 
@@ -23,6 +24,23 @@ type LaunchPreview struct {
 	ConfigurationID string `json:"configurationId"`
 }
 
+type RunningTargetKind string
+
+const (
+	RunningTargetProxy   RunningTargetKind = "proxy"
+	RunningTargetRegular RunningTargetKind = "regular"
+)
+
+type RunningTarget struct {
+	ID          string            `json:"id"`
+	PID         int               `json:"pid"`
+	BrowserID   string            `json:"browserId"`
+	BrowserName string            `json:"browserName"`
+	Kind        RunningTargetKind `json:"kind"`
+	ServerID    string            `json:"serverId,omitempty"`
+	ServerName  string            `json:"serverName,omitempty"`
+}
+
 type RuntimeLookup interface {
 	Get(id string) (sessiondomain.RuntimeSession, bool)
 }
@@ -31,21 +49,67 @@ type ConfigLookup interface {
 	Get(ctx context.Context, id string) (configdomain.ConnectionConfiguration, error)
 }
 
-type Service struct {
-	appDataDir string
-	configs    ConfigLookup
-	runtimes   RuntimeLookup
-	discover   func(context.Context) ([]BrowserOption, error)
+type ServerLookup interface {
+	List(ctx context.Context) ([]serverdomain.Server, error)
 }
 
-func NewService(appDataDir string, configs ConfigLookup, runtimes RuntimeLookup) *Service {
-	return &Service{appDataDir: appDataDir, configs: configs, runtimes: runtimes, discover: func(context.Context) ([]BrowserOption, error) {
-		return discoverBrowsers()
-	}}
+type Service struct {
+	appDataDir  string
+	configs     ConfigLookup
+	runtimes    RuntimeLookup
+	discover    func(context.Context) ([]BrowserOption, error)
+	servers     ServerLookup
+	listRunning func(context.Context, string, []BrowserOption, []serverdomain.Server) ([]RunningTarget, error)
+	activate    func(int) error
+}
+
+func NewService(appDataDir string, configs ConfigLookup, runtimes RuntimeLookup, servers ServerLookup) *Service {
+	return &Service{
+		appDataDir: appDataDir,
+		configs:    configs,
+		runtimes:   runtimes,
+		servers:    servers,
+		discover: func(context.Context) ([]BrowserOption, error) {
+			return discoverBrowsers()
+		},
+		listRunning: listRunningBrowserTargets,
+		activate:    activateRunningBrowser,
+	}
 }
 
 func (s *Service) Discover(ctx context.Context) ([]BrowserOption, error) {
 	return s.discover(ctx)
+}
+
+func (s *Service) ListRunning(ctx context.Context) ([]RunningTarget, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	browsers, err := s.Discover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	servers := []serverdomain.Server{}
+	if s.servers != nil {
+		servers, err = s.servers.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list servers for running browsers: %w", err)
+		}
+	}
+	return s.listRunning(ctx, s.appDataDir, browsers, servers)
+}
+
+func (s *Service) ActivateRunning(ctx context.Context, targetID string) error {
+	targets, err := s.ListRunning(ctx)
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if target.ID == targetID {
+			return s.activate(target.PID)
+		}
+	}
+	return fmt.Errorf("the selected browser is no longer running")
 }
 
 func (s *Service) LaunchThroughSOCKS(ctx context.Context, configurationID string, browserID string) error {

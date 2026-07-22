@@ -18,4 +18,14 @@ func (unavailableDarwinService) Show() bool {
 	return false
 }
 
+func (unavailableDarwinService) ShowBrowserSwitcher() bool {
+	return false
+}
+
+func (unavailableDarwinService) CancelBrowserSwitchSession() {}
+
+func (unavailableDarwinService) SetBrowserShortcuts(string, string) error {
+	return errors.New("macOS global shortcuts require cgo")
+}
+
 func (unavailableDarwinService) Stop() {}
