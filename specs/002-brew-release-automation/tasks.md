@@ -46,7 +46,7 @@ description: "Task list for feature: Homebrew Installation and Automated Release
 ### Implementation for User Story 1
 - [ ] T010 [P] [US1] Create Homebrew cask metadata and initial tap repo (if missing), place/validate cask file in correct repo path (`homebrew-[project]/Casks/ssh-man.rb` or per tap conventions)
 - [ ] T011 [P] [US1] Implement install/upgrade documentation flow for macOS and Linux in quickstart.md and project README
-- [ ] T012 [US1] Add explicit documentation notes about unsigned app delivery for macOS in Homebrew context
+- [ ] T012 [US1] Document Developer ID signing and notarized app delivery for macOS in the Homebrew context
 - [ ] T013 [US1] Document edge/unsupported platform behavior for Homebrew and Linux
 
 **Checkpoint**: At this point, a user can install and launch the app via the Homebrew cask; Linux users follow maintained build docs. All install guidance tested.

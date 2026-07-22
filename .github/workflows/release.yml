@@ -85,23 +85,31 @@ jobs:
       - name: Build release artifact
         run: bash ./scripts/package-darwin-release.sh "${{ needs.plan-release.outputs.next_version }}"
 
-      - name: Upload release artifact
+      - name: Archive app bundle for protected signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/bin/ssh-man.app \
+            dist/ssh-man-app.zip
+
+      - name: Upload app bundle for protected signing
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ssh-man-dmg-${{ needs.plan-release.outputs.next_version }}
-          path: dist/ssh-man.dmg
+          name: ssh-man-app-${{ needs.plan-release.outputs.next_version }}
+          path: dist/ssh-man-app.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
 
   publish-release:
-    name: Publish release and update Homebrew
+    name: Sign, notarize, publish, and update Homebrew
     needs:
       - plan-release
       - build-macos
     if: needs.plan-release.outputs.release_required == 'true' && github.repository == 'ericwooley/ssh-man'
     runs-on: macos-26
-    timeout-minutes: 25
+    timeout-minutes: 45
     environment: release
     permissions:
       contents: write
@@ -109,11 +117,100 @@ jobs:
       VERSION: ${{ needs.plan-release.outputs.next_version }}
 
     steps:
-      - name: Download release artifact
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Download app bundle
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: ssh-man-dmg-${{ needs.plan-release.outputs.next_version }}
+          name: ssh-man-app-${{ needs.plan-release.outputs.next_version }}
           path: dist
+
+      - name: Restore app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/bin
+          ditto -x -k dist/ssh-man-app.zip build/bin
+          test -x build/bin/ssh-man.app/Contents/MacOS/ssh-man
+
+      - name: Install Developer ID certificate and notarization credentials
+        shell: bash
+        env:
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/ssh-man-developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/ssh-man-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          printf '%s' "$APPLE_DEVELOPER_ID_P12_BASE64" | \
+            base64 --decode -o "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          IDENTITIES="$(
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" | \
+              sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p'
+          )"
+          IDENTITY_COUNT="$(printf '%s\n' "$IDENTITIES" | awk 'NF { count++ } END { print count + 0 }')"
+          if [ "$IDENTITY_COUNT" -ne 1 ]; then
+            printf 'Expected exactly one Developer ID Application identity, found %s.\n' "$IDENTITY_COUNT" >&2
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" >&2
+            exit 1
+          fi
+
+          SIGNING_IDENTITY="$(printf '%s\n' "$IDENTITIES" | awk 'NF { print; exit }')"
+          case "$SIGNING_IDENTITY" in
+            *"($APPLE_TEAM_ID)") ;;
+            *)
+              printf 'Developer ID identity does not match Apple Team ID %s: %s\n' \
+                "$APPLE_TEAM_ID" "$SIGNING_IDENTITY" >&2
+              exit 1
+              ;;
+          esac
+
+          xcrun notarytool store-credentials ssh-man-notary \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --keychain "$KEYCHAIN_PATH" \
+            --validate
+
+          printf 'APPLE_SIGNING_IDENTITY=%s\n' "$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          printf 'APPLE_NOTARY_KEYCHAIN_PATH=%s\n' "$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          printf 'APPLE_NOTARY_KEYCHAIN_PROFILE=ssh-man-notary\n' >> "$GITHUB_ENV"
+
+      - name: Sign and notarize release artifact
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          bash ./scripts/sign-notarize-darwin-release.sh \
+            "$VERSION" \
+            build/bin/ssh-man.app \
+            dist/ssh-man.dmg
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
@@ -228,3 +325,10 @@ jobs:
 
           gh auth setup-git
           git push origin HEAD:main
+
+      - name: Remove signing credentials
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/ssh-man-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/ssh-man-developer-id.p12"

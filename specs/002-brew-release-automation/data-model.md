@@ -60,11 +60,14 @@ Represents a downloadable asset published from a release workflow run.
 - `checksum`: Published checksum used for artifact verification.
 - `download_url`: User-visible URL to the artifact.
 - `published`: Boolean indicating whether the asset is attached to the GitHub Release.
+- `bundle_id`: Stable macOS bundle identifier, `tech.moonpixels.ssh-man`.
+- `notarization_status`: Apple notary result; must be `Accepted` before publication.
 
 **Validation Rules**
 - `platform` is limited to `macos` for official automated artifacts in this feature.
 - `checksum` and `download_url` are required when `published=true`.
 - `name` should remain stable enough for release automation and Homebrew cask updates.
+- `published=true` requires a valid Developer ID signature and validated stapled notarization ticket.
 
 **Relationships**
 - Many `ReleaseArtifact` records can belong to one `ReleaseVersion`.

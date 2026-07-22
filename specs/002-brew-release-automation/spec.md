@@ -13,7 +13,7 @@
 - Q: What release tag format should official releases use? → A: plain semantic version tags like `1.2.3`
 - Q: Which Homebrew packaging model should the official install path use? → A: Homebrew cask
 - Q: Which Homebrew distribution target should the official install path use? → A: project-owned tap
-- Q: Is macOS signing or notarization required for official releases in this feature? → A: no signing required
+- Q: Is macOS signing or notarization required for official releases in this feature? → A: yes; Developer ID signing, hardened runtime, secure timestamping, notarization, and stapling are release requirements
 - Q: How should Linux platform parity be handled for this feature? → A: Linux remains supported, but automated releases are macOS-only for now and Linux users can clone and build
 
 ### Session 2026-07-22
@@ -82,7 +82,7 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 
 - **Supported Platforms**: The application remains a supported desktop product on Linux and macOS. Homebrew-based installation must support the macOS environments accepted by the project for end-user distribution, while Linux users may continue using the supported clone-and-build path.
 - **Platform Differences**: The packaged install flow in scope is Homebrew on macOS. Official automated release artifacts are macOS-only for this feature, while Linux parity is preserved through the existing source-based workflow rather than matching the macOS release cycle.
-- **Packaging Assumptions**: Official releases in this feature do not require macOS code signing or notarization. If the distributed app is unsigned, the installation guidance must state that clearly.
+- **Packaging Assumptions**: Every official macOS release is signed with a Developer ID Application certificate, uses the hardened runtime and secure timestamp, is notarized by Apple, and ships with a stapled notarization ticket.
 - **Environment Assumptions**: End users have Homebrew installed and can access the project's official release source. Maintainers have repository permissions needed to initiate and manage official releases through the repository hosting platform.
 
 ## Requirements *(mandatory)*
@@ -106,7 +106,7 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 - **FR-010**: If release creation, tagging, or artifact publication fails, the system MUST surface the failure clearly to maintainers and MUST NOT present the release as fully available.
 - **FR-011**: If a user attempts to install through Homebrew on an unsupported environment, the installation guidance MUST make the supported scope clear.
 - **FR-012**: The system MUST preserve a traceable relationship between each published release, its release tag, and its distributed install assets so maintainers can confirm what users are installing.
-- **FR-013**: The installation guidance MUST clearly state whether the official macOS release is unsigned because macOS signing and notarization are not required for this feature.
+- **FR-013**: The official macOS release MUST use the stable bundle identifier `tech.moonpixels.ssh-man`, pass Developer ID signature validation, be accepted by Apple's notary service, and include a validated stapled ticket before publication.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -134,4 +134,4 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 - Linux support remains in scope for the product, but aligning Linux to the same official automated release cycle as macOS is out of scope for this feature.
 - A release-worthy Conventional Commit reaching `main` initiates release planning automatically; maintainers control the release level through commit messages.
 - The project will treat only successfully completed automated releases as installable through the official Homebrew path.
-- macOS signing and notarization are not release-blocking requirements for this feature.
+- Developer ID signing, notarization acceptance, and stapled-ticket validation are release-blocking requirements for official macOS artifacts.

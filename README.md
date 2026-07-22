@@ -160,17 +160,15 @@ Use Homebrew for the standard macOS install path.
 ```bash
 brew tap ericwooley/homebrew-apps
 brew install --cask ssh-man
-xattr -d com.apple.quarantine /Applications/ssh-man.app
 ssh-man version
 ```
 
-Homebrew installs the menu-bar app and links its full CLI into your `PATH` as `ssh-man`. The app is currently distributed unsigned, so remove the quarantine attribute before first launch or CLI use. If Homebrew replaces the app bundle during a later upgrade, run the same `xattr -d com.apple.quarantine /Applications/ssh-man.app` command again before opening the updated copy.
+Homebrew installs the menu-bar app and links its full CLI into your `PATH` as `ssh-man`. Official macOS releases are signed with an Apple Developer ID, notarized by Apple, and distributed with a stapled notarization ticket under the bundle identifier `tech.moonpixels.ssh-man`.
 
 ### Upgrade
 
 ```bash
 brew upgrade --cask ssh-man
-xattr -d com.apple.quarantine /Applications/ssh-man.app
 ```
 
 ### macOS notes
@@ -178,7 +176,7 @@ xattr -d com.apple.quarantine /Applications/ssh-man.app
 - Launching `ssh-man` adds its terminal icon to the menu bar instead of opening a normal Dock window. Click the icon to show or hide the compact controls.
 - The browser switcher shortcut is registered only while SSH Man is running and does not require Accessibility permission.
 - Hiding the popup leaves tunnels running. Use **Settings → Quit SSH Man** or the icon's context menu when you want to stop sessions and exit cleanly.
-- If Gatekeeper warns because the app is unsigned, open it from Finder with `Open` and confirm once.
+- Gatekeeper should recognize the downloaded app as Developer ID-signed and notarized software on first launch.
 - `ssh-man` uses your local SSH agent by default, so make sure your agent is running and `SSH_AUTH_SOCK` is available to GUI apps.
 - App data is stored under `~/Library/Application Support/ssh-man`.
 - Homebrew creates the automatic CLI link. A direct DMG copy keeps the CLI inside `ssh-man.app/Contents/MacOS/ssh-man` but does not modify your shell `PATH`.
@@ -335,18 +333,28 @@ The `commit-msg` hook and CI require [Conventional Commits](https://www.conventi
 
 Every push to `main` checks the non-merge commits since the latest plain semantic-version tag. When at least one commit requires a release, GitHub Actions calculates the next version, builds and tests the macOS app, creates the corresponding `x.y.z` tag and GitHub release, attaches the DMG, and updates the Homebrew cask. Documentation- or maintenance-only merges complete without publishing a new version.
 
-### Release credential
+### Release credentials
 
-The privileged release job reads `TAP_GITHUB_TOKEN` from the protected `release` GitHub environment. Do not create this as a repository-wide secret. For the current workflow, use a fine-grained personal access token with:
+The privileged release job reads the Homebrew and Apple signing credentials from the protected `release` GitHub environment. Do not create any of these as repository-wide secrets. For `TAP_GITHUB_TOKEN`, use a fine-grained personal access token with:
 
 - resource owner `ericwooley`
 - access to only `ericwooley/homebrew-apps`
 - repository permission **Contents: Read and write**; no other write permissions
 - the shortest practical expiration, such as 90 days or less
 
-In the `ssh-man` repository, create an environment named `release`, allow deployments from the `main` branch, and add the token under **Environment secrets** with the exact name `TAP_GITHUB_TOKEN`. Do not require reviewers if releases should remain fully automatic. The build and test job runs without this credential; only the final release and tap-publishing job can access it.
+In the `ssh-man` repository, create an environment named `release`, allow deployments from the `main` branch, and add the token under **Environment secrets** with the exact name `TAP_GITHUB_TOKEN`. Add these Apple environment secrets alongside it:
 
-Rotate the credential before it expires: create a replacement token, update the environment secret, verify a release, and then revoke the old token. Prefer a GitHub App installed only on `homebrew-apps` with **Contents: Read and write** if the workflow is updated to mint a short-lived installation token at runtime; do not store an installation token as a long-lived secret.
+| Secret | Value |
+| --- | --- |
+| `APPLE_DEVELOPER_ID_P12_BASE64` | Base64-encoded Developer ID Application certificate and private key exported as `.p12` |
+| `APPLE_DEVELOPER_ID_P12_PASSWORD` | Password protecting the exported `.p12` |
+| `APPLE_ID` | Apple Account email used for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated for the Apple notary service |
+| `APPLE_TEAM_ID` | Team ID that issued the Developer ID Application certificate |
+
+The build and test job runs without credentials. Only the final protected job imports the certificate into a temporary keychain, validates the notarization credentials, signs the app and DMG, submits the DMG to Apple, staples and verifies the ticket, publishes the GitHub release, and updates Homebrew. The temporary certificate and keychain are removed at the end of the job.
+
+Rotate credentials before they expire or are revoked: install replacements first, update the environment secrets, verify a release, and then revoke the old credentials. Prefer a GitHub App installed only on `homebrew-apps` with **Contents: Read and write** if the workflow is updated to mint a short-lived installation token at runtime; do not store an installation token as a long-lived secret.
 
 ### Frontend-only checks
 

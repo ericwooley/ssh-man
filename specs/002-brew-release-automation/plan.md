@@ -18,7 +18,7 @@ Add a repository-managed release pipeline for the existing Go + Wails desktop ap
 **Project Type**: desktop-app (Wails)  
 **Frontend Style Rules**: Plain Svelte only, shared stylesheet at `frontend/src/app.css`, no SvelteKit, CSS modules, scoped styles, or runtime-generated styling; no end-user UI changes planned  
 **Performance Goals**: Successful official macOS releases publish complete assets in one workflow run, and Homebrew cask metadata reflects the latest successful release within 15 minutes in 95% of validation runs  
-**Constraints**: Linux and macOS product support must remain documented, release automation is GitHub Actions-based, Homebrew path must use a cask in a project-owned tap, release tags use `1.2.3`, macOS signing or notarization is not required for this feature, and native tooling should stay minimal  
+**Constraints**: Linux and macOS product support must remain documented, release automation is GitHub Actions-based, Homebrew path must use a cask in a project-owned tap, release tags use `1.2.3`, official macOS artifacts must be Developer ID signed and notarized before publication, and native tooling should stay minimal
 **Scale/Scope**: One repository, one release workflow family, one project-owned Homebrew tap, one official macOS artifact path, Linux support via source-based workflow, and no runtime or UI redesign
 
 ## Constitution Check
@@ -106,7 +106,7 @@ tests/
 - Use GitHub Actions plus GitHub Releases as the authoritative official release channel.
 - Use plain semantic version tags in the format `1.2.3`.
 - Publish official automated release artifacts for macOS only in this feature while keeping Linux supported through documented clone-and-build workflows.
-- Treat macOS signing and notarization as documented non-requirements for this feature and surface unsigned-app expectations in installation guidance.
+- Sign official macOS artifacts with Developer ID inside the protected release boundary, notarize them with Apple's notary service, and staple the accepted ticket before publication.
 
 ## Phase 1 Design Overview
 
@@ -116,7 +116,7 @@ tests/
 - Repository scripts or config updates needed to package and verify macOS release artifacts.
 - GitHub Release publication with traceable version, tag, and attached macOS assets.
 - Homebrew cask metadata and project-owned tap update flow tied to successful macOS releases.
-- Documentation for Homebrew install and upgrade, unsigned macOS release expectations, and Linux clone-and-build support.
+- Documentation for Homebrew install and upgrade, signed and notarized macOS release expectations, and Linux clone-and-build support.
 - Validation steps covering Linux source-build support, macOS packaged install path, and release traceability.
 
 ### Out of Scope
@@ -124,7 +124,7 @@ tests/
 - Official automated Linux release artifacts.
 - Windows packaging or distribution.
 - Runtime application redesign, Wails binding changes, or frontend feature work.
-- Full Apple signing or notarization automation.
+- Mac App Store distribution or installer-package signing.
 - Publishing to `homebrew-core` in the initial release-automation feature.
 
 ### Design Decisions
