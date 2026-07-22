@@ -44,6 +44,10 @@ That means you can develop on a remote machine while keeping a workflow that sti
 - Save servers and multiple tunnel configurations under each one
 - Run local forwards and SOCKS5 proxies from the same UI
 - Launch supported browsers through a running SOCKS5 tunnel
+- Open one persistent native file-explorer window per saved server
+- Edit and safely save remote source in Monaco with optional Vim controls
+- Favorite per-server folders, render Markdown, and safely render HTML with relative assets
+- Download remote files or complete folders over SFTP
 - Preview the exact browser command before launch
 - Use the local SSH agent by default
 - Support encrypted private keys when you need file-based auth
@@ -115,6 +119,7 @@ On your machine, that usually means `ssh-man` sits under roughly `150 MB` of RAM
 3. Start the tunnel you need.
 4. For local forwards, use the bound `localhost` port from your normal tools.
 5. For SOCKS5, launch a supported browser through the tunnel and browse from the remote server's network perspective.
+6. To work with remote files, open a server and choose **Explore files**.
 
 The app persists your saved structure, browser profiles, theme preference, and connection history so the next session starts where you left off.
 
@@ -145,6 +150,14 @@ When a SOCKS tunnel is connected, `ssh-man` can:
 - launch the browser with SOCKS settings and an isolated per-server profile
 
 Chromium-based browsers are launched with a SOCKS5 proxy flag and dedicated user-data directory. Firefox gets a generated profile configured for the proxy. Unsupported browsers are shown clearly instead of failing mysteriously.
+
+### Remote file explorer
+
+Each saved server can open its own resizable explorer window. It maintains a long-lived SFTP connection, remembers the last remote folder and favorite folders for that server, supports Finder-style multi-selection, and downloads files or recursively downloads folders into a local destination you choose.
+
+Text and source files open in Monaco and can be saved back through SFTP. Enable the persisted **Vim controls** checkbox for Vim keybindings and `:w`; `Command+S`/`Ctrl+S` and the Save button work in either mode. Saves preserve remote permissions, use an atomic same-directory replacement, and stop rather than overwrite when the remote content changed after it was opened. Files larger than 2 MB remain preview/download-only.
+
+Markdown has rendered and source views. HTML, SVG, PDF, images, audio, and video use the native browser renderer; relative HTML assets resolve against the remote file's directory. Active scripts are disabled in HTML previews so a remote document cannot call SSH Man's native bindings. Download the file and open it in a normal browser when script execution is required.
 
 ## Install
 

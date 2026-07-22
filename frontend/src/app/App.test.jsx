@@ -156,6 +156,7 @@ function createFakeApi({
     previewBrowserLaunchThroughSocks: vi.fn(async () => ({ command: '' })),
     launchBrowserThroughSocks: vi.fn(async () => ({ success: true })),
     openDevTools: vi.fn(async () => undefined),
+    openServerExplorer: vi.fn(async () => undefined),
     hideApplicationWindow: vi.fn(async () => undefined),
     quitApplication: vi.fn(async () => undefined),
     openExternalURL: vi.fn(async () => undefined),
@@ -277,6 +278,18 @@ describe('React application flows', () => {
     })
     expect(screen.getByRole('button', { name: 'Start tunnel' })).toBeTruthy()
     expect(screen.getByText('16379 → 127.0.0.1:6379')).toBeTruthy()
+  })
+
+  test('opens a persistent explorer window for the selected server', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi({ servers: [{ server: savedServer, configurations: [] }] })
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(screen.getByRole('button', { name: 'Explore files' }))
+
+    await waitFor(() => expect(api.openServerExplorer).toHaveBeenCalledWith(savedServer.id))
+    expect(await screen.findByText('Server explorer opened in its own window.')).toBeTruthy()
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {

@@ -243,6 +243,7 @@ export default function App({ api, controllerOptions }) {
               onStopTunnel={app.stopTunnel}
               onStartAll={app.startAll}
               onRefreshRuntime={app.refreshRuntimeSessions}
+              onExplore={app.openServerExplorer}
             />
           ) : null}
 

@@ -12,7 +12,7 @@ import (
 
 	configdomain "ssh-man/internal/domain/config"
 	serverdomain "ssh-man/internal/domain/server"
-	"ssh-man/internal/ssh/auth"
+	sshconnection "ssh-man/internal/ssh/connection"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -321,18 +321,7 @@ func (s *Session) reportDisconnect(err error) {
 }
 
 func (s *Session) authMethod() (ssh.AuthMethod, error) {
-	switch s.server.AuthMode {
-	case serverdomain.AuthModeAgent:
-		return auth.LoadAgentAuthMethod()
-	case serverdomain.AuthModePrivateKey:
-		signer, err := auth.LoadSigner(s.server.KeyReference, s.passphrase)
-		if err != nil {
-			return nil, err
-		}
-		return ssh.PublicKeys(signer), nil
-	default:
-		return nil, fmt.Errorf("unsupported auth mode %q", s.server.AuthMode)
-	}
+	return sshconnection.AuthMethod(s.server, s.passphrase)
 }
 
 func DescribeStartError(err error, server serverdomain.Server, config configdomain.ConnectionConfiguration) string {

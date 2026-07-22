@@ -193,6 +193,9 @@ func showApplication(bar menuBar, window *appwindow.Controller) error {
 }
 
 func Run(assets fs.FS) (runErr error) {
+	if handled, err := maybeRunBindingsGeneration(assets); handled {
+		return err
+	}
 	application, lease, handled, err := prepareOwnedApplication(context.Background(), defaultOwnershipDependencies())
 	if err != nil || handled {
 		return err
@@ -200,6 +203,7 @@ func Run(assets fs.FS) (runErr error) {
 
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
+	explorerLauncher := bindings.NewExplorerLauncherBindings(application)
 
 	var bar menuBar
 	bar = menubar.New(menubar.Callbacks{
@@ -227,11 +231,11 @@ func Run(assets fs.FS) (runErr error) {
 		return fmt.Errorf("start control service: %w", err)
 	}
 
-	runErr = wails.Run(newOptions(assets, app, window, bar, lifecycle))
+	runErr = wails.Run(newOptions(assets, app, explorerLauncher, window, bar, lifecycle))
 	return runErr
 }
 
-func newOptions(assets fs.FS, app *bindings.AppBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
+func newOptions(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
 	appOptions := &options.App{
 		Title:  "SSH Man",
 		Width:  420,
@@ -240,9 +244,7 @@ func newOptions(assets fs.FS, app *bindings.AppBindings, window *appwindow.Contr
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		Bind: []interface{}{
-			app,
-		},
+		Bind: append([]interface{}{app, explorerLauncher}, additionalBindingsForGeneration()...),
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: singleInstanceID,
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) {

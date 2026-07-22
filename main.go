@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"ssh-man/internal/app/explorerwindow"
 	"ssh-man/internal/app/runner"
 	"ssh-man/internal/cli"
 )
@@ -14,7 +15,13 @@ import (
 var assets embed.FS
 
 func main() {
-	if cli.IsCLIInvocation(os.Args[1:]) {
+	if serverID, ok := explorerwindow.ServerIDFromArgs(os.Args[1:]); ok {
+		if err := runner.RunExplorer(assets, serverID); err != nil {
+			log.Fatalf("run server explorer: %v", err)
+		}
+		return
+	}
+	if !isBindingsGeneration() && cli.IsCLIInvocation(os.Args[1:]) {
 		os.Exit(cli.Run(context.Background(), os.Args[1:], cli.DefaultDependencies()))
 	}
 	if err := runner.Run(assets); err != nil {

@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  FolderOpen,
   KeyRound,
   LoaderCircle,
   Pencil,
@@ -120,6 +121,7 @@ export function ServerDetailScreen({
   onStopTunnel,
   onStartAll,
   onRefreshRuntime,
+  onExplore,
 }) {
   const { server, configurations } = record
   const liveCount = serverLiveCount(record, sessions)
@@ -152,6 +154,17 @@ export function ServerDetailScreen({
               <span>{runtimeFresh ? 'Live status' : 'Status stale'}</span>
             </div>
           </div>
+          <button
+            className="primary-button primary-button--full"
+            type="button"
+            disabled={Boolean(pending[`explore-server:${server.id}`])}
+            onClick={() => onExplore(server.id)}
+          >
+            {pending[`explore-server:${server.id}`]
+              ? <LoaderCircle className="spin" aria-hidden="true" />
+              : <FolderOpen aria-hidden="true" />}
+            Explore files
+          </button>
           {!runtimeFresh && configurations.length ? (
             <button
               className="secondary-button secondary-button--full"
