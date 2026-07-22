@@ -33,7 +33,7 @@ Represents one automated execution of the official release workflow.
 
 **Fields**
 - `run_id`: Unique workflow execution identifier.
-- `trigger_ref`: Tag or dispatch reference that started the run.
+- `trigger_ref`: Main-branch commit or dispatch reference that started the run.
 - `status`: `queued`, `running`, `succeeded`, or `failed`.
 - `started_at`: Run start timestamp.
 - `completed_at`: Run completion timestamp.
@@ -114,7 +114,7 @@ Represents the documented Linux support path maintained alongside release automa
 
 ### ReleaseVersion Status Flow
 
-- `pending -> building`: Maintainer initiates an official tagged release.
+- `pending -> building`: A release-worthy Conventional Commit reaches `main` and the workflow computes the next version.
 - `building -> published`: Workflow completes successfully and publishes the release with assets.
 - `building -> failed`: Workflow, tagging, or asset publication fails.
 - `failed -> building`: Maintainer retries with a corrected release attempt.

@@ -16,6 +16,10 @@
 - Q: Is macOS signing or notarization required for official releases in this feature? → A: no signing required
 - Q: How should Linux platform parity be handled for this feature? → A: Linux remains supported, but automated releases are macOS-only for now and Linux users can clone and build
 
+### Session 2026-07-22
+
+- Q: How should official releases be initiated and versioned? → A: Automatically after release-worthy Conventional Commits reach `main`, with the next plain semantic version calculated from their types
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Install the App with Homebrew (Priority: P1)
@@ -44,7 +48,7 @@ As a maintainer, I want official builds to be generated automatically from GitHu
 
 **Acceptance Scenarios**:
 
-1. **Given** a maintainer initiates an official release through the approved repository process, **When** the release workflow runs successfully, **Then** the repository publishes a tagged release with the required installable assets attached.
+1. **Given** a release-worthy Conventional Commit reaches `main`, **When** the release workflow runs successfully, **Then** the repository computes the next semantic version and publishes a matching tagged release with the required installable assets attached.
 2. **Given** the release workflow fails before completion, **When** the maintainer inspects the repository release area, **Then** no misleading completed release is presented as available to users.
 3. **Given** a release has been published, **When** users or maintainers review the release entry, **Then** they can identify the release version, access the expected downloadable assets for the supported macOS distribution path, and understand that Linux users can continue using the supported clone-and-build workflow.
 
@@ -95,6 +99,8 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 - **FR-005**: The system MUST produce official release artifacts through an automated repository-hosted workflow rather than requiring manual build assembly for each release.
 - **FR-006**: The automated release workflow MUST create a versioned, user-visible release record that is associated with the published release artifacts.
 - **FR-007**: The automated release workflow MUST apply a plain semantic version release tag in the format `1.2.3` that unambiguously identifies the published version.
+- **FR-007A**: The automated release workflow MUST derive patch releases from `fix` or `perf`, minor releases from `feat`, and major releases from Conventional Commit breaking-change markers since the latest release tag.
+- **FR-007B**: Non-release Conventional Commit types MUST NOT create a release by themselves.
 - **FR-008**: Each successful official release MUST include all assets required for the supported macOS distribution path described by the project.
 - **FR-009**: The system MUST ensure the Homebrew installation path references the latest successful official release once release publication is complete.
 - **FR-010**: If release creation, tagging, or artifact publication fails, the system MUST surface the failure clearly to maintainers and MUST NOT present the release as fully available.
@@ -126,6 +132,6 @@ As a maintainer, I want the Homebrew cask install path to stay aligned with newl
 - GitHub Actions and GitHub-hosted releases are the approved release channel for this project.
 - Existing non-Homebrew distribution paths may continue to exist, but defining, automating, or redesigning them is out of scope for this feature.
 - Linux support remains in scope for the product, but aligning Linux to the same official automated release cycle as macOS is out of scope for this feature.
-- Maintainers will continue to control when an official release is initiated; this feature automates release execution after that decision.
+- A release-worthy Conventional Commit reaching `main` initiates release planning automatically; maintainers control the release level through commit messages.
 - The project will treat only successfully completed automated releases as installable through the official Homebrew path.
 - macOS signing and notarization are not release-blocking requirements for this feature.

@@ -28,6 +28,12 @@ Rationale: The spec explicitly clarified this format, and a plain semantic versi
 
 Alternatives considered: `v1.2.3` and other custom prefixes were rejected because the spec now defines the unprefixed semantic tag as the canonical release identifier.
 
+Decision: Calculate releases from Conventional Commits whenever changes reach `main`.
+
+Rationale: `fix` and `perf` provide deterministic patch releases, `feat` provides minor releases, and explicit breaking-change markers provide major releases without a separate manual tagging step. Non-release commit types can merge without producing empty releases.
+
+Alternatives considered: Manual version tags preserve explicit release initiation but conflict with the requested merge-to-release automation. Inferring version levels from changed files is ambiguous and difficult to enforce locally.
+
 Decision: Publish official automated release artifacts for macOS only in this feature.
 
 Rationale: The Homebrew path is explicitly scoped to macOS, and narrowing artifact publication keeps the release automation small enough to deliver now while still satisfying the primary user-facing install goal.
