@@ -340,6 +340,10 @@ func dialSFTP(ctx context.Context, server serverdomain.Server, passphrase string
 	if err != nil {
 		return nil, nil, err
 	}
+	hostKeyCallback, err := sshconnection.KnownHostsCallback()
+	if err != nil {
+		return nil, nil, fmt.Errorf("configure SSH host key verification: %w", err)
+	}
 	address := fmt.Sprintf("%s:%d", server.Host, server.Port)
 	netConn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", address)
 	if err != nil {
@@ -353,7 +357,7 @@ func dialSFTP(ctx context.Context, server serverdomain.Server, passphrase string
 	config := &ssh.ClientConfig{
 		User:            server.Username,
 		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 	sshConn, channels, requests, err := ssh.NewClientConn(netConn, address, config)

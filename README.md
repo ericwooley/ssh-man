@@ -195,6 +195,7 @@ xattr -d com.apple.quarantine /Applications/ssh-man.app
 - Hiding the popup leaves tunnels running. Use **Settings → Quit SSH Man** or the icon's context menu when you want to stop sessions and exit cleanly.
 - If Gatekeeper warns because the app is unsigned, open it from Finder with `Open` and confirm once.
 - `ssh-man` uses your local SSH agent by default, so make sure your agent is running and `SSH_AUTH_SOCK` is available to GUI apps.
+- SSH host keys are verified against your OpenSSH `~/.ssh/known_hosts` file (and system known-hosts files). Connect once with OpenSSH before using a new server in SSH Man.
 - App data is stored under `~/Library/Application Support/ssh-man`.
 - Homebrew creates the automatic CLI link. A direct DMG copy keeps the CLI inside `ssh-man.app/Contents/MacOS/ssh-man` but does not modify your shell `PATH`.
 
