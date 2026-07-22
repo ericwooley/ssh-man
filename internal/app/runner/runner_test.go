@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"ssh-man/internal/app/bootstrap"
 	appwindow "ssh-man/internal/app/window"
 	"ssh-man/internal/control"
+	"ssh-man/internal/platform/menubar"
 )
 
 type fakeWindowRuntime struct {
@@ -43,6 +45,16 @@ func (f *fakeMenuBar) Start() error {
 func (f *fakeMenuBar) Show() bool {
 	f.showCalls++
 	return f.showResult
+}
+
+func (f *fakeMenuBar) ShowBrowserSwitcher() bool {
+	return f.Show()
+}
+
+func (f *fakeMenuBar) CancelBrowserSwitchSession() {}
+
+func (f *fakeMenuBar) SetBrowserShortcuts(string, string) error {
+	return nil
 }
 func (f *fakeMenuBar) Stop() {
 	f.stopCalls++
@@ -91,6 +103,188 @@ func (f *fakeOwnerLease) Release() error {
 
 func testLifecycle(bar menuBar) *applicationLifecycle {
 	return newApplicationLifecycle(&fakeControlLifecycle{}, bar, nil, func(context.Context) error { return nil })
+}
+
+func TestBrowserSwitchEventDispatcherPreservesSessionOrder(t *testing.T) {
+	received := make(chan browserSwitchEvent, 5)
+	dispatcher := newBrowserSwitchEventDispatcher(func(event browserSwitchEvent) {
+		received <- event
+	})
+	t.Cleanup(dispatcher.Close)
+
+	want := []browserSwitchEvent{
+		{kind: browserSwitchAdvance, direction: menubar.BrowserSwitchForward, sessionID: 41},
+		{kind: browserSwitchAdvance, direction: menubar.BrowserSwitchBackward, sessionID: 41},
+		{kind: browserSwitchCommit, sessionID: 41},
+		{kind: browserSwitchAdvance, direction: menubar.BrowserSwitchForward, sessionID: 42},
+		{kind: browserSwitchCancel, sessionID: 42},
+	}
+	if !dispatcher.Dispatch(menubar.BrowserSwitchForward, 41) {
+		t.Fatal("forward event rejected")
+	}
+	if !dispatcher.Dispatch(menubar.BrowserSwitchBackward, 41) {
+		t.Fatal("backward event rejected")
+	}
+	if !dispatcher.Commit(41) {
+		t.Fatal("commit event rejected")
+	}
+	if !dispatcher.Dispatch(menubar.BrowserSwitchForward, 42) {
+		t.Fatal("next-session forward event rejected")
+	}
+	if !dispatcher.Cancel(42) {
+		t.Fatal("cancel event rejected")
+	}
+
+	got := make([]browserSwitchEvent, 0, len(want))
+	for range want {
+		select {
+		case event := <-received:
+			got = append(got, event)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for browser switch event")
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}
+
+func TestBrowserSwitchEventDispatcherRejectsAfterClose(t *testing.T) {
+	dispatcher := newBrowserSwitchEventDispatcher(func(browserSwitchEvent) {})
+	dispatcher.Close()
+	if dispatcher.Dispatch(menubar.BrowserSwitchForward, 1) {
+		t.Fatal("expected dispatcher to reject events after close")
+	}
+	if dispatcher.Commit(1) {
+		t.Fatal("expected dispatcher to reject commit after close")
+	}
+	if dispatcher.Cancel(1) {
+		t.Fatal("expected dispatcher to reject cancel after close")
+	}
+}
+
+func TestBrowserSwitchEventDispatcherRejectsZeroSessionID(t *testing.T) {
+	dispatcher := newBrowserSwitchEventDispatcher(func(browserSwitchEvent) {})
+	t.Cleanup(dispatcher.Close)
+
+	if dispatcher.Dispatch(menubar.BrowserSwitchForward, 0) {
+		t.Fatal("expected dispatcher to reject advance without a session")
+	}
+	if dispatcher.Commit(0) {
+		t.Fatal("expected dispatcher to reject commit without a session")
+	}
+	if dispatcher.Cancel(0) {
+		t.Fatal("expected dispatcher to reject cancel without a session")
+	}
+}
+
+func TestBrowserSwitchEventDispatcherKeepsTerminalEventsWhenAdvanceQueueIsFull(t *testing.T) {
+	const sessionID = uint64(77)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	received := make(chan browserSwitchEvent, browserSwitchEventQueueSize+3)
+	first := true
+	dispatcher := newBrowserSwitchEventDispatcher(func(event browserSwitchEvent) {
+		if first {
+			first = false
+			close(started)
+			<-release
+		}
+		received <- event
+	})
+	t.Cleanup(dispatcher.Close)
+
+	if !dispatcher.Dispatch(menubar.BrowserSwitchForward, sessionID) {
+		t.Fatal("initial advance rejected")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for emitter to block")
+	}
+
+	for i := 0; i < browserSwitchEventQueueSize; i++ {
+		if !dispatcher.Dispatch(menubar.BrowserSwitchForward, sessionID) {
+			t.Fatalf("advance %d rejected before queue reached capacity", i)
+		}
+	}
+	if dispatcher.Dispatch(menubar.BrowserSwitchForward, sessionID) {
+		t.Fatal("expected saturated advance queue to reject another advance")
+	}
+	if !dispatcher.Commit(sessionID) {
+		t.Fatal("commit must remain non-droppable when advance queue is full")
+	}
+	if !dispatcher.Cancel(sessionID) {
+		t.Fatal("cancel must remain non-droppable when advance queue is full")
+	}
+	close(release)
+
+	wantCount := browserSwitchEventQueueSize + 3
+	got := make([]browserSwitchEvent, 0, wantCount)
+	for len(got) < wantCount {
+		select {
+		case event := <-received:
+			got = append(got, event)
+		case <-time.After(time.Second):
+			t.Fatalf("timed out after %d dispatched events", len(got))
+		}
+	}
+	if got[len(got)-2] != (browserSwitchEvent{kind: browserSwitchCommit, sessionID: sessionID}) {
+		t.Fatalf("penultimate event = %#v, want commit", got[len(got)-2])
+	}
+	if got[len(got)-1] != (browserSwitchEvent{kind: browserSwitchCancel, sessionID: sessionID}) {
+		t.Fatalf("last event = %#v, want cancel", got[len(got)-1])
+	}
+}
+
+func TestBrowserSwitchEventDispatcherCloseDiscardsQueuedEvents(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	received := make(chan browserSwitchEvent, 2)
+	first := true
+	dispatcher := newBrowserSwitchEventDispatcher(func(event browserSwitchEvent) {
+		if first {
+			first = false
+			close(started)
+			<-release
+		}
+		received <- event
+	})
+
+	if !dispatcher.Dispatch(menubar.BrowserSwitchForward, 91) {
+		t.Fatal("initial advance rejected")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for in-flight emitter")
+	}
+	if !dispatcher.Commit(91) {
+		t.Fatal("queued commit rejected")
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		dispatcher.Close()
+		close(closed)
+	}()
+	deadline := time.Now().Add(time.Second)
+	for !dispatcher.stopRequested.Load() && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if !dispatcher.stopRequested.Load() {
+		t.Fatal("timed out waiting for dispatcher stop request")
+	}
+	close(release)
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for dispatcher close")
+	}
+
+	if len(received) != 1 {
+		t.Fatalf("emitted events after close = %d, want only the in-flight event", len(received))
+	}
 }
 
 func TestNewOptionsConfiguresCompactSingleInstanceApp(t *testing.T) {

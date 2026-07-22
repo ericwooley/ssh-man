@@ -31,6 +31,9 @@ func TestPersistenceRecoveryLoadsSavedPreferencesAndData(t *testing.T) {
 	if loadedPref.Theme != preferencesdomain.ThemeLight || loadedPref.LastSelectedServerID != server.ID {
 		t.Fatalf("unexpected loaded preferences: %+v", loadedPref)
 	}
+	if loadedPref.BrowserSwitcherShortcut != "Alt+X" || loadedPref.BrowserSwitcherBackwardShortcut != "Alt+Z" {
+		t.Fatalf("unexpected browser switcher shortcuts: %+v", loadedPref)
+	}
 
 	if pref.Theme != loadedPref.Theme {
 		t.Fatalf("expected persisted preference theme %q, got %q", pref.Theme, loadedPref.Theme)

@@ -2,20 +2,145 @@ import { describe, expect, it } from 'vitest'
 
 import {
   activeSessions,
+  browserAppearanceForTarget,
+  browserAppearanceForeground,
+  browserAppearanceKey,
+  browserSelectionIndexForDirections,
   buildRuntimeSessions,
   configurationEndpoint,
   emptyServer,
   emptyTunnel,
   findConfigurationRecord,
+  initialBrowserSelectionIndex,
+  moveBrowserSelectionIndex,
   normalizeHistoryEntry,
+  normalizeBrowserAppearance,
   normalizeSession,
+  orderBrowsersByRecentActivation,
+  recordBrowserTargetActivation,
   selectInitialServerId,
   sessionCapabilities,
+  shortcutFromKeyboardEvent,
   statusLabel,
   statusTone,
   validateServer,
+  validateBrowserAppearance,
   validateTunnel,
 } from './appModel'
+
+describe('shortcutFromKeyboardEvent', () => {
+  it('uses the physical key so shifted punctuation stays configurable', () => {
+    expect(shortcutFromKeyboardEvent({ code: 'Semicolon', altKey: true, shiftKey: true })).toBe('Alt+Shift+;')
+  })
+
+  it('normalizes command and named keys', () => {
+    expect(shortcutFromKeyboardEvent({ code: 'ArrowRight', metaKey: true })).toBe('Meta+ArrowRight')
+  })
+
+  it('rejects bare keys and modifier-only events', () => {
+    expect(shortcutFromKeyboardEvent({ code: 'KeyB' })).toBe('')
+    expect(shortcutFromKeyboardEvent({ code: 'AltLeft', altKey: true })).toBe('')
+  })
+})
+
+describe('browser switcher selection', () => {
+  it('starts at the first item going forward and the last item going backward', () => {
+    expect(initialBrowserSelectionIndex(3, 'forward')).toBe(0)
+    expect(initialBrowserSelectionIndex(3, 'backward')).toBe(2)
+  })
+
+  it('moves in either direction and wraps at both ends', () => {
+    expect(moveBrowserSelectionIndex(2, 3, 'forward')).toBe(0)
+    expect(moveBrowserSelectionIndex(0, 3, 'backward')).toBe(2)
+    expect(moveBrowserSelectionIndex(1, 3, 'forward')).toBe(2)
+    expect(moveBrowserSelectionIndex(1, 3, 'backward')).toBe(0)
+  })
+
+  it('replays directions received while the browser list is loading', () => {
+    expect(browserSelectionIndexForDirections(4, ['forward', 'forward', 'backward'])).toBe(0)
+    expect(browserSelectionIndexForDirections(4, ['backward', 'backward'])).toBe(2)
+  })
+
+  it('applies the first direction relative to the current browser when known', () => {
+    expect(browserSelectionIndexForDirections(3, ['forward'], 0)).toBe(1)
+    expect(browserSelectionIndexForDirections(3, ['backward'], 0)).toBe(2)
+    expect(browserSelectionIndexForDirections(3, ['forward', 'backward'], 0)).toBe(0)
+  })
+
+  it('returns zero when no items are available', () => {
+    expect(initialBrowserSelectionIndex(0, 'backward')).toBe(0)
+    expect(moveBrowserSelectionIndex(5, 0, 'forward')).toBe(0)
+    expect(browserSelectionIndexForDirections(0, ['backward', 'backward'])).toBe(0)
+  })
+})
+
+describe('browser switcher recent activation order', () => {
+  const browsers = [
+    { id: 'a', browserName: 'A' },
+    { id: 'b', browserName: 'B' },
+    { id: 'c', browserName: 'C' },
+    { id: 'd', browserName: 'D' },
+  ]
+
+  it('places recent targets first while retaining backend order for untracked targets', () => {
+    expect(orderBrowsersByRecentActivation(browsers, ['c', 'a']).map((item) => item.id)).toEqual(['c', 'a', 'b', 'd'])
+    expect(browsers.map((item) => item.id)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('moves a successful activation to the front without duplicates', () => {
+    expect(recordBrowserTargetActivation(['b', 'a', 'c'], 'a')).toEqual(['a', 'b', 'c'])
+    expect(recordBrowserTargetActivation(['a', 'b'], 'c')).toEqual(['c', 'a', 'b'])
+  })
+
+  it('supports forward toggling and reverse selection around the most recent target', () => {
+    const history = recordBrowserTargetActivation(['b', 'a'], 'a')
+    const ordered = orderBrowsersByRecentActivation(browsers, history)
+    const currentIndex = ordered.findIndex((item) => item.id === history[0])
+
+    expect(ordered.map((item) => item.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(ordered[browserSelectionIndexForDirections(ordered.length, ['forward'], currentIndex)].id).toBe('b')
+    expect(ordered[browserSelectionIndexForDirections(ordered.length, ['backward'], currentIndex)].id).toBe('d')
+  })
+})
+
+describe('browser switcher appearance', () => {
+  const proxy = { kind: 'proxy', serverId: 'server-a', browserId: 'google-chrome' }
+  const regular = { kind: 'regular', browserId: 'google-chrome' }
+
+  it('uses stable semantic keys instead of process ids', () => {
+    expect(browserAppearanceKey({ ...proxy, id: 'browser:101' })).toBe('proxy:server-a:google-chrome')
+    expect(browserAppearanceKey({ ...proxy, id: 'browser:999' })).toBe('proxy:server-a:google-chrome')
+    expect(browserAppearanceKey(regular)).toBe('regular:google-chrome')
+    expect(browserAppearanceKey({ kind: 'proxy', browserId: 'google-chrome' })).toBe('')
+  })
+
+  it('normalizes and resolves saved colors and marks', () => {
+    const appearances = {
+      'proxy:server-a:google-chrome': { icon: '  X ', primaryColor: '#22c55e' },
+    }
+    expect(browserAppearanceForTarget(proxy, appearances)).toEqual({ icon: 'X', primaryColor: '#22C55E' })
+    expect(browserAppearanceForTarget(regular, appearances)).toEqual({ icon: '', primaryColor: '' })
+    expect(normalizeBrowserAppearance({ icon: ' 🟢 ', primaryColor: '#abcdef' })).toEqual({ icon: '🟢', primaryColor: '#ABCDEF' })
+  })
+
+  it('accepts curated icons, short marks, and joined emoji', () => {
+    expect(validateBrowserAppearance({ icon: 'icon:x', primaryColor: '#22C55E' })).toEqual({})
+    expect(validateBrowserAppearance({ icon: 'X' })).toEqual({})
+    expect(validateBrowserAppearance({ icon: '👩🏽‍💻' })).toEqual({})
+  })
+
+  it('rejects malformed colors, unknown icons, markup, and long marks', () => {
+    expect(validateBrowserAppearance({ primaryColor: 'green' })).toHaveProperty('primaryColor')
+    expect(validateBrowserAppearance({ icon: 'icon:unknown' })).toHaveProperty('icon')
+    expect(validateBrowserAppearance({ icon: '<b>' })).toHaveProperty('icon')
+    expect(validateBrowserAppearance({ icon: 'ABC' })).toHaveProperty('icon')
+  })
+
+  it('chooses a readable foreground for light and dark primary colors', () => {
+    expect(browserAppearanceForeground('#22C55E')).toBe('#07110B')
+    expect(browserAppearanceForeground('#1E3A8A')).toBe('#FFFFFF')
+  })
+})
 
 describe('emptyServer', () => {
   it('returns the existing server editor shape with the current username', () => {
