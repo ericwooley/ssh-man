@@ -576,6 +576,17 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }, [api, notify])
 
+  const openServerExplorer = useCallback((serverId) => runPending(`explore-server:${serverId}`, async () => {
+    try {
+      await api.openServerExplorer(serverId)
+      notify('success', 'Server explorer opened in its own window.')
+      return true
+    } catch (error) {
+      notify('danger', 'The server explorer could not be opened.', error.message || '')
+      return false
+    }
+  }), [api, notify, runPending])
+
   return {
     phase,
     servers,
@@ -626,6 +637,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     copyHistory,
     copyPath,
     openDevTools,
+    openServerExplorer,
     hideWindow: api.hideApplicationWindow,
     quitApplication: api.quitApplication,
     openExternalURL: api.openExternalURL,

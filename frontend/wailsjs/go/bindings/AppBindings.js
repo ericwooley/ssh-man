@@ -62,6 +62,10 @@ export function RetryConfiguration(arg1) {
   return window['go']['bindings']['AppBindings']['RetryConfiguration'](arg1);
 }
 
+export function SaveBrowserAppearance(arg1, arg2) {
+  return window['go']['bindings']['AppBindings']['SaveBrowserAppearance'](arg1, arg2);
+}
+
 export function SaveConnectionConfiguration(arg1) {
   return window['go']['bindings']['AppBindings']['SaveConnectionConfiguration'](arg1);
 }

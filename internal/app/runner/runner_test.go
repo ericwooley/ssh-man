@@ -16,6 +16,7 @@ import (
 	"ssh-man/internal/app/bootstrap"
 	appwindow "ssh-man/internal/app/window"
 	"ssh-man/internal/control"
+	serverdomain "ssh-man/internal/domain/server"
 	"ssh-man/internal/platform/menubar"
 )
 
@@ -102,7 +103,11 @@ func (f *fakeOwnerLease) Release() error {
 }
 
 func testLifecycle(bar menuBar) *applicationLifecycle {
-	return newApplicationLifecycle(&fakeControlLifecycle{}, bar, nil, func(context.Context) error { return nil })
+	return newApplicationLifecycle(&fakeControlLifecycle{}, bar, nil, nil, func(context.Context) error { return nil })
+}
+
+func testLauncher() *bindings.ExplorerLauncherBindings {
+	return bindings.NewExplorerLauncherBindingsWithDependencies(nil, nil)
 }
 
 func TestBrowserSwitchEventDispatcherPreservesSessionOrder(t *testing.T) {
@@ -291,7 +296,8 @@ func TestNewOptionsConfiguresCompactSingleInstanceApp(t *testing.T) {
 	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
 	app := &bindings.AppBindings{}
 	bar := &fakeMenuBar{}
-	got := newOptions(nil, app, window, bar, testLifecycle(bar))
+	launcher := testLauncher()
+	got := newOptions(nil, app, launcher, window, bar, testLifecycle(bar))
 
 	if got.Title != "SSH Man" {
 		t.Fatalf("Title = %q, want SSH Man", got.Title)
@@ -305,8 +311,29 @@ func TestNewOptionsConfiguresCompactSingleInstanceApp(t *testing.T) {
 	if got.OnStartup == nil || got.OnDomReady == nil || got.OnBeforeClose == nil || got.OnShutdown == nil {
 		t.Fatal("expected complete Wails lifecycle hooks")
 	}
-	if len(got.Bind) != 1 || got.Bind[0] != app {
+	wantBindingCount := 2 + len(additionalBindingsForGeneration())
+	if len(got.Bind) != wantBindingCount || got.Bind[0] != app || got.Bind[1] != launcher {
 		t.Fatalf("Bind = %#v, want application bindings", got.Bind)
+	}
+}
+
+func TestNewExplorerOptionsConfiguresIndependentResizableWindow(t *testing.T) {
+	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
+	explorer, middleware := bindings.NewExplorerBindings(&bootstrap.Application{}, serverdomain.Server{ID: "server-1", Name: "Production"}, window)
+
+	got := newExplorerOptions(nil, explorer, middleware, window, "Production", "server-1")
+
+	if got.Title != "Production — SSH Man Explorer" || got.Width != 1180 || got.Height != 760 {
+		t.Fatalf("explorer window = %q %dx%d", got.Title, got.Width, got.Height)
+	}
+	if got.DisableResize || got.HideWindowOnClose || got.AlwaysOnTop {
+		t.Fatal("explorer should be an ordinary persistent OS window")
+	}
+	if got.SingleInstanceLock == nil || got.SingleInstanceLock.UniqueId != singleInstanceID+".explorer.server-1" {
+		t.Fatalf("explorer lock = %#v", got.SingleInstanceLock)
+	}
+	if len(got.Bind) != 1 || got.Bind[0] != explorer {
+		t.Fatalf("explorer bindings = %#v", got.Bind)
 	}
 }
 
@@ -314,7 +341,7 @@ func TestSecondInstanceUsesNativeMenuBarWhenAvailable(t *testing.T) {
 	runtime := &fakeWindowRuntime{}
 	window := appwindow.NewWithRuntime(runtime)
 	bar := &fakeMenuBar{showResult: true}
-	got := newOptions(nil, &bindings.AppBindings{}, window, bar, testLifecycle(bar))
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), window, bar, testLifecycle(bar))
 
 	got.SingleInstanceLock.OnSecondInstanceLaunch(options.SecondInstanceData{})
 
@@ -330,7 +357,7 @@ func TestSecondInstanceDefersWindowShowUntilStartupWhenMenuBarUnavailable(t *tes
 	runtime := &fakeWindowRuntime{}
 	window := appwindow.NewWithRuntime(runtime)
 	bar := &fakeMenuBar{}
-	got := newOptions(nil, &bindings.AppBindings{}, window, bar, testLifecycle(bar))
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), window, bar, testLifecycle(bar))
 
 	got.SingleInstanceLock.OnSecondInstanceLaunch(options.SecondInstanceData{})
 	if runtime.showCalls != 0 {
@@ -348,7 +375,7 @@ func TestDomReadyShowsFallbackWindowWhenMenuBarStartFails(t *testing.T) {
 	window := appwindow.NewWithRuntime(runtime)
 	window.SetContext(context.Background())
 	bar := &fakeMenuBar{startErr: errors.New("native unavailable")}
-	got := newOptions(nil, &bindings.AppBindings{}, window, bar, testLifecycle(bar))
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), window, bar, testLifecycle(bar))
 
 	got.OnDomReady(context.Background())
 
@@ -372,10 +399,11 @@ func TestStartupStartsConfiguredTunnelsOnceAndShutdownCancelsIt(t *testing.T) {
 			<-ctx.Done()
 			return ctx.Err()
 		},
+		nil,
 		func(context.Context) error { return nil },
 	)
 	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
-	got := newOptions(nil, &bindings.AppBindings{}, window, &fakeMenuBar{}, lifecycle)
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), window, &fakeMenuBar{}, lifecycle)
 
 	got.OnStartup(context.Background())
 	got.OnStartup(context.Background())
@@ -395,10 +423,13 @@ func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 	lifecycle := newApplicationLifecycle(controlServer, bar, func(context.Context) error {
 		return nil
 	}, func(context.Context) error {
+		events = append(events, "explorers.shutdown")
+		return nil
+	}, func(context.Context) error {
 		events = append(events, "application.shutdown")
 		return nil
 	})
-	got := newOptions(nil, &bindings.AppBindings{}, window, bar, lifecycle)
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), window, bar, lifecycle)
 
 	if err := lifecycle.Start(); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -407,7 +438,7 @@ func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 	got.OnShutdown(context.Background())
 	got.OnShutdown(context.Background())
 
-	want := []string{"control.start", "menu.stop", "control.stop", "application.shutdown"}
+	want := []string{"control.start", "menu.stop", "control.stop", "explorers.shutdown", "application.shutdown"}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("lifecycle events = %#v, want %#v", events, want)
 	}
@@ -418,17 +449,43 @@ func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 
 func TestApplicationLifecycleReturnsControlAndApplicationShutdownErrors(t *testing.T) {
 	controlErr := errors.New("control stop failed")
+	explorerErr := errors.New("explorer shutdown failed")
 	applicationErr := errors.New("application shutdown failed")
 	lifecycle := newApplicationLifecycle(
 		&fakeControlLifecycle{stopErr: controlErr},
 		&fakeMenuBar{},
 		nil,
+		func(context.Context) error { return explorerErr },
 		func(context.Context) error { return applicationErr },
 	)
 
 	err := lifecycle.Shutdown(context.Background())
-	if !errors.Is(err, controlErr) || !errors.Is(err, applicationErr) {
-		t.Fatalf("Shutdown() error = %v, want both shutdown errors", err)
+	if !errors.Is(err, controlErr) || !errors.Is(err, explorerErr) || !errors.Is(err, applicationErr) {
+		t.Fatalf("Shutdown() error = %v, want all shutdown errors", err)
+	}
+}
+
+func TestApplicationLifecycleShutsDownExplorersBeforeApplicationStorage(t *testing.T) {
+	events := []string{}
+	lifecycle := newApplicationLifecycle(
+		&fakeControlLifecycle{},
+		&fakeMenuBar{},
+		nil,
+		func(context.Context) error {
+			events = append(events, "explorers.shutdown")
+			return nil
+		},
+		func(context.Context) error {
+			events = append(events, "application.shutdown")
+			return nil
+		},
+	)
+
+	if err := lifecycle.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"explorers.shutdown", "application.shutdown"}; !reflect.DeepEqual(events, want) {
+		t.Fatalf("shutdown events = %#v, want %#v", events, want)
 	}
 }
 

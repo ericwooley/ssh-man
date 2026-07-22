@@ -3,6 +3,11 @@ function getRuntimeBindings() {
   return window.go?.bindings?.AppBindings || window.go?.main?.AppBindings || null
 }
 
+function getExplorerLauncherBindings() {
+  if (typeof window === 'undefined') return null
+  return window.go?.bindings?.ExplorerLauncherBindings || null
+}
+
 const hasWailsRuntime = () => getRuntimeBindings() !== null
 
 const memoryState = {
@@ -294,6 +299,14 @@ export async function quitApplication() {
   if (hasWailsRuntime()) {
     return appBindings().Quit()
   }
+}
+
+export async function openServerExplorer(serverId) {
+  const launcher = getExplorerLauncherBindings()
+  if (launcher) {
+    return launcher.Open(serverId)
+  }
+  return { serverId, opened: true }
 }
 
 export async function openExternalURL(url) {

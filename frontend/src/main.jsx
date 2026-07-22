@@ -1,7 +1,10 @@
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './app/App'
+import { hasExplorerRuntime } from './lib/explorerApi'
 import './app.css'
+
+const ExplorerApp = lazy(() => import('./explorer/ExplorerApp'))
 
 const target = document.getElementById('app')
 
@@ -10,9 +13,11 @@ if (!target) {
 }
 
 try {
+  const explorerRuntime = hasExplorerRuntime()
+  const RootApp = explorerRuntime ? ExplorerApp : App
   createRoot(target).render(
     <React.StrictMode>
-      <App />
+      {explorerRuntime ? <Suspense fallback={<div className="startup-error">Opening explorer…</div>}><RootApp /></Suspense> : <RootApp />}
     </React.StrictMode>,
   )
 } catch (error) {

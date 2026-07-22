@@ -17,6 +17,7 @@ import (
 
 	"ssh-man/internal/app/bindings"
 	"ssh-man/internal/app/bootstrap"
+	"ssh-man/internal/app/explorerwindow"
 	appmenu "ssh-man/internal/app/menu"
 	appwindow "ssh-man/internal/app/window"
 	"ssh-man/internal/control"
@@ -27,6 +28,7 @@ import (
 const (
 	singleInstanceID               = "com.wails.ssh-man"
 	ownerStartupTimeout            = 5 * time.Second
+	explorerShutdownTimeout        = 5 * time.Second
 	shutdownTimeout                = 15 * time.Second
 	browserSwitchEventQueueSize    = 64
 	browserSwitcherOpenEventName   = "browser-switcher:open"
@@ -174,6 +176,7 @@ type applicationLifecycle struct {
 	control             controlLifecycle
 	bar                 menuBar
 	startOnLaunch       func(context.Context) error
+	shutdownExplorers   func(context.Context) error
 	shutdownApplication func(context.Context) error
 
 	startOnLaunchOnce sync.Once
@@ -237,11 +240,12 @@ func showExistingOwner(parent context.Context, socketPath string) error {
 	return nil
 }
 
-func newApplicationLifecycle(controlServer controlLifecycle, bar menuBar, startOnLaunch func(context.Context) error, shutdownApplication func(context.Context) error) *applicationLifecycle {
+func newApplicationLifecycle(controlServer controlLifecycle, bar menuBar, startOnLaunch func(context.Context) error, shutdownExplorers func(context.Context) error, shutdownApplication func(context.Context) error) *applicationLifecycle {
 	return &applicationLifecycle{
 		control:             controlServer,
 		bar:                 bar,
 		startOnLaunch:       startOnLaunch,
+		shutdownExplorers:   shutdownExplorers,
 		shutdownApplication: shutdownApplication,
 	}
 }
@@ -295,11 +299,17 @@ func (l *applicationLifecycle) Shutdown(parent context.Context) error {
 		if l.control != nil {
 			controlErr = l.control.Stop(ctx)
 		}
+		var explorerErr error
+		if l.shutdownExplorers != nil {
+			explorerContext, cancelExplorers := context.WithTimeout(ctx, explorerShutdownTimeout)
+			explorerErr = l.shutdownExplorers(explorerContext)
+			cancelExplorers()
+		}
 		var applicationErr error
 		if l.shutdownApplication != nil {
 			applicationErr = l.shutdownApplication(ctx)
 		}
-		l.shutdownErr = errors.Join(controlErr, applicationErr)
+		l.shutdownErr = errors.Join(controlErr, explorerErr, applicationErr)
 	})
 	return l.shutdownErr
 }
@@ -313,6 +323,9 @@ func showApplication(bar menuBar, window *appwindow.Controller) error {
 }
 
 func Run(assets fs.FS) (runErr error) {
+	if handled, err := maybeRunBindingsGeneration(assets); handled {
+		return err
+	}
 	application, lease, handled, err := prepareOwnedApplication(context.Background(), defaultOwnershipDependencies())
 	if err != nil || handled {
 		return err
@@ -320,6 +333,8 @@ func Run(assets fs.FS) (runErr error) {
 
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
+	explorerManager := explorerwindow.NewManager()
+	explorerLauncher := bindings.NewExplorerLauncherBindingsWithDependencies(application.ServerService, explorerManager.Launch)
 	browserSwitchEvents := newBrowserSwitchEventDispatcher(func(event browserSwitchEvent) {
 		ctx, contextErr := window.Context()
 		if contextErr == nil {
@@ -377,7 +392,7 @@ func Run(assets fs.FS) (runErr error) {
 		paths.ControlSocketPath(application.ConfigDir),
 		newControlBackend(application, window, show),
 	)
-	lifecycle := newApplicationLifecycle(controlServer, bar, application.SessionService.StartOnLaunch, app.Shutdown)
+	lifecycle := newApplicationLifecycle(controlServer, bar, application.SessionService.StartOnLaunch, explorerManager.Shutdown, app.Shutdown)
 	defer func() {
 		bar.Stop()
 		browserSwitchEvents.Close()
@@ -389,11 +404,11 @@ func Run(assets fs.FS) (runErr error) {
 		return fmt.Errorf("start control service: %w", err)
 	}
 
-	runErr = wails.Run(newOptions(assets, app, window, bar, lifecycle))
+	runErr = wails.Run(newOptions(assets, app, explorerLauncher, window, bar, lifecycle))
 	return runErr
 }
 
-func newOptions(assets fs.FS, app *bindings.AppBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
+func newOptions(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
 	appOptions := &options.App{
 		Title:  "SSH Man",
 		Width:  420,
@@ -402,9 +417,7 @@ func newOptions(assets fs.FS, app *bindings.AppBindings, window *appwindow.Contr
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		Bind: []interface{}{
-			app,
-		},
+		Bind: append([]interface{}{app, explorerLauncher}, additionalBindingsForGeneration()...),
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: singleInstanceID,
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) {
