@@ -34,6 +34,6 @@ func maybeRunBindingsGeneration(assets fs.FS) (bool, error) {
 	app := bindings.NewAppBindingsWithApplication(application, window)
 	launcher := bindings.NewExplorerLauncherBindingsWithDependencies(nil, nil)
 	bar := bindingsMenuBar{}
-	lifecycle := newApplicationLifecycle(nil, bar, nil, nil)
+	lifecycle := newApplicationLifecycle(nil, bar, nil, nil, nil)
 	return true, wails.Run(newOptions(assets, app, launcher, window, bar, lifecycle))
 }

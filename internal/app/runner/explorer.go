@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"os"
+	"os/signal"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -28,7 +30,21 @@ func RunExplorer(assets fs.FS, serverID string) error {
 	}
 	window := appwindow.New()
 	explorer, middleware := bindings.NewExplorerBindings(application, server, window)
-	return wails.Run(newExplorerOptions(assets, explorer, middleware, window, server.Name, server.ID))
+	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stopSignals()
+	finished := make(chan struct{})
+	go func() {
+		select {
+		case <-signalContext.Done():
+			if err := window.Quit(); err != nil {
+				log.Printf("quit explorer after parent shutdown: %v", err)
+			}
+		case <-finished:
+		}
+	}()
+	runErr := wails.Run(newExplorerOptions(assets, explorer, middleware, window, server.Name, server.ID))
+	close(finished)
+	return runErr
 }
 
 func newExplorerOptions(assets fs.FS, explorer *bindings.ExplorerBindings, middleware assetserver.Middleware, window *appwindow.Controller, serverName, serverID string) *options.App {

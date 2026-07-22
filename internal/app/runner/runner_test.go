@@ -91,7 +91,7 @@ func (f *fakeOwnerLease) Release() error {
 }
 
 func testLifecycle(bar menuBar) *applicationLifecycle {
-	return newApplicationLifecycle(&fakeControlLifecycle{}, bar, nil, func(context.Context) error { return nil })
+	return newApplicationLifecycle(&fakeControlLifecycle{}, bar, nil, nil, func(context.Context) error { return nil })
 }
 
 func testLauncher() *bindings.ExplorerLauncherBindings {
@@ -205,6 +205,7 @@ func TestStartupStartsConfiguredTunnelsOnceAndShutdownCancelsIt(t *testing.T) {
 			<-ctx.Done()
 			return ctx.Err()
 		},
+		nil,
 		func(context.Context) error { return nil },
 	)
 	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
@@ -228,6 +229,9 @@ func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 	lifecycle := newApplicationLifecycle(controlServer, bar, func(context.Context) error {
 		return nil
 	}, func(context.Context) error {
+		events = append(events, "explorers.shutdown")
+		return nil
+	}, func(context.Context) error {
 		events = append(events, "application.shutdown")
 		return nil
 	})
@@ -240,7 +244,7 @@ func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 	got.OnShutdown(context.Background())
 	got.OnShutdown(context.Background())
 
-	want := []string{"control.start", "menu.stop", "control.stop", "application.shutdown"}
+	want := []string{"control.start", "menu.stop", "control.stop", "explorers.shutdown", "application.shutdown"}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("lifecycle events = %#v, want %#v", events, want)
 	}
@@ -251,17 +255,43 @@ func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 
 func TestApplicationLifecycleReturnsControlAndApplicationShutdownErrors(t *testing.T) {
 	controlErr := errors.New("control stop failed")
+	explorerErr := errors.New("explorer shutdown failed")
 	applicationErr := errors.New("application shutdown failed")
 	lifecycle := newApplicationLifecycle(
 		&fakeControlLifecycle{stopErr: controlErr},
 		&fakeMenuBar{},
 		nil,
+		func(context.Context) error { return explorerErr },
 		func(context.Context) error { return applicationErr },
 	)
 
 	err := lifecycle.Shutdown(context.Background())
-	if !errors.Is(err, controlErr) || !errors.Is(err, applicationErr) {
-		t.Fatalf("Shutdown() error = %v, want both shutdown errors", err)
+	if !errors.Is(err, controlErr) || !errors.Is(err, explorerErr) || !errors.Is(err, applicationErr) {
+		t.Fatalf("Shutdown() error = %v, want all shutdown errors", err)
+	}
+}
+
+func TestApplicationLifecycleShutsDownExplorersBeforeApplicationStorage(t *testing.T) {
+	events := []string{}
+	lifecycle := newApplicationLifecycle(
+		&fakeControlLifecycle{},
+		&fakeMenuBar{},
+		nil,
+		func(context.Context) error {
+			events = append(events, "explorers.shutdown")
+			return nil
+		},
+		func(context.Context) error {
+			events = append(events, "application.shutdown")
+			return nil
+		},
+	)
+
+	if err := lifecycle.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"explorers.shutdown", "application.shutdown"}; !reflect.DeepEqual(events, want) {
+		t.Fatalf("shutdown events = %#v, want %#v", events, want)
 	}
 }
 

@@ -183,7 +183,7 @@ export function SettingsScreen({
         <button className="secondary-button secondary-button--danger secondary-button--full" type="button" onClick={onQuit}>
           <Power aria-hidden="true" /> Quit SSH Man
         </button>
-        <p>Closing the menu-bar window keeps your tunnels running. Quit stops them safely.</p>
+        <p>Closing the menu-bar window keeps tunnels and explorer windows running. Quit stops tunnels and closes explorer windows safely.</p>
       </section>
     </div>
   )

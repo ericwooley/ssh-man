@@ -153,7 +153,7 @@ Chromium-based browsers are launched with a SOCKS5 proxy flag and dedicated user
 
 ### Remote file explorer
 
-Each saved server can open its own resizable explorer window. It maintains a long-lived SFTP connection, remembers the last remote folder and favorite folders for that server, supports Finder-style multi-selection, and downloads files or recursively downloads folders into a local destination you choose.
+Each saved server can open its own resizable explorer window. It maintains a long-lived SFTP connection, remembers the last remote folder and favorite folders for that server, supports Finder-style multi-selection, and downloads files or recursively downloads folders into a local destination you choose. Explorer windows remain open when the compact control window is hidden and close cleanly when SSH Man is quit.
 
 Text and source files open in Monaco and can be saved back through SFTP. Enable the persisted **Vim controls** checkbox for Vim keybindings and `:w`; `Command+S`/`Ctrl+S` and the Save button work in either mode. Saves preserve remote permissions, use an atomic same-directory replacement, and stop rather than overwrite when the remote content changed after it was opened. Files larger than 2 MB remain preview/download-only.
 

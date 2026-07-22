@@ -15,6 +15,7 @@ import (
 
 	"ssh-man/internal/app/bindings"
 	"ssh-man/internal/app/bootstrap"
+	"ssh-man/internal/app/explorerwindow"
 	appmenu "ssh-man/internal/app/menu"
 	appwindow "ssh-man/internal/app/window"
 	"ssh-man/internal/control"
@@ -23,9 +24,10 @@ import (
 )
 
 const (
-	singleInstanceID    = "com.wails.ssh-man"
-	ownerStartupTimeout = 5 * time.Second
-	shutdownTimeout     = 15 * time.Second
+	singleInstanceID        = "com.wails.ssh-man"
+	ownerStartupTimeout     = 5 * time.Second
+	explorerShutdownTimeout = 5 * time.Second
+	shutdownTimeout         = 15 * time.Second
 )
 
 type menuBar interface {
@@ -54,6 +56,7 @@ type applicationLifecycle struct {
 	control             controlLifecycle
 	bar                 menuBar
 	startOnLaunch       func(context.Context) error
+	shutdownExplorers   func(context.Context) error
 	shutdownApplication func(context.Context) error
 
 	startOnLaunchOnce sync.Once
@@ -117,11 +120,12 @@ func showExistingOwner(parent context.Context, socketPath string) error {
 	return nil
 }
 
-func newApplicationLifecycle(controlServer controlLifecycle, bar menuBar, startOnLaunch func(context.Context) error, shutdownApplication func(context.Context) error) *applicationLifecycle {
+func newApplicationLifecycle(controlServer controlLifecycle, bar menuBar, startOnLaunch func(context.Context) error, shutdownExplorers func(context.Context) error, shutdownApplication func(context.Context) error) *applicationLifecycle {
 	return &applicationLifecycle{
 		control:             controlServer,
 		bar:                 bar,
 		startOnLaunch:       startOnLaunch,
+		shutdownExplorers:   shutdownExplorers,
 		shutdownApplication: shutdownApplication,
 	}
 }
@@ -175,11 +179,17 @@ func (l *applicationLifecycle) Shutdown(parent context.Context) error {
 		if l.control != nil {
 			controlErr = l.control.Stop(ctx)
 		}
+		var explorerErr error
+		if l.shutdownExplorers != nil {
+			explorerContext, cancelExplorers := context.WithTimeout(ctx, explorerShutdownTimeout)
+			explorerErr = l.shutdownExplorers(explorerContext)
+			cancelExplorers()
+		}
 		var applicationErr error
 		if l.shutdownApplication != nil {
 			applicationErr = l.shutdownApplication(ctx)
 		}
-		l.shutdownErr = errors.Join(controlErr, applicationErr)
+		l.shutdownErr = errors.Join(controlErr, explorerErr, applicationErr)
 	})
 	return l.shutdownErr
 }
@@ -203,7 +213,8 @@ func Run(assets fs.FS) (runErr error) {
 
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
-	explorerLauncher := bindings.NewExplorerLauncherBindings(application)
+	explorerManager := explorerwindow.NewManager()
+	explorerLauncher := bindings.NewExplorerLauncherBindingsWithDependencies(application.ServerService, explorerManager.Launch)
 
 	var bar menuBar
 	bar = menubar.New(menubar.Callbacks{
@@ -221,7 +232,7 @@ func Run(assets fs.FS) (runErr error) {
 		paths.ControlSocketPath(application.ConfigDir),
 		newControlBackend(application, window, show),
 	)
-	lifecycle := newApplicationLifecycle(controlServer, bar, application.SessionService.StartOnLaunch, app.Shutdown)
+	lifecycle := newApplicationLifecycle(controlServer, bar, application.SessionService.StartOnLaunch, explorerManager.Shutdown, app.Shutdown)
 	defer func() {
 		cleanupErr := lifecycle.Shutdown(context.Background())
 		releaseErr := lease.Release()
