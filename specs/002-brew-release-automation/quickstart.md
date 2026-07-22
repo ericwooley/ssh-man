@@ -37,19 +37,19 @@ The workflow expects the exact secret name `TAP_GITHUB_TOKEN`. Store it as an en
 2. Select **Only select repositories** and choose only `ericwooley/homebrew-apps`.
 3. Grant repository **Contents: Read and write**. Leave every other permission read-only or unset.
 4. Choose the shortest practical expiration, preferably 90 days or less.
-5. In `ericwooley/ssh-man`, open **Settings → Environments → release**, configure required reviewers and a version-tag deployment restriction, then add `TAP_GITHUB_TOKEN` under **Environment secrets**.
+5. In `ericwooley/ssh-man`, open **Settings → Environments → release**, allow deployments from `main`, leave required reviewers disabled for fully automatic releases, then add `TAP_GITHUB_TOKEN` under **Environment secrets**.
 6. Remove any repository-level or organization-level copy of `TAP_GITHUB_TOKEN` after the environment secret is verified.
 
-With the environment protection enabled, the unprivileged build and validation work can complete first. The tap-publishing job then waits for a reviewer; the credential is withheld until an authorized reviewer approves that known release tag and commit. Rejecting the deployment prevents the tap checkout and update.
+The unprivileged build and validation work completes before the tap-publishing job can read this credential. Keeping it environment-scoped prevents earlier build steps from accessing the token without adding a manual approval to the automatic release path.
 
 Set a rotation reminder before expiration. Create and install the replacement token first, verify it with a release, and then revoke the old token. The preferred long-term credential is a GitHub App installed only on `homebrew-apps` with **Contents: Read and write**, provided the workflow is changed to generate a short-lived installation token during the protected publish job. The generated installation token itself must not be stored as `TAP_GITHUB_TOKEN`.
 
 ## Release Automation Rehearsal
 
-1. Confirm the intended release version uses the semantic tag format `1.2.3`.
-2. Confirm the GitHub Actions workflow is configured to build and publish the official macOS artifact.
-3. Create or simulate the release trigger using the approved version tag.
-4. Run the release workflow and confirm one GitHub Release is created.
+1. Install the repository hooks with `./scripts/install-git-hooks.sh` and confirm a non-Conventional Commit message is rejected.
+2. Confirm the latest release uses a plain semantic tag such as `1.2.3`.
+3. Merge or push a `fix:`, `perf:`, `feat:`, or breaking Conventional Commit to `main` (or run the workflow manually against such an unreleased commit range).
+4. Confirm GitHub Actions calculates the correct next version and creates one GitHub Release.
 5. Confirm the GitHub Release exposes the expected macOS artifact and release notes or summary.
 6. Record the published macOS artifact URL and checksum.
 7. Confirm the Homebrew cask update in the project-owned tap uses the exact version, URL, and checksum from the successful macOS release.

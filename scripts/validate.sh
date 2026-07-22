@@ -21,4 +21,6 @@ gofmt -w main.go cmd/app internal tests
 go vet ./...
 go test ./...
 "$ROOT_DIR/scripts/pnpm.sh" run test
+bash "$ROOT_DIR/scripts/validate-commit-message.test.sh"
+bash "$ROOT_DIR/scripts/release-plan.test.sh"
 bash "$ROOT_DIR/scripts/create-dmg.test.sh"

@@ -2,24 +2,49 @@ name: Release
 
 on:
   push:
-    tags:
-      - '*.*.*'
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
+  plan-release:
+    name: Plan semantic release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      release_required: ${{ steps.plan.outputs.release_required }}
+      current_version: ${{ steps.plan.outputs.current_version }}
+      release_type: ${{ steps.plan.outputs.release_type }}
+      next_version: ${{ steps.plan.outputs.next_version }}
+
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Plan release from Conventional Commits
+        id: plan
+        shell: bash
+        run: bash ./scripts/plan-release.sh >> "$GITHUB_OUTPUT"
+
   build-macos:
     name: Build and test macOS release
+    needs: plan-release
+    if: needs.plan-release.outputs.release_required == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     permissions:
       contents: read
-    outputs:
-      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -45,18 +70,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Resolve release version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="$GITHUB_REF_NAME"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            printf 'Release tag must match x.y.z, got: %s\n' "$GITHUB_REF_NAME" >&2
-            exit 1
-          fi
-          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Install frontend dependencies
         run: pnpm install --dir frontend --frozen-lockfile
 
@@ -70,12 +83,12 @@ jobs:
         run: pnpm --dir frontend run test
 
       - name: Build release artifact
-        run: bash ./scripts/package-darwin-release.sh "${{ steps.version.outputs.version }}"
+        run: bash ./scripts/package-darwin-release.sh "${{ needs.plan-release.outputs.next_version }}"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ssh-man-dmg-${{ steps.version.outputs.version }}
+          name: ssh-man-dmg-${{ needs.plan-release.outputs.next_version }}
           path: dist/ssh-man.dmg
           if-no-files-found: error
           compression-level: 0
@@ -83,28 +96,31 @@ jobs:
 
   publish-release:
     name: Publish release and update Homebrew
-    needs: build-macos
-    if: github.repository == 'ericwooley/ssh-man'
+    needs:
+      - plan-release
+      - build-macos
+    if: needs.plan-release.outputs.release_required == 'true' && github.repository == 'ericwooley/ssh-man'
     runs-on: macos-26
     timeout-minutes: 25
     environment: release
     permissions:
       contents: write
     env:
-      VERSION: ${{ needs.build-macos.outputs.version }}
+      VERSION: ${{ needs.plan-release.outputs.next_version }}
 
     steps:
       - name: Download release artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: ssh-man-dmg-${{ needs.build-macos.outputs.version }}
+          name: ssh-man-dmg-${{ needs.plan-release.outputs.next_version }}
           path: dist
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ needs.build-macos.outputs.version }}
-          name: ssh-man ${{ needs.build-macos.outputs.version }}
+          tag_name: ${{ needs.plan-release.outputs.next_version }}
+          name: ssh-man ${{ needs.plan-release.outputs.next_version }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: dist/ssh-man.dmg

@@ -323,6 +323,18 @@ The packaged app bundle is written to `build/bin/ssh-man.app`; its executable se
 ./scripts/validate.sh
 ```
 
+### Semantic versioning
+
+Install the repository's Git hooks once after cloning:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+The `commit-msg` hook and CI require [Conventional Commits](https://www.conventionalcommits.org/). Use `fix:` or `perf:` for a patch release, `feat:` for a minor release, and add `!` after the type or a `BREAKING CHANGE:` footer for a major release. Scoped forms such as `feat(browser): ...` are supported. Other allowed types (`build`, `chore`, `ci`, `docs`, `refactor`, `revert`, `style`, and `test`) do not create a release by themselves.
+
+Every push to `main` checks the non-merge commits since the latest plain semantic-version tag. When at least one commit requires a release, GitHub Actions calculates the next version, builds and tests the macOS app, creates the corresponding `x.y.z` tag and GitHub release, attaches the DMG, and updates the Homebrew cask. Documentation- or maintenance-only merges complete without publishing a new version.
+
 ### Release credential
 
 The privileged release job reads `TAP_GITHUB_TOKEN` from the protected `release` GitHub environment. Do not create this as a repository-wide secret. For the current workflow, use a fine-grained personal access token with:
@@ -332,7 +344,7 @@ The privileged release job reads `TAP_GITHUB_TOKEN` from the protected `release`
 - repository permission **Contents: Read and write**; no other write permissions
 - the shortest practical expiration, such as 90 days or less
 
-In the `ssh-man` repository, create an environment named `release`, require a reviewer, restrict it to version-tag deployments, and add the token under **Environment secrets** with the exact name `TAP_GITHUB_TOKEN`. A tagged release can build and validate without this credential; the tap-publishing job pauses for approval, and GitHub does not provide the environment secret until that approval is granted. Approve only a release tag and commit you recognize.
+In the `ssh-man` repository, create an environment named `release`, allow deployments from the `main` branch, and add the token under **Environment secrets** with the exact name `TAP_GITHUB_TOKEN`. Do not require reviewers if releases should remain fully automatic. The build and test job runs without this credential; only the final release and tap-publishing job can access it.
 
 Rotate the credential before it expires: create a replacement token, update the environment secret, verify a release, and then revoke the old token. Prefer a GitHub App installed only on `homebrew-apps` with **Contents: Read and write** if the workflow is updated to mint a short-lived installation token at runtime; do not store an installation token as a long-lived secret.
 

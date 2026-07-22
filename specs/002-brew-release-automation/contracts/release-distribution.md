@@ -13,16 +13,18 @@ This contract defines the externally visible release boundary for official macOS
 
 ## Release Trigger Contract
 
-Official releases are initiated by a maintainer-controlled workflow trigger bound to a semantic version tag.
+Official releases are planned automatically after changes reach `main`. Conventional Commit messages since the latest release tag determine whether a release is required and which semantic-version component changes.
 
 **Inputs**
-- `version_tag`: Required plain semantic version string in the format `1.2.3`.
-- `release_channel`: Optional stable channel indicator if the workflow supports it.
+- `main_commit`: The `main` commit being evaluated.
+- `latest_version_tag`: The latest reachable plain semantic version in the format `1.2.3`, or `0.0.0` before the first release.
+- `unreleased_commits`: Non-merge commits after `latest_version_tag`, using Conventional Commits.
 
 **Behavior**
 - Start one authoritative GitHub Actions release workflow run.
-- Associate the workflow run to the requested `version_tag`.
-- Reject malformed or duplicate tags.
+- Release `fix` and `perf` changes as a patch, `feat` changes as a minor, and breaking changes as a major.
+- Do not publish when the unreleased range contains only non-releasing commit types.
+- Create the computed plain semantic-version tag on `main` only after the artifact build succeeds.
 
 ## Release Output Contract
 
