@@ -48,11 +48,11 @@ Alternatives considered: Declaring Linux out of scope entirely would conflict wi
 
 ## Packaging Decisions
 
-Decision: Treat macOS signing and notarization as not required for this feature, but document unsigned-app expectations in installation guidance.
+Decision: Require Developer ID signing and Apple notarization for official macOS releases while keeping all Apple credentials inside the protected release environment.
 
-Rationale: The spec explicitly clarified that signing is not required. Making the unsigned state visible in documentation reduces user confusion without expanding the feature into Apple credential and notarization automation.
+Rationale: A Developer ID signature, hardened runtime, secure timestamp, and stapled notarization ticket let Gatekeeper verify the publisher and artifact integrity without requiring users to remove quarantine metadata. Keeping build and test work credential-free reduces the exposure of the signing key.
 
-Alternatives considered: Requiring signing or notarization now would add secrets management, Apple account coordination, and more failure modes. Leaving the unsigned state undocumented would create avoidable install friction.
+Alternatives considered: Ad hoc signing leaves users with Gatekeeper workarounds. Giving the unprivileged build job repository-wide secrets would expose credentials to dependency and test steps. The selected split transfers an archived app bundle into the protected job for signing, notarization, and publication.
 
 Decision: Update Homebrew cask metadata only after the macOS asset URL and checksum are known from a successful release.
 

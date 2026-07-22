@@ -72,7 +72,7 @@ The official Homebrew path is a cask in a project-owned tap.
 **User flow requirements**
 - The documented Homebrew path must support install and upgrade on supported macOS environments.
 - Installing the cask must make the app's version-matched `ssh-man` CLI available on `PATH` without a second package install.
-- The documentation must clearly state if the macOS app is unsigned.
+- The published macOS app and DMG must be Developer ID signed and accepted by Apple's notary service before the release or cask is published.
 
 ## Linux Support Contract
 

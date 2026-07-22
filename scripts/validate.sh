@@ -24,3 +24,4 @@ go test ./...
 bash "$ROOT_DIR/scripts/validate-commit-message.test.sh"
 bash "$ROOT_DIR/scripts/release-plan.test.sh"
 bash "$ROOT_DIR/scripts/create-dmg.test.sh"
+bash "$ROOT_DIR/scripts/sign-notarize-darwin-release.test.sh"

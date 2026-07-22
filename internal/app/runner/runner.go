@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	singleInstanceID               = "com.wails.ssh-man"
+	singleInstanceID               = "tech.moonpixels.ssh-man"
 	ownerStartupTimeout            = 5 * time.Second
 	explorerShutdownTimeout        = 5 * time.Second
 	shutdownTimeout                = 15 * time.Second

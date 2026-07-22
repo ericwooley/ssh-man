@@ -61,8 +61,8 @@ printf '==> Updating app bundle version to %s\n' "$VERSION"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PATH/Contents/Info.plist"
 
-printf '==> Re-signing and verifying app bundle\n'
-codesign --force --deep --sign - "$APP_PATH"
+printf '==> Applying ad hoc signature for build-job validation\n'
+codesign --force --sign - "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 printf '==> Verifying universal app executable\n'
