@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { MoonPixelsButton } from '../components/AppChrome'
 import * as defaultApi from '../lib/explorerApi'
 import { remoteContentURL } from '../lib/explorerApi'
 import MonacoPreview from './MonacoPreview'
@@ -356,7 +357,14 @@ export default function ExplorerApp({ api = defaultApi }) {
               ))}
             </nav>
           ) : null}
-          <div className="explorer-connection"><span className={phase === 'ready' ? 'is-online' : ''} />{phase === 'ready' ? 'Connected over SFTP' : 'SSH connection'}</div>
+          <div className="explorer-sidebar__footer">
+            <MoonPixelsButton
+              className="explorer-moonpixels"
+              showLabel
+              onClick={() => api.openExternalURL('https://moonpixels.tech')}
+            />
+            <div className="explorer-connection"><span className={phase === 'ready' ? 'is-online' : ''} />{phase === 'ready' ? 'Connected over SFTP' : 'SSH connection'}</div>
+          </div>
         </aside>
 
         <main className="explorer-browser" aria-busy={phase === 'loading' || phase === 'connecting'}>

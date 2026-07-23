@@ -4,7 +4,6 @@ import {
   Check,
   Copy,
   Database,
-  ExternalLink,
   FolderOpen,
   LoaderCircle,
   Keyboard,
@@ -18,7 +17,6 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import moonpixelsLogo from '../../../moonpixels.png'
 import { configurationEndpoint, findConfigurationRecord, shortcutFromKeyboardEvent } from '../model/appModel'
 import { EmptyState, IconButton, StatusPill } from '../components/AppChrome'
 
@@ -166,7 +164,6 @@ export function SettingsScreen({
   onRefreshRuntime,
   onCopyPath,
   onOpenDevTools,
-  onOpenExternalURL,
   onQuit,
 }) {
   return (
@@ -252,18 +249,6 @@ export function SettingsScreen({
           </button>
           <button className="secondary-button" type="button" onClick={onOpenDevTools}>
             <SquareTerminal aria-hidden="true" /> Devtools
-          </button>
-        </div>
-      </section>
-
-      <section className="about-card card">
-        <img src={moonpixelsLogo} alt="MoonPixels" />
-        <div>
-          <span className="eyebrow">About SSH Man</span>
-          <h2>Gifted with love by MoonPixels</h2>
-          <p>Custom apps and fast MVPs for startups and small teams.</p>
-          <button className="text-button" type="button" onClick={() => onOpenExternalURL('https://moonpixels.tech')}>
-            moonpixels.tech <ExternalLink aria-hidden="true" />
           </button>
         </div>
       </section>

@@ -417,6 +417,21 @@ describe('React application flows', () => {
     expect(api.openServerExplorer).not.toHaveBeenCalled()
   })
 
+  test('keeps the MoonPixels link in the persistent footer instead of Settings content', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderApp(api)
+
+    const moonPixelsLink = await screen.findByRole('button', { name: 'Visit MoonPixels' })
+    await user.click(moonPixelsLink)
+
+    expect(api.openExternalURL).toHaveBeenCalledWith('https://moonpixels.tech')
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByRole('button', { name: 'Visit MoonPixels' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Gifted with love by MoonPixels' })).toBeNull()
+  })
+
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi({

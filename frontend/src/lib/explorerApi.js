@@ -1,3 +1,5 @@
+export { openExternalURL } from './externalURL'
+
 function bindings() {
   if (typeof window === 'undefined') return null
   return window.go?.bindings?.ExplorerBindings || null

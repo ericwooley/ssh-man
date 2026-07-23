@@ -504,7 +504,6 @@ export default function App({ api = defaultApi, controllerOptions }) {
               onRefreshRuntime={app.refreshRuntimeSessions}
               onCopyPath={app.copyPath}
               onOpenDevTools={app.openDevTools}
-              onOpenExternalURL={app.openExternalURL}
               onQuit={app.quitApplication}
             />
           ) : null}
@@ -555,6 +554,7 @@ export default function App({ api = defaultApi, controllerOptions }) {
             current={route.tab}
             activeCount={app.liveSessions.length}
             onChange={(tab) => setRoute({ type: 'root', tab })}
+            onOpenMoonPixels={() => app.openExternalURL('https://moonpixels.tech')}
           />
         ) : null}
 

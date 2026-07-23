@@ -10,6 +10,7 @@ import {
   Settings,
   X,
 } from 'lucide-react'
+import moonpixelsLogo from '../../../moonpixels.png'
 import { statusLabel, statusTone } from '../model/appModel'
 
 export function IconButton({ label, children, className = '', ...props }) {
@@ -66,7 +67,27 @@ const navigationItems = [
   { id: 'settings', label: 'Settings', Icon: Settings },
 ]
 
-export function BottomNav({ current, activeCount, onChange }) {
+export function MoonPixelsButton({ className = '', showLabel = false, ...props }) {
+  return (
+    <button
+      className={className}
+      type="button"
+      aria-label="Visit MoonPixels"
+      title="Gifted with love by MoonPixels"
+      {...props}
+    >
+      <img src={moonpixelsLogo} alt="" aria-hidden="true" />
+      {showLabel ? (
+        <span>
+          <small>Gifted by</small>
+          <strong>MoonPixels</strong>
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+export function BottomNav({ current, activeCount, onChange, onOpenMoonPixels }) {
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
       {navigationItems.map(({ id, label, Icon }) => (
@@ -84,6 +105,7 @@ export function BottomNav({ current, activeCount, onChange }) {
           <span>{label}</span>
         </button>
       ))}
+      <MoonPixelsButton className="bottom-nav__moonpixels" onClick={onOpenMoonPixels} />
     </nav>
   )
 }

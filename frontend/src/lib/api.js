@@ -1,3 +1,5 @@
+export { openExternalURL } from './externalURL'
+
 function getRuntimeBindings() {
   if (typeof window === 'undefined') return null
   return window.go?.bindings?.AppBindings || window.go?.main?.AppBindings || null
@@ -309,15 +311,6 @@ export async function openServerExplorer(serverId) {
   return { serverId, opened: true }
 }
 
-export async function openExternalURL(url) {
-  if (typeof window !== 'undefined' && window.runtime?.BrowserOpenURL) {
-    return window.runtime.BrowserOpenURL(url)
-  }
-
-  if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
-}
 
 export async function listRuntimeSessions() {
   if (hasWailsRuntime()) {
