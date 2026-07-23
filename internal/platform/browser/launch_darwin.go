@@ -7,18 +7,18 @@ import (
 	"path/filepath"
 )
 
-func launchDarwin(appDataDir string, serverID string, option BrowserOption, socksPort int) error {
+func launchDarwin(appDataDir string, serverID string, option BrowserOption, socksPort int, rawURL string) error {
 	if !option.SupportsProxyLaunch {
-		return fmt.Errorf("%s does not support proxy launch in this MVP", option.DisplayName)
+		return fmt.Errorf("%s is configured for regular URL launches only", option.DisplayName)
 	}
-	if option.ID == "firefox" {
-		return launchDarwinFirefox(appDataDir, serverID, option, socksPort)
+	if browserEngine(option) == BrowserEngineFirefox {
+		return launchDarwinFirefox(appDataDir, serverID, option, socksPort, rawURL)
 	}
 	profileDir, err := ensureDarwinBrowserProfile(appDataDir, serverID, option)
 	if err != nil {
 		return fmt.Errorf("prepare browser profile: %w", err)
 	}
-	cmd := exec.Command(
+	arguments := []string{
 		"open",
 		"-na",
 		option.LaunchReference,
@@ -26,22 +26,32 @@ func launchDarwin(appDataDir string, serverID string, option BrowserOption, sock
 		fmt.Sprintf("--proxy-server=socks5://localhost:%d", socksPort),
 		fmt.Sprintf("--user-data-dir=%s", profileDir),
 		"--proxy-bypass-list=<-loopback>",
-	)
-	return cmd.Start()
+	}
+	if rawURL != "" {
+		arguments = append(arguments, rawURL)
+	}
+	return exec.Command(arguments[0], arguments[1:]...).Start()
 }
 
-func launchDarwinFirefox(appDataDir string, serverID string, option BrowserOption, socksPort int) error {
+func launchDarwinFirefox(appDataDir string, serverID string, option BrowserOption, socksPort int, rawURL string) error {
 	profileDir, err := ensureFirefoxProfile(appDataDir, serverID, option, socksPort)
 	if err != nil {
 		return fmt.Errorf("prepare firefox profile: %w", err)
 	}
 
-	executable := filepath.Join(option.LaunchReference, "Contents", "MacOS", "firefox")
+	executable := option.ExecutableReference
+	if executable == "" {
+		executable = filepath.Join(option.LaunchReference, "Contents", "MacOS", "firefox")
+	}
 	if _, err := os.Stat(executable); err == nil {
-		return exec.Command(executable, "-new-instance", "-profile", profileDir).Start()
+		arguments := []string{"-new-instance", "-profile", profileDir}
+		if rawURL != "" {
+			arguments = append(arguments, rawURL)
+		}
+		return exec.Command(executable, arguments...).Start()
 	}
 
-	return exec.Command(
+	arguments := []string{
 		"open",
 		"-na",
 		option.LaunchReference,
@@ -49,7 +59,15 @@ func launchDarwinFirefox(appDataDir string, serverID string, option BrowserOptio
 		"-new-instance",
 		"-profile",
 		profileDir,
-	).Start()
+	}
+	if rawURL != "" {
+		arguments = append(arguments, rawURL)
+	}
+	return exec.Command(arguments[0], arguments[1:]...).Start()
+}
+
+func openDarwinBrowserURL(option BrowserOption, rawURL string) error {
+	return exec.Command("open", "-a", option.LaunchReference, rawURL).Start()
 }
 
 func ensureDarwinBrowserProfile(appDataDir string, serverID string, option BrowserOption) (string, error) {

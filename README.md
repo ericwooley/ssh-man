@@ -43,12 +43,14 @@ That means you can develop on a remote machine while keeping a workflow that sti
 
 - Save servers and multiple tunnel configurations under each one
 - Run local forwards and SOCKS5 proxies from the same UI
-- Launch supported browsers through a running SOCKS5 tunnel
+- Launch common or user-defined browsers through a running SOCKS5 tunnel
 - Open one persistent native file-explorer window per saved server
 - Edit and safely save remote source in Monaco with optional Vim controls
 - Favorite per-server folders, render Markdown, and safely render HTML with relative assets
 - Download remote files or complete folders over SFTP
 - Switch directly between proxy-launched and regular browser instances with a configurable global shortcut on macOS
+- Set SSH Man as the macOS default browser and route links by ordered regular-expression rules
+- Detect which connected SSH hosts accept a `localhost` URL's port and open the link through the matching SOCKS5 browser
 - Preview the exact browser command before launch
 - Use the local SSH agent by default
 - Support encrypted private keys when you need file-based auth
@@ -150,7 +152,9 @@ When a SOCKS tunnel is connected, `ssh-man` can:
 - preview the launch command
 - launch the browser with SOCKS settings and an isolated per-server profile
 
-Chromium-based browsers are launched with a SOCKS5 proxy flag and dedicated user-data directory. Firefox gets a generated profile configured for the proxy. Unsupported browsers are shown clearly instead of failing mysteriously.
+Chromium-based browsers are launched with a SOCKS5 proxy flag and dedicated user-data directory. Firefox-compatible browsers, including Zen, get a generated profile configured for the proxy. SSH Man detects common Chrome, Chromium, Brave, Edge, Arc, Vivaldi, Opera, Firefox, Zen, LibreWolf, Floorp, Waterfox, Safari, Orion, and DuckDuckGo installations where those apps are available.
+
+Add any other browser under **Settings → URL routing → Custom browsers** by selecting its application or executable and choosing Chromium-compatible, Firefox-compatible, or regular-links-only launch behavior. Regular-only is the safe choice for an app that does not accept either browser engine's profile arguments.
 
 ### Remote file explorer
 
@@ -163,6 +167,20 @@ Markdown has rendered and source views. HTML, SVG, PDF, images, audio, and video
 ### Quick browser switching
 
 On macOS, hold `Alt` and press `X` by default to move forward through running browsers, or `Z` to move backward. Keep `Alt` held while cycling, then release it to activate the selected browser, like the macOS application switcher; press `Escape` to cancel. Proxy-launched instances are labeled with their SSH Man server, while ordinary instances of the same browser are labeled `Regular`. Both directions wrap and recently activated targets are ordered first. Record either global shortcut under **Settings → Quick browser switching**; the two shortcuts must share the same held `Control`, `Alt`, and `Command` modifiers. Choose **Customize** there to give each proxy or regular browser a persistent primary color and either a built-in icon or emoji mark.
+
+### Default-browser URL routing
+
+On macOS, open **Settings → URL routing** to choose a regular fallback browser, choose the browser used for SOCKS5 launches, add arbitrary browser applications, and make SSH Man the HTTP/HTTPS handler. Zen is detected as a Firefox-compatible browser and is available for both ordinary links and isolated SOCKS5 launches.
+
+Rules are evaluated from top to bottom and the first matching regular expression wins. A matching rule can open the URL in an installed browser or run a command template. Command templates must contain `<URL>`; SSH Man inserts the URL as escaped shell data, so a template such as `open -a "Zen" "ext+container:name=Work&url=<URL>"` can target a browser-specific container.
+
+When no rule matches a loopback URL such as `http://localhost:3000`, SSH Man:
+
+1. Starts the managed browser proxy for each saved server when SSH Man is the default browser.
+2. Probes `127.0.0.1:3000` through each connected SOCKS5 proxy.
+3. Opens the URL through the only matching server, asks which server to use if several match, or uses the selected fallback browser if none match.
+
+Only `http` and `https` URLs are accepted. URL credentials and non-web schemes are rejected.
 
 ## Install
 

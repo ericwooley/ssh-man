@@ -33,6 +33,10 @@ func (s *Service) ListByServer(ctx context.Context, serverID string) ([]Connecti
 	return s.store.ListByServer(ctx, serverID)
 }
 
+func (s *Service) ListAll(ctx context.Context) ([]ConnectionConfiguration, error) {
+	return s.store.ListAll(ctx)
+}
+
 func (s *Service) Get(ctx context.Context, id string) (ConnectionConfiguration, error) {
 	return s.store.Get(ctx, id)
 }

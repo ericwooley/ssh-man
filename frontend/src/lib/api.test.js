@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  openSettingsWindow,
   onBrowserSwitcherCancelRequested,
   onBrowserSwitcherCommitRequested,
   onBrowserSwitcherRequested,
@@ -41,6 +42,17 @@ describe('browser appearance persistence', () => {
       'proxy:server-1:google-chrome',
       { icon: 'icon:x', primaryColor: '#22C55E' },
     )
+  })
+})
+
+describe('settings window launcher', () => {
+  test('uses the dedicated settings launcher binding', async () => {
+    const Open = vi.fn(async () => undefined)
+    window.go = { bindings: { SettingsLauncherBindings: { Open } } }
+
+    await openSettingsWindow()
+
+    expect(Open).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -13,14 +13,18 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"ssh-man/internal/app/bindings"
 	"ssh-man/internal/app/bootstrap"
 	"ssh-man/internal/app/explorerwindow"
 	appmenu "ssh-man/internal/app/menu"
+	"ssh-man/internal/app/settingswindow"
 	appwindow "ssh-man/internal/app/window"
 	"ssh-man/internal/control"
+	preferencesdomain "ssh-man/internal/domain/preferences"
+	urlroutingdomain "ssh-man/internal/domain/urlrouting"
 	"ssh-man/internal/platform/menubar"
 	"ssh-man/internal/platform/paths"
 )
@@ -34,6 +38,9 @@ const (
 	browserSwitcherOpenEventName   = "browser-switcher:open"
 	browserSwitcherCommitEventName = "browser-switcher:commit"
 	browserSwitcherCancelEventName = "browser-switcher:cancel"
+	urlRouteChoiceEventName        = "url-routing:choice"
+	preferencesChangedEventName    = "preferences:changed"
+	urlRoutingStartupWait          = 12 * time.Second
 )
 
 type menuBar interface {
@@ -335,6 +342,8 @@ func Run(assets fs.FS) (runErr error) {
 	app := bindings.NewAppBindingsWithApplication(application, window)
 	explorerManager := explorerwindow.NewManager()
 	explorerLauncher := bindings.NewExplorerLauncherBindingsWithDependencies(application.ServerService, explorerManager.Launch)
+	settingsManager := settingswindow.NewManager()
+	settingsLauncher := bindings.NewSettingsLauncherBindingsWithDependency(settingsManager.Launch)
 	browserSwitchEvents := newBrowserSwitchEventDispatcher(func(event browserSwitchEvent) {
 		ctx, contextErr := window.Context()
 		if contextErr == nil {
@@ -388,11 +397,41 @@ func Run(assets fs.FS) (runErr error) {
 	show := func() error {
 		return showApplication(bar, window)
 	}
-	controlServer := control.NewServer(
-		paths.ControlSocketPath(application.ConfigDir),
-		newControlBackend(application, window, show),
-	)
-	lifecycle := newApplicationLifecycle(controlServer, bar, application.SessionService.StartOnLaunch, explorerManager.Shutdown, app.Shutdown)
+	application.URLRoutingService.SetPresenter(func(request urlroutingdomain.RouteRequest) {
+		if err := show(); err != nil {
+			log.Printf("show URL routing chooser: %v", err)
+		}
+		if ctx, contextErr := window.Context(); contextErr == nil {
+			wailsruntime.EventsEmit(ctx, urlRouteChoiceEventName, request)
+		}
+	})
+	controlBackend := newControlBackend(application, window, show)
+	controlBackend.SavePreferences = func(_ context.Context, preferences preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
+		saved, saveErr := app.SavePreferences(preferences)
+		if saveErr == nil {
+			if ctx, contextErr := window.Context(); contextErr == nil {
+				wailsruntime.EventsEmit(ctx, preferencesChangedEventName, saved)
+			}
+		}
+		return saved, saveErr
+	}
+	controlServer := control.NewServer(paths.ControlSocketPath(application.ConfigDir), controlBackend)
+	urlRoutingReady := make(chan struct{})
+	var urlRoutingReadyOnce sync.Once
+	startConfiguredTunnels := func(ctx context.Context) error {
+		defer urlRoutingReadyOnce.Do(func() { close(urlRoutingReady) })
+		startOnLaunchErr := application.SessionService.StartOnLaunch(ctx)
+		status, statusErr := application.DefaultBrowser.Status()
+		if statusErr != nil || !status.IsDefault {
+			return errors.Join(startOnLaunchErr, statusErr)
+		}
+		_, managedErr := application.SessionService.StartManagedSOCKSProxies(ctx)
+		return errors.Join(startOnLaunchErr, managedErr)
+	}
+	shutdownCompanions := func(ctx context.Context) error {
+		return errors.Join(settingsManager.Shutdown(ctx), explorerManager.Shutdown(ctx))
+	}
+	lifecycle := newApplicationLifecycle(controlServer, bar, startConfiguredTunnels, shutdownCompanions, app.Shutdown)
 	defer func() {
 		bar.Stop()
 		browserSwitchEvents.Close()
@@ -404,11 +443,26 @@ func Run(assets fs.FS) (runErr error) {
 		return fmt.Errorf("start control service: %w", err)
 	}
 
-	runErr = wails.Run(newOptions(assets, app, explorerLauncher, window, bar, lifecycle))
+	runErr = wails.Run(newOptionsWithURLHandler(assets, app, explorerLauncher, settingsLauncher, window, bar, lifecycle, func(rawURL string) {
+		go func() {
+			select {
+			case <-urlRoutingReady:
+			case <-time.After(urlRoutingStartupWait):
+				log.Printf("URL routing proxy startup timed out; routing with currently connected proxies")
+			}
+			if _, routeErr := application.URLRoutingService.Handle(context.Background(), rawURL); routeErr != nil {
+				log.Printf("route opened URL %q: %v", rawURL, routeErr)
+			}
+		}()
+	}))
 	return runErr
 }
 
-func newOptions(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
+func newOptions(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, settingsLauncher *bindings.SettingsLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
+	return newOptionsWithURLHandler(assets, app, explorerLauncher, settingsLauncher, window, bar, lifecycle, nil)
+}
+
+func newOptionsWithURLHandler(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, settingsLauncher *bindings.SettingsLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle, onURLOpen func(string)) *options.App {
 	appOptions := &options.App{
 		Title:  "SSH Man",
 		Width:  420,
@@ -417,7 +471,10 @@ func newOptions(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindi
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		Bind: append([]interface{}{app, explorerLauncher}, additionalBindingsForGeneration()...),
+		Bind: append([]interface{}{app, explorerLauncher, settingsLauncher}, additionalBindingsForGeneration()...),
+		Mac: &mac.Options{
+			OnUrlOpen: onURLOpen,
+		},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: singleInstanceID,
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) {

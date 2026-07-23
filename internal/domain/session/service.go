@@ -154,6 +154,52 @@ func (s *Service) StartOnLaunch(ctx context.Context) error {
 	return errors.Join(startErrors...)
 }
 
+func (s *Service) StartManagedSOCKSProxies(ctx context.Context) ([]RuntimeSession, error) {
+	configurations, err := s.configs.ListAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load automatic browser proxies: %w", err)
+	}
+	managed := make([]configdomain.ConnectionConfiguration, 0)
+	for _, configuration := range configurations {
+		if configdomain.IsManagedSOCKSConfigurationID(configuration.ID) {
+			managed = append(managed, configuration)
+		}
+	}
+
+	type startResult struct {
+		state   RuntimeSession
+		started bool
+		err     error
+	}
+	results := make([]startResult, len(managed))
+	var wait sync.WaitGroup
+	for index, configuration := range managed {
+		index, configuration := index, configuration
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			state, started, startErr := s.startIfInactive(ctx, configuration.ID)
+			if startErr != nil {
+				startErr = fmt.Errorf("%s: %w", configuration.Label, startErr)
+			}
+			results[index] = startResult{state: state, started: started, err: startErr}
+		}()
+	}
+	wait.Wait()
+
+	states := make([]RuntimeSession, 0, len(results))
+	startErrors := make([]error, 0)
+	for _, result := range results {
+		if result.started {
+			states = append(states, result.state)
+		}
+		if result.err != nil {
+			startErrors = append(startErrors, result.err)
+		}
+	}
+	return states, errors.Join(startErrors...)
+}
+
 func configurationsStartingOnLaunch(configurations []configdomain.ConnectionConfiguration) []configdomain.ConnectionConfiguration {
 	selected := make([]configdomain.ConnectionConfiguration, 0, len(configurations))
 	for _, configuration := range configurations {

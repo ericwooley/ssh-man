@@ -8,7 +8,7 @@ import (
 )
 
 func previewLaunchCommand(appDataDir string, serverID string, option BrowserOption, socksPort int) string {
-	if option.ID == "firefox" {
+	if browserEngine(option) == BrowserEngineFirefox {
 		return formatCommand("open", "-na", option.LaunchReference, "--args", "-new-instance", "-profile", filepath.Join(profileScope(appDataDir, serverID, option), "firefox"))
 	}
 	return formatCommand(

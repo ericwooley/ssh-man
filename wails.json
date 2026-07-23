@@ -8,5 +8,19 @@
   "frontend:dir": "frontend",
   "author": {
     "name": "OpenCode"
+  },
+  "info": {
+    "protocols": [
+      {
+        "scheme": "http",
+        "description": "HTTP web links",
+        "role": "Viewer"
+      },
+      {
+        "scheme": "https",
+        "description": "HTTPS web links",
+        "role": "Viewer"
+      }
+    ]
   }
 }

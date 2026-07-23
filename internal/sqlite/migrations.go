@@ -114,6 +114,34 @@ func RunMigrations(db *sql.DB) error {
 	); err != nil {
 		return err
 	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"default_browser_id",
+		`ALTER TABLE user_preferences ADD COLUMN default_browser_id TEXT NOT NULL DEFAULT '';`,
+	); err != nil {
+		return err
+	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"proxy_browser_id",
+		`ALTER TABLE user_preferences ADD COLUMN proxy_browser_id TEXT NOT NULL DEFAULT '';`,
+	); err != nil {
+		return err
+	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"url_rules_json",
+		`ALTER TABLE user_preferences ADD COLUMN url_rules_json TEXT NOT NULL DEFAULT '[]';`,
+	); err != nil {
+		return err
+	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"custom_browsers_json",
+		`ALTER TABLE user_preferences ADD COLUMN custom_browsers_json TEXT NOT NULL DEFAULT '[]';`,
+	); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migrations: %w", err)

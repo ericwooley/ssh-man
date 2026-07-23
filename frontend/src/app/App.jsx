@@ -9,6 +9,7 @@ import {
 } from '../components/AppChrome'
 import { ConfirmDialog, UnlockDialog } from '../components/Dialogs'
 import { BrowserSwitcher } from '../components/BrowserSwitcher'
+import { URLRouteChooser } from '../components/URLRouteChooser'
 import { ActivityScreen, SettingsScreen } from '../screens/ActivitySettingsScreens'
 import { ServerFormScreen, TunnelFormScreen } from '../screens/FormScreens'
 import { ServerDetailScreen, ServersScreen } from '../screens/ServersScreens'
@@ -29,7 +30,6 @@ import { useSshMan } from './useSshMan'
 const rootCopy = {
   servers: { title: 'SSH Man', subtitle: 'Servers and tunnels' },
   activity: { title: 'Active tunnels', subtitle: 'Live connections' },
-  settings: { title: 'Settings', subtitle: 'Appearance and app health' },
 }
 
 function emptyBrowserSwitcherState() {
@@ -45,12 +45,13 @@ function emptyBrowserSwitcherState() {
   }
 }
 
-export default function App({ api = defaultApi, controllerOptions }) {
+export default function App({ api = defaultApi, controllerOptions, settingsWindow = false }) {
   const app = useSshMan(api, controllerOptions)
   const [route, setRoute] = useState({ type: 'root', tab: 'servers' })
   const [form, setForm] = useState(null)
   const [confirmation, setConfirmation] = useState(null)
   const [browserSwitcher, setBrowserSwitcher] = useState(emptyBrowserSwitcherState)
+  const [urlRouteRequest, setURLRouteRequest] = useState(null)
   const browserSwitcherRef = useRef(browserSwitcher)
   const pendingBrowserSwitcherDirectionsRef = useRef({ sessionId: '', directions: [] })
   const pendingBrowserSwitcherCommitSessionRef = useRef('')
@@ -174,8 +175,10 @@ export default function App({ api = defaultApi, controllerOptions }) {
 
   const closeBrowserSwitcher = useCallback(() => {
     resetBrowserSwitcher()
-    void api.hideApplicationWindow?.()
-  }, [api, resetBrowserSwitcher])
+    if (!settingsWindow) {
+      void api.hideApplicationWindow?.()
+    }
+  }, [api, resetBrowserSwitcher, settingsWindow])
 
   const activateBrowserTarget = useCallback(async (target, sessionId = browserSwitcherRef.current.sessionId) => {
     const current = browserSwitcherRef.current
@@ -190,12 +193,14 @@ export default function App({ api = defaultApi, controllerOptions }) {
       browserSwitcherLoadIdRef.current += 1
       pendingBrowserSwitcherDirectionsRef.current = { sessionId: '', directions: [] }
       updateBrowserSwitcher(emptyBrowserSwitcherState())
-      await api.hideApplicationWindow?.()
+      if (!settingsWindow) {
+        await api.hideApplicationWindow?.()
+      }
     } catch (error) {
       if (activationId !== browserSwitcherActivationIdRef.current || browserSwitcherRef.current.sessionId !== sessionId) return
       updateBrowserSwitcher((state) => ({ ...state, activating: false, error: error.message || 'The browser is no longer available.' }))
     }
-  }, [api, updateBrowserSwitcher])
+  }, [api, settingsWindow, updateBrowserSwitcher])
 
   const commitBrowserSwitcher = useCallback((request = {}) => {
     const current = browserSwitcherRef.current
@@ -243,6 +248,21 @@ export default function App({ api = defaultApi, controllerOptions }) {
   }, [api, cancelBrowserSwitcher])
 
   useEffect(() => {
+    let active = true
+    void api.pendingURLRoute?.()?.then((request) => {
+        if (active && request?.id) setURLRouteRequest(request)
+      })
+      .catch(() => {})
+    const unsubscribe = api.onURLRouteChoiceRequested?.((request) => {
+      if (request?.id) setURLRouteRequest(request)
+    })
+    return () => {
+      active = false
+      unsubscribe?.()
+    }
+  }, [api])
+
+  useEffect(() => {
     const pendingSessionId = pendingBrowserSwitcherCommitSessionRef.current
     if (!pendingSessionId || browserSwitcher.loading) return
     pendingBrowserSwitcherCommitSessionRef.current = ''
@@ -286,13 +306,13 @@ export default function App({ api = defaultApi, controllerOptions }) {
       } else if (route.type === 'server') {
         event.preventDefault()
         setRoute({ type: 'root', tab: 'servers' })
-      } else {
+      } else if (!settingsWindow) {
         app.hideWindow?.()
       }
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [app, confirmation, form, route.type])
+  }, [app, confirmation, form, route.type, settingsWindow])
 
   function openServer(serverId) {
     app.selectServer(serverId)
@@ -399,6 +419,75 @@ export default function App({ api = defaultApi, controllerOptions }) {
     )
   }
 
+  if (urlRouteRequest) {
+    return (
+      <div className="window-shell url-route-mode">
+        <div className="app-frame url-route-frame">
+          <URLRouteChooser
+            request={urlRouteRequest}
+            onChoose={async (choiceID) => {
+              await api.resolveURLRoute(urlRouteRequest.id, choiceID)
+              setURLRouteRequest(null)
+              await api.hideApplicationWindow?.()
+            }}
+            onDismiss={() => {
+              void api.dismissURLRoute?.(urlRouteRequest.id)
+              setURLRouteRequest(null)
+              void api.hideApplicationWindow?.()
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  if (settingsWindow) {
+    return (
+      <div className="window-shell settings-window-mode">
+        <div className="app-frame" aria-busy={app.phase === 'loading'}>
+          <AppHeader title="Settings" subtitle="Browser routing, shortcuts, and app preferences" />
+          <main className="app-content">
+            {app.phase === 'loading' ? <LoadingScreen /> : null}
+            {app.phase === 'error' ? (
+              <div className="screen-scroll screen-scroll--centered">
+                <EmptyState
+                  icon={CircleAlert}
+                  title="Settings did not load"
+                  description={app.storageIssue || 'Check the database and try again.'}
+                  action={<button className="primary-button" type="button" onClick={() => app.hydrate()}>Try again</button>}
+                />
+              </div>
+            ) : null}
+            {app.phase === 'ready' ? (
+              <SettingsScreen
+                preferences={app.preferences}
+                diagnostics={app.diagnostics}
+                storageIssue={app.storageIssue}
+                runtimeFresh={app.runtimeFresh}
+                onToggleTheme={app.toggleTheme}
+                onSetBrowserSwitcherShortcut={app.setBrowserSwitcherShortcut}
+                onSetBrowserSwitcherBackwardShortcut={app.setBrowserSwitcherBackwardShortcut}
+                onOpenBrowserSwitcher={openBrowserSwitcher}
+                urlRoutingState={app.urlRoutingState}
+                onLoadURLRouting={app.loadURLRoutingSettings}
+                onSaveURLRouting={app.saveURLRoutingSettings}
+                onChooseBrowserApplication={app.chooseBrowserApplication}
+                onSetDefaultBrowser={app.setAsDefaultBrowser}
+                onReload={app.hydrate}
+                onRefreshRuntime={app.refreshRuntimeSessions}
+                onCopyPath={app.copyPath}
+                onOpenDevTools={app.openDevTools}
+                onQuit={app.quitApplication}
+                standalone
+              />
+            ) : null}
+          </main>
+          <ToastRegion notification={app.notification} onDismiss={app.dismissNotification} />
+        </div>
+      </div>
+    )
+  }
+
   if (form?.type === 'server') {
     return (
       <div className="window-shell">
@@ -490,24 +579,6 @@ export default function App({ api = defaultApi, controllerOptions }) {
             />
           ) : null}
 
-          {app.phase === 'ready' && route.type === 'root' && route.tab === 'settings' ? (
-            <SettingsScreen
-              preferences={app.preferences}
-              diagnostics={app.diagnostics}
-              storageIssue={app.storageIssue}
-              runtimeFresh={app.runtimeFresh}
-              onToggleTheme={app.toggleTheme}
-              onSetBrowserSwitcherShortcut={app.setBrowserSwitcherShortcut}
-              onSetBrowserSwitcherBackwardShortcut={app.setBrowserSwitcherBackwardShortcut}
-              onOpenBrowserSwitcher={openBrowserSwitcher}
-              onReload={app.hydrate}
-              onRefreshRuntime={app.refreshRuntimeSessions}
-              onCopyPath={app.copyPath}
-              onOpenDevTools={app.openDevTools}
-              onQuit={app.quitApplication}
-            />
-          ) : null}
-
           {app.phase === 'ready' && route.type === 'server' && app.selectedServerRecord ? (
             <ServerDetailScreen
               record={app.selectedServerRecord}
@@ -553,7 +624,13 @@ export default function App({ api = defaultApi, controllerOptions }) {
           <BottomNav
             current={route.tab}
             activeCount={app.liveSessions.length}
-            onChange={(tab) => setRoute({ type: 'root', tab })}
+            onChange={(tab) => {
+              if (tab === 'settings') {
+                void app.openSettingsWindow()
+                return
+              }
+              setRoute({ type: 'root', tab })
+            }}
             onOpenMoonPixels={() => app.openExternalURL('https://moonpixels.tech')}
           />
         ) : null}

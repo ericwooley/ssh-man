@@ -9,9 +9,10 @@ import (
 func TestBuildRunningTargetsDistinguishesProxyAndRegularBrowserInstances(t *testing.T) {
 	appDataDir := "/Users/eric/Library/Application Support/ssh-man"
 	browsers := []BrowserOption{{
-		ID:              "google-chrome",
-		DisplayName:     "Google Chrome",
-		LaunchReference: "/Applications/Google Chrome.app",
+		ID:                  "google-chrome",
+		DisplayName:         "Google Chrome",
+		LaunchReference:     "/Applications/Google Chrome.app",
+		ExecutableReference: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 	}}
 	servers := []serverdomain.Server{{ID: "server-prod", Name: "Production"}}
 	processes := []browserProcess{
@@ -33,12 +34,37 @@ func TestBuildRunningTargetsDistinguishesProxyAndRegularBrowserInstances(t *test
 }
 
 func TestBuildRunningTargetsRecognizesFirefoxProfilesWithSpaces(t *testing.T) {
-	browsers := []BrowserOption{{ID: "firefox", DisplayName: "Firefox", LaunchReference: "/Applications/Firefox.app"}}
+	browsers := []BrowserOption{{
+		ID:                  "firefox",
+		DisplayName:         "Firefox",
+		LaunchReference:     "/Applications/Firefox.app",
+		ExecutableReference: "/Applications/Firefox.app/Contents/MacOS/firefox",
+	}}
 	servers := []serverdomain.Server{{ID: "server-staging", Name: "Staging"}}
 	command := "/Applications/Firefox.app/Contents/MacOS/firefox -new-instance -profile /Users/test/Library/Application Support/ssh-man/browser-profiles/server-staging/firefox/firefox"
 
 	targets := buildRunningTargets("/Users/test/Library/Application Support/ssh-man", browsers, servers, []browserProcess{{PID: 404, Command: command}})
 	if len(targets) != 1 || targets[0].Kind != RunningTargetProxy || targets[0].ServerName != "Staging" {
 		t.Fatalf("unexpected firefox targets: %#v", targets)
+	}
+}
+
+func TestBuildRunningTargetsRecognizesCustomBrowserExecutable(t *testing.T) {
+	browsers := []BrowserOption{{
+		ID:                  "custom-kagi",
+		DisplayName:         "Kagi Browser",
+		LaunchReference:     "/Applications/Kagi Browser.app",
+		ExecutableReference: "/Applications/Kagi Browser.app/Contents/MacOS/Kagi Browser",
+		Engine:              BrowserEngineChromium,
+		Custom:              true,
+	}}
+	processes := []browserProcess{{
+		PID:     505,
+		Command: "/Applications/Kagi Browser.app/Contents/MacOS/Kagi Browser",
+	}}
+
+	targets := buildRunningTargets("/tmp/ssh-man", browsers, nil, processes)
+	if len(targets) != 1 || targets[0].BrowserID != "custom-kagi" || targets[0].Kind != RunningTargetRegular {
+		t.Fatalf("custom browser targets = %#v", targets)
 	}
 }

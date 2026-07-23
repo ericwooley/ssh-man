@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log"
 	"os/user"
 	"sort"
 
@@ -14,6 +15,7 @@ import (
 	serverdomain "ssh-man/internal/domain/server"
 	sessiondomain "ssh-man/internal/domain/session"
 	"ssh-man/internal/platform/browser"
+	"ssh-man/internal/platform/defaultbrowser"
 )
 
 func newControlBackend(app *bootstrap.Application, window *appwindow.Controller, show func() error) control.Backend {
@@ -119,6 +121,18 @@ func newControlBackend(app *bootstrap.Application, window *appwindow.Controller,
 		},
 		SavePreferences: func(ctx context.Context, preferences preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
 			return app.PreferencesService.Save(ctx, preferences)
+		},
+		SetDefaultBrowser: func(ctx context.Context) (defaultbrowser.Status, error) {
+			status, err := app.DefaultBrowser.SetAsDefault()
+			if err != nil {
+				return status, err
+			}
+			go func() {
+				if _, startErr := app.SessionService.StartManagedSOCKSProxies(context.Background()); startErr != nil {
+					log.Printf("start URL routing browser proxies: %v", startErr)
+				}
+			}()
+			return status, nil
 		},
 		Show: show,
 		Hide: window.Hide,

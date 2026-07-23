@@ -95,7 +95,7 @@ export function ServersScreen({
               </button>
               <div className="server-row__actions">
                 <IconButton
-                  label={`Open Chrome through ${item.server.name}`}
+                label={`Open browser through ${item.server.name}`}
                   className={`server-row__quick-action is-browser ${managedSession?.status === 'connected' ? 'is-connected' : ''}`.trim()}
                   disabled={!managedProxy || browserPending}
                   onClick={() => onOpenBrowser(item.server.id)}

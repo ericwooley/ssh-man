@@ -218,6 +218,8 @@ func (s *Server) dispatch(ctx context.Context, request Request) (any, error) {
 			return nil, fmt.Errorf("preferences payload is required")
 		}
 		return call1(ctx, s.backend.SavePreferences, *request.Preferences)
+	case "browser.default.set":
+		return call0(ctx, s.backend.SetDefaultBrowser)
 	case "app.show":
 		return nil, callVoid0(s.backend.Show)
 	case "app.hide":
