@@ -1,0 +1,9 @@
+overrides:
+  dompurify: 3.4.12
+
+minimumReleaseAgeExclude:
+  - lucide-react@1.26.0
+
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true

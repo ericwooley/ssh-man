@@ -13,8 +13,8 @@ VM_SSH_WAIT_SECONDS="${SSH_MAN_E2E_SSH_WAIT_SECONDS:-300}"
 VM_LAUNCH_ATTEMPTS="${SSH_MAN_E2E_VM_LAUNCH_ATTEMPTS:-4}"
 VM_LAUNCH_RETRY_SECONDS="${SSH_MAN_E2E_VM_LAUNCH_RETRY_SECONDS:-10}"
 GO_VERSION="${SSH_MAN_E2E_GO_VERSION:-$(awk '/^go / { print $2; exit }' "$ROOT_DIR/go.mod")}"
-NODE_MAJOR="${SSH_MAN_E2E_NODE_MAJOR:-25}"
-PNPM_VERSION="${SSH_MAN_E2E_PNPM_VERSION:-10.34.5}"
+NODE_MAJOR="${SSH_MAN_E2E_NODE_MAJOR:-26}"
+PNPM_VERSION="${SSH_MAN_E2E_PNPM_VERSION:-11.17.0}"
 VM_NAME="${SSH_MAN_E2E_VM_NAME:-ssh-man-e2e-$(date +%Y%m%d-%H%M%S)-$$}"
 ARTIFACT_DIR="${SSH_MAN_E2E_ARTIFACT_DIR:-$ROOT_DIR/build/e2e-vm/$VM_NAME}"
 VM_CREATED=0
@@ -474,7 +474,7 @@ run_guest() {
     cd "$source_dir"
     ./scripts/pnpm.sh install --frozen-lockfile
     ./scripts/pnpm.sh run build
-    go run github.com/wailsapp/wails/v2/cmd/wails@v2.12.0 build \
+    go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build \
       -clean \
       -s \
       -tags webkit2_41
@@ -523,9 +523,9 @@ Optional environment:
   SSH_MAN_E2E_VM_LAUNCH_ATTEMPTS=4
   SSH_MAN_E2E_VM_LAUNCH_RETRY_SECONDS=10
   SSH_MAN_E2E_VM_NAME=ssh-man-e2e-custom
-  SSH_MAN_E2E_GO_VERSION=1.25.0
-  SSH_MAN_E2E_NODE_MAJOR=25
-  SSH_MAN_E2E_PNPM_VERSION=10.34.5
+  SSH_MAN_E2E_GO_VERSION=1.26.5
+  SSH_MAN_E2E_NODE_MAJOR=26
+  SSH_MAN_E2E_PNPM_VERSION=11.17.0
 USAGE
 }
 
