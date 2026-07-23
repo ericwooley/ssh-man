@@ -180,6 +180,29 @@ func TestStartRequiresUnlockWhenKeyIsEncrypted(t *testing.T) {
 	}
 }
 
+func TestStartRecordsRejectedSSHAuthenticationAsFailedAuth(t *testing.T) {
+	runtimes := NewRuntimeStore()
+	history := &stubHistoryStore{}
+	service := NewService(
+		stubConfigStore{item: configdomain.ConnectionConfiguration{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "MacBook", Host: "mac.example.test", Port: 22, Username: "tester", AuthMode: serverdomain.AuthModePrivateKey, KeyReference: "/Users/tester/.ssh/id_ed25519"}},
+		history,
+		runtimes,
+	)
+	service.factory = &stubFactory{runners: []*stubRunner{{startErr: errors.New("connect to ssh server: ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain")}}}
+
+	state, err := service.Start(context.Background(), "config-1")
+	if err != nil {
+		t.Fatalf("start tunnel: %v", err)
+	}
+	if state.Status != StatusFailed {
+		t.Fatalf("expected failed state, got %s", state.Status)
+	}
+	if len(history.entries) != 1 || history.entries[0].Outcome != OutcomeFailedAuth {
+		t.Fatalf("expected failed auth history entry, got %+v", history.entries)
+	}
+}
+
 func TestHandleDisconnectMovesToFailedWithoutReconnect(t *testing.T) {
 	runtimes := NewRuntimeStore()
 	service := NewService(nil, nil, nil, runtimes)

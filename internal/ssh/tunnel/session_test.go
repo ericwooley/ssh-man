@@ -49,6 +49,42 @@ func TestDescribeStartErrorForMissingSSHAgentSocket(t *testing.T) {
 	}
 }
 
+func TestDescribeStartErrorForRejectedSSHAuthentication(t *testing.T) {
+	message := DescribeStartError(
+		errors.New("connect to ssh server: ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain"),
+		serverdomain.Server{
+			Host:         "mac.example.test",
+			Port:         22,
+			Username:     "tester",
+			AuthMode:     serverdomain.AuthModePrivateKey,
+			KeyReference: "/Users/tester/.ssh/id_ed25519",
+		},
+		configdomain.ConnectionConfiguration{ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080},
+	)
+
+	if want := `The SSH key "/Users/tester/.ssh/id_ed25519" was rejected for tester@mac.example.test`; !strings.Contains(message, want) {
+		t.Fatalf("expected %q in %q", want, message)
+	}
+	if strings.Contains(message, "Couldn't reach") {
+		t.Fatalf("authentication failure was incorrectly described as a reachability failure: %q", message)
+	}
+}
+
+func TestDescribeStartErrorForChangedHostKey(t *testing.T) {
+	message := DescribeStartError(
+		errors.New("connect to ssh server: ssh: handshake failed: knownhosts: key mismatch"),
+		serverdomain.Server{Host: "mac.example.test", Port: 22, Username: "tester"},
+		configdomain.ConnectionConfiguration{ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080},
+	)
+
+	if want := "host key for mac.example.test does not match"; !strings.Contains(strings.ToLower(message), want) {
+		t.Fatalf("expected %q in %q", want, message)
+	}
+	if strings.Contains(message, "Couldn't reach") {
+		t.Fatalf("host-key failure was incorrectly described as a reachability failure: %q", message)
+	}
+}
+
 func TestDescribeDisconnectErrorForSOCKSHealthCheckFailure(t *testing.T) {
 	message := DescribeDisconnectError(errors.New("socks proxy health check failed: read socks handshake response: EOF"))
 	if want := "SOCKS5 proxy"; !strings.Contains(message, want) {

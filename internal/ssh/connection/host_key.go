@@ -3,6 +3,7 @@ package connection
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -18,6 +19,30 @@ var systemKnownHostsPaths = []string{
 // KnownHostsCallback verifies SSH server identities against the same default
 // user and system known_hosts files used by OpenSSH.
 func KnownHostsCallback() (ssh.HostKeyCallback, error) {
+	files, err := knownHostsFiles()
+	if err != nil {
+		return nil, err
+	}
+	return hostKeyCallbackFromFiles(files)
+}
+
+func knownHostsConfiguration(address string) (ssh.HostKeyCallback, []string, error) {
+	files, err := knownHostsFiles()
+	if err != nil {
+		return nil, nil, err
+	}
+	callback, err := hostKeyCallbackFromFiles(files)
+	if err != nil {
+		return nil, nil, err
+	}
+	algorithms, err := hostKeyAlgorithmsForAddress(callback, files, address)
+	if err != nil {
+		return nil, nil, err
+	}
+	return callback, algorithms, nil
+}
+
+func knownHostsFiles() ([]string, error) {
 	candidates := make([]string, 0, 4)
 	homeDirectory, homeErr := os.UserHomeDir()
 	if homeErr == nil {
@@ -35,7 +60,7 @@ func KnownHostsCallback() (ssh.HostKeyCallback, error) {
 	if len(files) == 0 && homeErr != nil {
 		return nil, fmt.Errorf("find SSH home directory: %w", homeErr)
 	}
-	return hostKeyCallbackFromFiles(files)
+	return files, nil
 }
 
 func existingKnownHostsFiles(candidates []string) ([]string, error) {
@@ -64,4 +89,67 @@ func hostKeyCallbackFromFiles(files []string) (ssh.HostKeyCallback, error) {
 		return nil, fmt.Errorf("load SSH known_hosts: %w", err)
 	}
 	return callback, nil
+}
+
+func hostKeyAlgorithmsForAddress(callback ssh.HostKeyCallback, files []string, address string) ([]string, error) {
+	var preferred []string
+	for _, file := range files {
+		contents, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("read SSH known_hosts file %q: %w", file, err)
+		}
+		for {
+			_, _, key, _, rest, err := ssh.ParseKnownHosts(contents)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("parse SSH known_hosts file %q: %w", file, err)
+			}
+			contents = rest
+			if err := callback(address, knownHostAddress(address), key); err == nil {
+				preferred = appendUnique(preferred, algorithmsForKnownHostKey(key)...)
+			}
+		}
+	}
+	if len(preferred) == 0 {
+		return nil, nil
+	}
+
+	algorithms := append([]string{}, preferred...)
+	algorithms = appendUnique(algorithms, ssh.SupportedAlgorithms().HostKeys...)
+	algorithms = appendUnique(algorithms, ssh.InsecureAlgorithms().HostKeys...)
+	return algorithms, nil
+}
+
+func algorithmsForKnownHostKey(key ssh.PublicKey) []string {
+	if key.Type() == ssh.KeyAlgoRSA {
+		return []string{ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSA}
+	}
+	return []string{key.Type()}
+}
+
+func appendUnique(values []string, candidates ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(candidates))
+	for _, value := range values {
+		seen[value] = struct{}{}
+	}
+	for _, candidate := range candidates {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		values = append(values, candidate)
+	}
+	return values
+}
+
+type knownHostAddress string
+
+func (a knownHostAddress) Network() string {
+	return "tcp"
+}
+
+func (a knownHostAddress) String() string {
+	return string(a)
 }

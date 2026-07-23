@@ -44,6 +44,28 @@ func TestHostKeyCallbackFromFilesRequiresAKnownHostsSource(t *testing.T) {
 	}
 }
 
+func TestHostKeyAlgorithmsForAddressPrioritizesTheTrustedKeyType(t *testing.T) {
+	knownKey := testHostPublicKey(t)
+	knownHostsPath := filepath.Join(t.TempDir(), "known_hosts")
+	line := knownhosts.Line([]string{"mac.example.test"}, knownKey) + "\n"
+	if err := os.WriteFile(knownHostsPath, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	callback, err := hostKeyCallbackFromFiles([]string{knownHostsPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	algorithms, err := hostKeyAlgorithmsForAddress(callback, []string{knownHostsPath}, "mac.example.test:22")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(algorithms) == 0 || algorithms[0] != ssh.KeyAlgoED25519 {
+		t.Fatalf("host key algorithms = %v, want %q first", algorithms, ssh.KeyAlgoED25519)
+	}
+}
+
 func testHostPublicKey(t *testing.T) ssh.PublicKey {
 	t.Helper()
 	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
