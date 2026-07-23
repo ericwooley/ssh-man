@@ -318,7 +318,11 @@ func (s *Service) start(ctx context.Context, configurationID string, passphrase 
 		detail := tunnel.DescribeStartError(startErr, server, configuration)
 		state := RuntimeSession{ConfigurationID: configurationID, Status: StatusFailed, StatusDetail: detail, StartedAt: starting.StartedAt, LastStateChangeAt: time.Now().UTC(), LastError: startErr.Error()}
 		s.runtimes.SetWithToken(state, nil, passphrase, runtimeToken)
-		_ = s.recordHistory(ctx, configurationID, starting.StartedAt, OutcomeFailedRuntime, state.StatusDetail)
+		outcome := OutcomeFailedRuntime
+		if auth.IsAuthenticationRejected(startErr) {
+			outcome = OutcomeFailedAuth
+		}
+		_ = s.recordHistory(ctx, configurationID, starting.StartedAt, outcome, state.StatusDetail)
 		return state, nil
 	}
 

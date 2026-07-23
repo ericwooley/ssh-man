@@ -20,7 +20,7 @@ func DialSSH(ctx context.Context, server serverdomain.Server, authMethod ssh.Aut
 	if err != nil {
 		return nil, fmt.Errorf("connect to ssh server: resolve OpenSSH configuration: %w", err)
 	}
-	hostKeyCallback, err := KnownHostsCallback()
+	hostKeyCallback, hostKeyAlgorithms, err := knownHostsConfiguration(endpoint.HostKeyAddress)
 	if err != nil {
 		return nil, fmt.Errorf("configure SSH host key verification: %w", err)
 	}
@@ -36,10 +36,11 @@ func DialSSH(ctx context.Context, server serverdomain.Server, authMethod ssh.Aut
 	}
 	_ = netConn.SetDeadline(handshakeDeadline)
 	config := &ssh.ClientConfig{
-		User:            server.Username,
-		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: hostKeyCallback,
-		Timeout:         sshDialTimeout,
+		User:              server.Username,
+		Auth:              []ssh.AuthMethod{authMethod},
+		HostKeyCallback:   hostKeyCallback,
+		HostKeyAlgorithms: hostKeyAlgorithms,
+		Timeout:           sshDialTimeout,
 	}
 	sshConn, channels, requests, err := ssh.NewClientConn(netConn, endpoint.HostKeyAddress, config)
 	if err != nil {

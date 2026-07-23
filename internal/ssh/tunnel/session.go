@@ -12,6 +12,7 @@ import (
 
 	configdomain "ssh-man/internal/domain/config"
 	serverdomain "ssh-man/internal/domain/server"
+	"ssh-man/internal/ssh/auth"
 	sshconnection "ssh-man/internal/ssh/connection"
 
 	"golang.org/x/crypto/ssh"
@@ -327,6 +328,16 @@ func DescribeStartError(err error, server serverdomain.Server, config configdoma
 	switch {
 	case strings.Contains(message, "ssh_auth_sock"):
 		return "SSH agent authentication is selected, but this app cannot reach your local SSH agent. Start your SSH agent, ensure SSH_AUTH_SOCK is available to the app, then retry."
+	case strings.Contains(message, "knownhosts: key mismatch"):
+		return fmt.Sprintf("The SSH host key for %s does not match the trusted key in known_hosts. Verify the host identity and update the OpenSSH known_hosts entry before retrying.", server.Host)
+	case strings.Contains(message, "knownhosts: key is unknown"):
+		return fmt.Sprintf("No trusted SSH host key was found for %s. Connect once with OpenSSH to verify and trust this host, then retry.", server.Host)
+	case auth.IsAuthenticationRejected(err):
+		target := fmt.Sprintf("%s@%s", server.Username, server.Host)
+		if server.AuthMode == serverdomain.AuthModePrivateKey {
+			return fmt.Sprintf("The SSH key %q was rejected for %s. Confirm the username, then add the matching public key to the remote account's ~/.ssh/authorized_keys and retry.", server.KeyReference, target)
+		}
+		return fmt.Sprintf("The SSH agent's keys were rejected for %s. Confirm the username and load a key authorized for that remote account, then retry.", target)
 	case strings.Contains(message, "bind local port"):
 		return fmt.Sprintf("Couldn't listen on localhost:%d. Another app may already be using that port. Stop the conflicting app or choose another port, then retry.", config.BoundPort())
 	case strings.Contains(message, "connect to ssh server"):
