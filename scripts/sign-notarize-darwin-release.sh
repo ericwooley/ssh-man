@@ -151,7 +151,7 @@ set +e
   --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
   --keychain "$NOTARY_KEYCHAIN_PATH" \
   --wait \
-  --timeout 20m \
+  --timeout 2h \
   --output-format json >"$SUBMISSION_OUTPUT"
 submission_exit=$?
 set -e

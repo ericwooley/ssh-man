@@ -141,6 +141,7 @@ esac
 grep -Fq 'codesign <--force> <--timestamp> <--sign> <Developer ID Application: Moonpixels (TEAM12345)>' "$TOOL_LOG" || fail "DMG was not signed"
 grep -Fq 'xcrun <notarytool> <submit>' "$TOOL_LOG" || fail "DMG was not submitted for notarization"
 grep -Fq '<--wait>' "$TOOL_LOG" || fail "notarization submission did not wait for a result"
+grep -Fq '<--timeout> <2h>' "$TOOL_LOG" || fail "notarization submission did not allow Apple up to two hours"
 grep -Fq '<--keychain-profile> <ssh-man-notary>' "$TOOL_LOG" || fail "notary keychain profile was not used"
 grep -Fq 'xcrun <stapler> <staple>' "$TOOL_LOG" || fail "notarization ticket was not stapled"
 grep -Fq 'xcrun <stapler> <validate>' "$TOOL_LOG" || fail "stapled ticket was not validated"
