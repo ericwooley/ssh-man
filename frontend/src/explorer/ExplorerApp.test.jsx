@@ -46,6 +46,7 @@ function fakeApi() {
       revision: 'revision-2',
     })),
     download: vi.fn(async () => ['/Users/eric/Downloads/README.md']),
+    openExternalURL: vi.fn(async () => undefined),
   }
 }
 
@@ -55,6 +56,16 @@ describe('server explorer window', () => {
   test('uses browser-compatible local storage', () => {
     expect(typeof window.localStorage.clear).toBe('function')
     expect(typeof window.localStorage.getItem).toBe('function')
+  })
+
+  test('keeps the MoonPixels link visible in the explorer sidebar', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Visit MoonPixels' }))
+
+    expect(api.openExternalURL).toHaveBeenCalledWith('https://moonpixels.tech')
   })
 
   test('browses folders and renders remote markdown', async () => {
