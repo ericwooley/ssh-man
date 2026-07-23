@@ -467,7 +467,15 @@ export default function App({ api = defaultApi, controllerOptions }) {
           ) : null}
 
           {app.phase === 'ready' && route.type === 'root' && route.tab === 'servers' ? (
-            <ServersScreen servers={app.servers} sessions={app.runtimeSessions} onAdd={openNewServer} onOpen={openServer} />
+            <ServersScreen
+              servers={app.servers}
+              sessions={app.runtimeSessions}
+              pending={app.pending}
+              onAdd={openNewServer}
+              onOpen={openServer}
+              onOpenBrowser={app.openServerBrowser}
+              onOpenExplorer={app.openServerExplorer}
+            />
           ) : null}
 
           {app.phase === 'ready' && route.type === 'root' && route.tab === 'activity' ? (
@@ -515,7 +523,6 @@ export default function App({ api = defaultApi, controllerOptions }) {
               onStopTunnel={app.stopTunnel}
               onStartAll={app.startAll}
               onRefreshRuntime={app.refreshRuntimeSessions}
-              onOpenWorkspace={app.openServerWorkspace}
             />
           ) : null}
 

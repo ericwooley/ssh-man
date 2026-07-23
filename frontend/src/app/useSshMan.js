@@ -55,7 +55,7 @@ export function useSshMan(api = defaultApi, options = {}) {
   const [historyByConfiguration, setHistoryByConfiguration] = useState({})
   const [historyLoadingId, setHistoryLoadingId] = useState('')
   const [unlockRequest, setUnlockRequest] = useState(null)
-  const [workspaceAfterUnlock, setWorkspaceAfterUnlock] = useState(null)
+  const [browserAfterUnlock, setBrowserAfterUnlock] = useState(null)
   const [browserState, setBrowserState] = useState({
     configurationId: '',
     items: [],
@@ -433,32 +433,22 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }), [api, applySessions, notify, refreshRuntimeSessions, requestUnlock, runPending])
 
-  const launchWorkspaceTools = useCallback(async (serverId, configurationId) => {
-    const [browserResult, explorerResult] = await Promise.allSettled([
-      api.launchBrowserThroughSocks(configurationId, 'google-chrome'),
-      api.openServerExplorer(serverId),
-    ])
-    if (browserResult.status === 'fulfilled' && explorerResult.status === 'fulfilled') {
-      notify('success', 'Chrome and the server explorer are open.')
+  const launchServerBrowser = useCallback(async (serverName, configurationId) => {
+    try {
+      await api.launchBrowserThroughSocks(configurationId, 'google-chrome')
+      notify('success', `Chrome is open through ${serverName}.`)
       return true
+    } catch (error) {
+      notify('danger', `Chrome could not be opened through ${serverName}.`, error.message || '')
+      return false
     }
-
-    const failures = []
-    if (browserResult.status === 'rejected') {
-      failures.push(`Chrome: ${browserResult.reason?.message || 'launch failed'}`)
-    }
-    if (explorerResult.status === 'rejected') {
-      failures.push(`Explorer: ${explorerResult.reason?.message || 'launch failed'}`)
-    }
-    notify('danger', 'The complete server workspace could not be opened.', failures.join(' '))
-    return false
   }, [api, notify])
 
-  const openServerWorkspace = useCallback((serverId) => runPending(`workspace:${serverId}`, async () => {
+  const openServerBrowser = useCallback((serverId) => runPending(`browser:${serverId}`, async () => {
     const record = servers.find((item) => item.server.id === serverId)
     const managedProxy = record?.configurations.find(isManagedSOCKSConfiguration)
     if (!record || !managedProxy) {
-      notify('danger', 'The server workspace could not be opened.', 'The automatic browser proxy is unavailable.')
+      notify('danger', 'Chrome could not be opened.', 'The automatic browser proxy is unavailable.')
       return false
     }
 
@@ -469,24 +459,24 @@ export function useSshMan(api = defaultApi, options = {}) {
         applySessions([session])
       }
       if (session?.status === 'needs_attention') {
-        setWorkspaceAfterUnlock({ serverId, configurationId: managedProxy.id })
+        setBrowserAfterUnlock({ serverName: record.server.name, configurationId: managedProxy.id })
         requestUnlock([session])
         return false
       }
       if (session?.status !== 'connected') {
-        notify('danger', 'The server workspace could not be opened.', session?.statusDetail || 'The browser proxy did not connect.')
+        notify('danger', `Chrome could not be opened through ${record.server.name}.`, session?.statusDetail || 'The browser proxy did not connect.')
         return false
       }
 
-      setWorkspaceAfterUnlock(null)
-      const opened = await launchWorkspaceTools(serverId, managedProxy.id)
+      setBrowserAfterUnlock(null)
+      const opened = await launchServerBrowser(record.server.name, managedProxy.id)
       await refreshRuntimeSessions({ quiet: true })
       return opened
     } catch (error) {
-      notify('danger', 'The server workspace could not be opened.', error.message || '')
+      notify('danger', `Chrome could not be opened through ${record.server.name}.`, error.message || '')
       return false
     }
-  }), [api, applySessions, launchWorkspaceTools, notify, refreshRuntimeSessions, requestUnlock, runPending, runtimeSessions, servers])
+  }), [api, applySessions, launchServerBrowser, notify, refreshRuntimeSessions, requestUnlock, runPending, runtimeSessions, servers])
 
   const submitUnlock = useCallback((secret) => {
     if (!unlockRequest) return Promise.resolve(null)
@@ -505,12 +495,12 @@ export function useSshMan(api = defaultApi, options = {}) {
           setUnlockRequest(null)
           notify('success', `${nextSessions.filter((session) => session.status === 'connected').length} tunnel${nextSessions.length === 1 ? '' : 's'} unlocked.`)
           if (
-            workspaceAfterUnlock &&
-            nextSessions.some((session) => session.configurationId === workspaceAfterUnlock.configurationId && session.status === 'connected')
+            browserAfterUnlock &&
+            nextSessions.some((session) => session.configurationId === browserAfterUnlock.configurationId && session.status === 'connected')
           ) {
-            const workspace = workspaceAfterUnlock
-            setWorkspaceAfterUnlock(null)
-            await launchWorkspaceTools(workspace.serverId, workspace.configurationId)
+            const browser = browserAfterUnlock
+            setBrowserAfterUnlock(null)
+            await launchServerBrowser(browser.serverName, browser.configurationId)
           }
         }
         await refreshRuntimeSessions({ quiet: true })
@@ -520,11 +510,11 @@ export function useSshMan(api = defaultApi, options = {}) {
         return null
       }
     })
-  }, [api, applySessions, launchWorkspaceTools, notify, refreshRuntimeSessions, requestUnlock, runPending, unlockRequest, workspaceAfterUnlock])
+  }, [api, applySessions, browserAfterUnlock, launchServerBrowser, notify, refreshRuntimeSessions, requestUnlock, runPending, unlockRequest])
 
   const closeUnlock = useCallback(() => {
     setUnlockRequest(null)
-    setWorkspaceAfterUnlock(null)
+    setBrowserAfterUnlock(null)
   }, [])
 
   const openUnlock = useCallback((configurationId) => {
@@ -664,15 +654,16 @@ export function useSshMan(api = defaultApi, options = {}) {
   }, [api, notify])
 
   const openServerExplorer = useCallback((serverId) => runPending(`explore-server:${serverId}`, async () => {
+    const serverName = servers.find((item) => item.server.id === serverId)?.server.name || 'Server'
     try {
       await api.openServerExplorer(serverId)
-      notify('success', 'Server explorer opened in its own window.')
+      notify('success', `${serverName} explorer opened in its own window.`)
       return true
     } catch (error) {
       notify('danger', 'The server explorer could not be opened.', error.message || '')
       return false
     }
-  }), [api, notify, runPending])
+  }), [api, notify, runPending, servers])
 
   return {
     phase,
@@ -725,7 +716,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     copyPath,
     openDevTools,
     openServerExplorer,
-    openServerWorkspace,
+    openServerBrowser,
     hideWindow: api.hideApplicationWindow,
     quitApplication: api.quitApplication,
     openExternalURL: api.openExternalURL,

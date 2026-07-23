@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  FolderOpen,
   Globe2,
   KeyRound,
   LoaderCircle,
@@ -25,7 +26,15 @@ function serverLiveCount(item, sessions) {
   return sessions.filter((session) => ids.has(session.configurationId) && ['starting', 'connected', 'reconnecting', 'needs_attention'].includes(session.status)).length
 }
 
-export function ServersScreen({ servers, sessions, onAdd, onOpen }) {
+export function ServersScreen({
+  servers,
+  sessions,
+  pending = {},
+  onAdd,
+  onOpen,
+  onOpenBrowser,
+  onOpenExplorer,
+}) {
   if (!servers.length) {
     return (
       <div className="screen-scroll screen-scroll--centered" aria-label="Servers">
@@ -60,9 +69,20 @@ export function ServersScreen({ servers, sessions, onAdd, onOpen }) {
         {servers.map((item) => {
           const liveCount = serverLiveCount(item, sessions)
           const tunnelCount = userConfigurations(item.configurations).length
+          const managedProxy = item.configurations.find(isManagedSOCKSConfiguration) || null
+          const managedSession = managedProxy
+            ? sessions.find((session) => session.configurationId === managedProxy.id) || null
+            : null
+          const browserPending = Boolean(pending[`browser:${item.server.id}`])
+          const explorerPending = Boolean(pending[`explore-server:${item.server.id}`])
           return (
             <li key={item.server.id} className="server-row">
-              <button className="row-main" type="button" onClick={() => onOpen(item.server.id)}>
+              <button
+                className="row-main server-row__main"
+                type="button"
+                aria-label={`Open ${item.server.name} details`}
+                onClick={() => onOpen(item.server.id)}
+              >
                 <span className="server-avatar" aria-hidden="true">{item.server.name.slice(0, 2).toUpperCase()}</span>
                 <span className="row-copy">
                   <strong>{item.server.name}</strong>
@@ -72,8 +92,36 @@ export function ServersScreen({ servers, sessions, onAdd, onOpen }) {
                     {liveCount ? <span className="live-inline"> · {liveCount} active</span> : null}
                   </span>
                 </span>
-                <ArrowRight aria-hidden="true" />
               </button>
+              <div className="server-row__actions">
+                <IconButton
+                  label={`Open Chrome through ${item.server.name}`}
+                  className={`server-row__quick-action is-browser ${managedSession?.status === 'connected' ? 'is-connected' : ''}`.trim()}
+                  disabled={!managedProxy || browserPending}
+                  onClick={() => onOpenBrowser(item.server.id)}
+                >
+                  {browserPending
+                    ? <LoaderCircle className="spin" aria-hidden="true" />
+                    : <Globe2 aria-hidden="true" />}
+                </IconButton>
+                <IconButton
+                  label={`Open ${item.server.name} explorer`}
+                  className="server-row__quick-action is-explorer"
+                  disabled={explorerPending}
+                  onClick={() => onOpenExplorer(item.server.id)}
+                >
+                  {explorerPending
+                    ? <LoaderCircle className="spin" aria-hidden="true" />
+                    : <FolderOpen aria-hidden="true" />}
+                </IconButton>
+                <IconButton
+                  label={`Show ${item.server.name} details`}
+                  className="server-row__details"
+                  onClick={() => onOpen(item.server.id)}
+                >
+                  <ArrowRight aria-hidden="true" />
+                </IconButton>
+              </div>
             </li>
           )
         })}
@@ -127,7 +175,6 @@ export function ServerDetailScreen({
   onStopTunnel,
   onStartAll,
   onRefreshRuntime,
-  onOpenWorkspace,
 }) {
   const { server, configurations } = record
   const tunnels = userConfigurations(configurations)
@@ -142,7 +189,6 @@ export function ServerDetailScreen({
     return sessionCapabilities(session).canStart
   }).length
   const bulkPending = Boolean(pending[`start-all:${server.id}`])
-  const workspacePending = Boolean(pending[`workspace:${server.id}`])
 
   return (
     <div className="detail-layout" aria-label={`${server.name} tunnels`}>
@@ -186,17 +232,6 @@ export function ServerDetailScreen({
               </IconButton>
             ) : null}
           </div>
-          <button
-            className="primary-button primary-button--full"
-            type="button"
-            disabled={workspacePending || !managedProxy}
-            onClick={() => onOpenWorkspace(server.id)}
-          >
-            {workspacePending
-              ? <LoaderCircle className="spin" aria-hidden="true" />
-              : <Globe2 aria-hidden="true" />}
-            {workspacePending ? 'Opening…' : 'Open Chrome + files'}
-          </button>
           {!runtimeFresh && tunnels.length ? (
             <button
               className="secondary-button secondary-button--full"

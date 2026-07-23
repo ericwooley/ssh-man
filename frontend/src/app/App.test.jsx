@@ -215,7 +215,7 @@ function renderApp(api, controllerOptions = {}) {
 
 async function openSavedTunnel(user, api) {
   renderApp(api)
-  await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+  await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
   const tunnelLabel = await screen.findByText('Admin database')
   await user.click(tunnelLabel.closest('button'))
   await screen.findByRole('button', { name: 'Start tunnel' })
@@ -274,7 +274,7 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
     await user.click(screen.getByRole('button', { name: 'Edit Production bastion' }))
     const socksPort = screen.getByLabelText(/^Browser SOCKS port/)
     expect(socksPort.value).toBe('55123')
@@ -311,7 +311,7 @@ describe('React application flows', () => {
     const { api } = createFakeApi({ servers: [{ server: savedServer, configurations: [] }] })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
     await user.click(screen.getAllByRole('button', { name: 'Add tunnel' })[0])
     const label = screen.getByLabelText('Label')
     await user.click(screen.getByRole('button', { name: 'Save tunnel' }))
@@ -346,7 +346,7 @@ describe('React application flows', () => {
     expect(screen.getByText('16379 → 127.0.0.1:6379')).toBeTruthy()
   })
 
-  test('opens Chrome through the automatic server proxy and the explorer with one action', async () => {
+  test('offers independent browser and explorer quick launchers on each server card', async () => {
     const user = userEvent.setup()
     const managedStopped = {
       ...stoppedSession,
@@ -358,17 +358,21 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
-    expect(screen.getByRole('heading', { name: 'No tunnels yet' })).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Open Chrome + files' }))
+    const browserLauncher = await screen.findByRole('button', { name: 'Open Chrome through Production bastion' })
+    const explorerLauncher = screen.getByRole('button', { name: 'Open Production bastion explorer' })
+    await user.click(browserLauncher)
 
     await waitFor(() => expect(api.startConfiguration).toHaveBeenCalledWith(managedBrowserProxy.id))
     await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, 'google-chrome'))
+    expect(api.openServerExplorer).not.toHaveBeenCalled()
+    expect(await screen.findByText('Chrome is open through Production bastion.')).toBeTruthy()
+
+    await user.click(explorerLauncher)
     await waitFor(() => expect(api.openServerExplorer).toHaveBeenCalledWith(savedServer.id))
-    expect(await screen.findByText('Chrome and the server explorer are open.')).toBeTruthy()
+    expect(api.launchBrowserThroughSocks).toHaveBeenCalledTimes(1)
   })
 
-  test('resumes the combined workspace action after unlocking an encrypted key', async () => {
+  test('resumes the row browser launcher after unlocking an encrypted key', async () => {
     const user = userEvent.setup()
     const managedStopped = {
       ...stoppedSession,
@@ -400,8 +404,7 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
-    await user.click(screen.getByRole('button', { name: 'Open Chrome + files' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Chrome through Production bastion' }))
     expect(await screen.findByRole('dialog', { name: 'Unlock SSH key' })).toBeTruthy()
     expect(api.launchBrowserThroughSocks).not.toHaveBeenCalled()
     expect(api.openServerExplorer).not.toHaveBeenCalled()
@@ -411,7 +414,7 @@ describe('React application flows', () => {
 
     await waitFor(() => expect(api.submitKeyUnlock).toHaveBeenCalledWith(managedBrowserProxy.id, 'secret'))
     await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, 'google-chrome'))
-    await waitFor(() => expect(api.openServerExplorer).toHaveBeenCalledWith(savedServer.id))
+    expect(api.openServerExplorer).not.toHaveBeenCalled()
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {
@@ -460,7 +463,7 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
     await user.click(screen.getByRole('button', { name: 'Start inactive tunnel' }))
 
     await waitFor(() => expect(api.startServerConfigurations).toHaveBeenCalledWith(savedServer.id))
@@ -488,7 +491,7 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
     await user.click(screen.getByRole('button', { name: 'Start all 2 inactive tunnels' }))
 
     expect(await screen.findByText('Starting inactive tunnels did not complete.')).toBeTruthy()
@@ -506,7 +509,7 @@ describe('React application flows', () => {
     api.listRuntimeSessions.mockRejectedValue(new Error('runtime unavailable'))
     renderApp(api, { pollMs: 5 })
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
     expect(await screen.findByRole('button', { name: 'Refresh live status' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Start inactive tunnel' })).toBeNull()
     expect(screen.getByRole('button', { name: /Refresh live status before controlling Admin database/ }).disabled).toBe(true)
@@ -576,7 +579,7 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
     await user.click(screen.getByRole('button', { name: 'Start Admin database' }))
 
     let alert = await screen.findByRole('alert')
