@@ -84,6 +84,34 @@ describe('server explorer window', () => {
     expect(await screen.findByText('This folder is empty')).toBeTruthy()
   })
 
+  test('renders video previews with a full-size native video player', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    api.listDirectory.mockImplementation(async () => ({
+      path: '/home/deploy',
+      entries: [
+        { name: 'capture.mp4', path: '/home/deploy/capture.mp4', kind: 'file', size: 1400000, modifiedAt: '2026-07-22T12:00:00Z' },
+      ],
+    }))
+    api.previewFile.mockResolvedValue({
+      path: '/home/deploy/capture.mp4',
+      name: 'capture.mp4',
+      kind: 'video',
+      mimeType: 'video/mp4',
+      size: 1400000,
+    })
+    render(<ExplorerApp api={api} />)
+
+    await user.click(await screen.findByRole('option', { name: /capture\.mp4/ }))
+
+    const player = await screen.findByLabelText('capture.mp4 video preview')
+    expect(player.tagName).toBe('VIDEO')
+    expect(player.hasAttribute('controls')).toBe(true)
+    expect(player.getAttribute('src')).toBe('/__ssh_man_remote__/raw/home/deploy/capture.mp4')
+    expect(screen.getByText('Video preview')).toBeTruthy()
+    expect(screen.queryByTitle('capture.mp4 browser preview')).toBeNull()
+  })
+
   test('downloads the selected remote file through the native destination flow', async () => {
     const user = userEvent.setup()
     const api = fakeApi()
