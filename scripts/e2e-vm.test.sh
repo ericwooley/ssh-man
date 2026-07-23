@@ -36,8 +36,29 @@ set -euo pipefail
 printf '<%s>' "$@" >>"${FAKE_MULTIPASS_LOG:?}"
 printf '\n' >>"$FAKE_MULTIPASS_LOG"
 
-if [ "${1:-}" = "info" ] && [ "${FAKE_MULTIPASS_INFO_MISSING:-0}" = "1" ]; then
-  exit 1
+if [ "${1:-}" = "info" ]; then
+  if [ "${FAKE_MULTIPASS_INFO_AFTER_LAUNCH_FAILURE:-0}" = "1" ] &&
+    [ -f "${FAKE_MULTIPASS_LAUNCH_STATE:?}" ]; then
+    exit 0
+  fi
+  if [ "${FAKE_MULTIPASS_INFO_MISSING:-0}" = "1" ]; then
+    exit 1
+  fi
+fi
+if [ "${1:-}" = "launch" ] &&
+  [ "${FAKE_MULTIPASS_LAUNCH_FAILURES:-0}" -gt 0 ]; then
+  launch_state="${FAKE_MULTIPASS_LAUNCH_STATE:?}"
+  launch_attempt=0
+  if [ -f "$launch_state" ]; then
+    launch_attempt="$(cat "$launch_state")"
+  fi
+  launch_attempt=$((launch_attempt + 1))
+  printf '%s\n' "$launch_attempt" >"$launch_state"
+  if [ "$launch_attempt" -le "$FAKE_MULTIPASS_LAUNCH_FAILURES" ]; then
+    printf '%s\n' \
+      "${FAKE_MULTIPASS_LAUNCH_ERROR:-launch failed: Remote \"release\" is unknown or unreachable.}" >&2
+    exit 2
+  fi
 fi
 if [ "${1:-}" = "exec" ] &&
   [ "${FAKE_MULTIPASS_GUEST_FAILURE:-0}" = "1" ] &&
@@ -64,6 +85,56 @@ grep -Fq '<delete><--purge><ssh-man-e2e-cleanup>' "$TOOL_LOG" ||
 VM_CREATED=0
 cleanup_vm
 [ ! -s "$TOOL_LOG" ] || fail "cleanup must not delete a VM that was not created"
+
+: >"$TOOL_LOG"
+set +e
+FAKE_MULTIPASS_INFO_MISSING=1 \
+FAKE_MULTIPASS_INFO_AFTER_LAUNCH_FAILURE=1 \
+FAKE_MULTIPASS_LAUNCH_FAILURES=2 \
+FAKE_MULTIPASS_LAUNCH_STATE="$TEST_DIR/retryable-launch.state" \
+FAKE_MULTIPASS_GUEST_FAILURE=1 \
+SSH_MAN_E2E_MULTIPASS_BIN="$FAKE_MULTIPASS" \
+SSH_MAN_E2E_VM_NAME="ssh-man-e2e-launch-retry" \
+SSH_MAN_E2E_VM_LAUNCH_RETRY_SECONDS=1 \
+SSH_MAN_E2E_ARTIFACT_DIR="$TEST_DIR/retryable-launch-artifacts" \
+FAKE_MULTIPASS_LOG="$TOOL_LOG" \
+  bash "$ROOT_DIR/scripts/e2e-vm.sh" >"$TEST_DIR/retryable-launch.log" 2>&1
+retryable_launch_status=$?
+set -e
+[ "$retryable_launch_status" -eq 42 ] ||
+  fail "host orchestration must retry transient launch failures and reach the guest scenario"
+[ "$(grep -Fc '<launch><24.04>' "$TOOL_LOG")" -eq 3 ] ||
+  fail "transient Multipass launch failures must be retried twice before success"
+[ "$(grep -Fc '<delete><--purge><ssh-man-e2e-launch-retry>' "$TOOL_LOG")" -eq 3 ] ||
+  fail "partial and successful VM instances must each be purged exactly once"
+for attempt in 1 2 3; do
+  [ -f "$TEST_DIR/retryable-launch-artifacts/multipass-launch-attempt-$attempt.log" ] ||
+    fail "each Multipass launch attempt must preserve a diagnostic log"
+done
+grep -Fq 'Retrying Multipass launch' "$TEST_DIR/retryable-launch.log" ||
+  fail "transient launch retries must be visible in the host log"
+
+: >"$TOOL_LOG"
+set +e
+FAKE_MULTIPASS_INFO_MISSING=1 \
+FAKE_MULTIPASS_LAUNCH_FAILURES=4 \
+FAKE_MULTIPASS_LAUNCH_STATE="$TEST_DIR/permanent-launch.state" \
+FAKE_MULTIPASS_LAUNCH_ERROR='launch failed: Invalid memory size' \
+SSH_MAN_E2E_MULTIPASS_BIN="$FAKE_MULTIPASS" \
+SSH_MAN_E2E_VM_NAME="ssh-man-e2e-launch-permanent" \
+SSH_MAN_E2E_VM_LAUNCH_RETRY_SECONDS=1 \
+SSH_MAN_E2E_ARTIFACT_DIR="$TEST_DIR/permanent-launch-artifacts" \
+FAKE_MULTIPASS_LOG="$TOOL_LOG" \
+  bash "$ROOT_DIR/scripts/e2e-vm.sh" >"$TEST_DIR/permanent-launch.log" 2>&1
+permanent_launch_status=$?
+set -e
+[ "$permanent_launch_status" -ne 0 ] ||
+  fail "a permanent Multipass launch failure must fail the host orchestration"
+[ "$(grep -Fc '<launch><24.04>' "$TOOL_LOG")" -eq 1 ] ||
+  fail "permanent Multipass launch failures must not be retried"
+if grep -Fq '<delete><--purge><ssh-man-e2e-launch-permanent>' "$TOOL_LOG"; then
+  fail "a launch failure before VM creation must not trigger a bogus delete"
+fi
 
 : >"$TOOL_LOG"
 set +e
