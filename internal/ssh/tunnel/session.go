@@ -46,19 +46,9 @@ func (s *Session) Start() error {
 	if err != nil {
 		return err
 	}
-	hostKeyCallback, err := sshconnection.KnownHostsCallback()
+	client, err := sshconnection.DialSSH(context.Background(), s.server, authMethod)
 	if err != nil {
-		return fmt.Errorf("configure SSH host key verification: %w", err)
-	}
-
-	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", s.server.Host, s.server.Port), &ssh.ClientConfig{
-		User:            s.server.Username,
-		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: hostKeyCallback,
-		Timeout:         10 * time.Second,
-	})
-	if err != nil {
-		return fmt.Errorf("connect to ssh server: %w", err)
+		return err
 	}
 	s.client = client
 
