@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ssh-man-e2e-vm-test.XXXXXX")"
+CI_WORKFLOW="$ROOT_DIR/.github/workflows/ci.yml"
 
 cleanup_test() {
   rm -rf "$TEST_DIR"
@@ -94,5 +95,32 @@ grep -Fq 'tunnel start' "$ROOT_DIR/scripts/e2e-vm.sh" ||
   fail "guest scenario must start tunnels through the CLI"
 grep -Fq 'ssh-man-e2e.invalid' "$ROOT_DIR/scripts/e2e-vm.sh" ||
   fail "guest scenario must exercise an OpenSSH Host alias"
+
+VM_E2E_JOB="$(
+  awk '
+    /^  vm-e2e:$/ {
+      in_job = 1
+    }
+    in_job && /^  [a-zA-Z0-9_-]+:$/ && $0 != "  vm-e2e:" {
+      exit
+    }
+    in_job {
+      print
+    }
+  ' "$CI_WORKFLOW"
+)"
+
+[ -n "$VM_E2E_JOB" ] ||
+  fail "CI must define a vm-e2e job"
+grep -Fqx '    needs: validate' <<<"$VM_E2E_JOB" ||
+  fail "VM E2E must wait for regular validation to pass"
+grep -Fqx '    runs-on: ubuntu-24.04' <<<"$VM_E2E_JOB" ||
+  fail "VM E2E must use the pinned Ubuntu runner required by Multipass"
+grep -Fq 'sudo snap install multipass' <<<"$VM_E2E_JOB" ||
+  fail "VM E2E must install Multipass"
+grep -Eq '^[[:space:]]+\./scripts/e2e-vm\.sh$' <<<"$VM_E2E_JOB" ||
+  fail "VM E2E must run the real disposable-VM script"
+grep -Fq 'if: ${{ always() }}' <<<"$VM_E2E_JOB" ||
+  fail "VM E2E logs must be uploaded even after failure"
 
 printf 'e2e-vm script tests passed\n'

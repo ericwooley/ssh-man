@@ -55,3 +55,47 @@ jobs:
 
       - name: Confirm generated files are current
         run: git diff --exit-code
+
+  vm-e2e:
+    name: VM E2E
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Multipass
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v multipass >/dev/null 2>&1; then
+            sudo snap install multipass
+          fi
+          sudo snap start multipass
+
+          for attempt in {1..30}; do
+            if multipass version; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          sudo snap services multipass
+          exit 1
+
+      - name: Run disposable VM E2E
+        run: |
+          ./scripts/e2e-vm.sh
+
+      - name: Upload VM E2E logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ssh-man-vm-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/e2e-vm
+          if-no-files-found: warn
+          retention-days: 7
