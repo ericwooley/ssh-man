@@ -61,6 +61,7 @@ function previewTitle(preview) {
   if (preview.kind === 'markdown') return 'Markdown preview'
   if (preview.kind === 'browser') return 'Browser preview'
   if (preview.kind === 'image') return 'Image preview'
+  if (preview.kind === 'video') return 'Video preview'
   return 'Source preview'
 }
 
@@ -446,6 +447,11 @@ export default function ExplorerApp({ api = defaultApi }) {
               ) : null}
               {previewMode === 'rendered' && preview.kind === 'browser' ? <iframe key={preview.revision} title={`${preview.name} browser preview`} src={remoteContentURL(preview.path)} sandbox="allow-forms" /> : null}
               {previewMode === 'rendered' && preview.kind === 'image' ? <div className="explorer-image"><img src={remoteContentURL(preview.path)} alt={preview.name} /></div> : null}
+              {previewMode === 'rendered' && preview.kind === 'video' ? (
+                <div className="explorer-video">
+                  <video aria-label={`${preview.name} video preview`} controls playsInline preload="metadata" src={remoteContentURL(preview.path)} />
+                </div>
+              ) : null}
               {previewMode === 'rendered' && preview.kind === 'unsupported' ? <div className="explorer-preview-empty"><File /><strong>No preview available</strong><span>{formatFileSize(preview.size)} · Download to open locally.</span></div> : null}
               {preview.kind === 'text' ? <MonacoPreview content={draftContent} language={editorLanguage(preview.name)} label={`${preview.name} source`} modelKey={preview.path} vimMode={vimMode} onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }} onSave={saveCurrentFile} /> : null}
             </div>

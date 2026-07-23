@@ -211,6 +211,21 @@ func TestPreviewClassifiesMarkdownAndRejectsBinaryText(t *testing.T) {
 	}
 }
 
+func TestClassifyPreviewTreatsVideoFormatsAsVideo(t *testing.T) {
+	for _, name := range []string{"capture.mp4", "capture.webm"} {
+		t.Run(name, func(t *testing.T) {
+			kind, mimeType := classifyPreview(name)
+
+			if kind != "video" {
+				t.Fatalf("classifyPreview() kind = %q, want video", kind)
+			}
+			if !strings.HasPrefix(mimeType, "video/") {
+				t.Fatalf("classifyPreview() MIME type = %q, want video MIME type", mimeType)
+			}
+		})
+	}
+}
+
 func TestSaveReplacesRemoteTextAndPreservesPermissions(t *testing.T) {
 	service := connectedTestService(t)
 	preview, err := service.Preview("README.md")

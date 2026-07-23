@@ -178,7 +178,7 @@ func (s *Service) Preview(remotePath string) (Preview, error) {
 	kind, mimeType := classifyPreview(remotePath)
 	preview := Preview{Path: remotePath, Name: path.Base(remotePath), Kind: kind, MimeType: mimeType, Size: info.Size()}
 	textualBrowserPreview := kind == "browser" && (strings.HasPrefix(mimeType, "text/") || strings.Contains(mimeType, "svg"))
-	if kind == "image" || (kind == "browser" && !textualBrowserPreview) || kind == "unsupported" {
+	if kind == "image" || kind == "video" || (kind == "browser" && !textualBrowserPreview) || kind == "unsupported" {
 		return preview, nil
 	}
 
@@ -405,7 +405,9 @@ func classifyPreview(remotePath string) (string, string) {
 		return "browser", mimeType
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif":
 		return "image", mimeType
-	case ".pdf", ".mp3", ".wav", ".ogg", ".mp4", ".webm":
+	case ".mp4", ".webm":
+		return "video", mimeType
+	case ".pdf", ".mp3", ".wav", ".ogg":
 		return "browser", mimeType
 	case ".7z", ".bz2", ".dmg", ".gz", ".iso", ".rar", ".tar", ".tgz", ".xz", ".zip":
 		return "unsupported", mimeType
