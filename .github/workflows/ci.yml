@@ -76,20 +76,28 @@ jobs:
             sudo snap install multipass
           fi
           sudo snap start multipass
+          sudo install -d -m 0755 \
+            /var/snap/multipass/common/ssh-man-e2e-tmp
 
           for attempt in {1..30}; do
-            if multipass version; then
+            if sudo multipass version 2>&1 | grep -q '^multipassd '; then
+              sudo multipass version
               exit 0
             fi
             sleep 2
           done
 
+          sudo multipass version
           sudo snap services multipass
           exit 1
 
       - name: Run disposable VM E2E
         run: |
-          ./scripts/e2e-vm.sh
+          sudo env \
+            TMPDIR=/var/snap/multipass/common/ssh-man-e2e-tmp \
+            SSH_MAN_E2E_MULTIPASS_BIN=/snap/bin/multipass \
+            SSH_MAN_E2E_ARTIFACT_DIR="$GITHUB_WORKSPACE/build/e2e-vm/run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            ./scripts/e2e-vm.sh
 
       - name: Upload VM E2E logs
         if: ${{ always() }}

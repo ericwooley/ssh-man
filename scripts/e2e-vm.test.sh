@@ -118,6 +118,10 @@ grep -Fqx '    runs-on: ubuntu-24.04' <<<"$VM_E2E_JOB" ||
   fail "VM E2E must use the pinned Ubuntu runner required by Multipass"
 grep -Fq 'sudo snap install multipass' <<<"$VM_E2E_JOB" ||
   fail "VM E2E must install Multipass"
+grep -Fq "sudo multipass version" <<<"$VM_E2E_JOB" ||
+  fail "VM E2E must use Multipass with access to its root-owned socket"
+grep -Fq "TMPDIR=/var/snap/multipass/common/ssh-man-e2e-tmp" <<<"$VM_E2E_JOB" ||
+  fail "VM E2E inputs must be staged somewhere readable by the confined Multipass snap"
 grep -Eq '^[[:space:]]+\./scripts/e2e-vm\.sh$' <<<"$VM_E2E_JOB" ||
   fail "VM E2E must run the real disposable-VM script"
 grep -Fq 'if: ${{ always() }}' <<<"$VM_E2E_JOB" ||
