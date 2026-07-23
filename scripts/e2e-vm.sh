@@ -10,6 +10,8 @@ VM_MEMORY="${SSH_MAN_E2E_VM_MEMORY:-8G}"
 VM_DISK="${SSH_MAN_E2E_VM_DISK:-20G}"
 VM_TIMEOUT="${SSH_MAN_E2E_VM_TIMEOUT:-1200}"
 VM_SSH_WAIT_SECONDS="${SSH_MAN_E2E_SSH_WAIT_SECONDS:-300}"
+VM_LAUNCH_ATTEMPTS="${SSH_MAN_E2E_VM_LAUNCH_ATTEMPTS:-4}"
+VM_LAUNCH_RETRY_SECONDS="${SSH_MAN_E2E_VM_LAUNCH_RETRY_SECONDS:-10}"
 GO_VERSION="${SSH_MAN_E2E_GO_VERSION:-$(awk '/^go / { print $2; exit }' "$ROOT_DIR/go.mod")}"
 NODE_MAJOR="${SSH_MAN_E2E_NODE_MAJOR:-25}"
 PNPM_VERSION="${SSH_MAN_E2E_PNPM_VERSION:-10.34.5}"
@@ -53,6 +55,14 @@ validate_positive_integer() {
   fi
 }
 
+is_retryable_vm_launch_failure() {
+  local launch_log="$1"
+
+  grep -Eiq \
+    'unknown or unreachable|failed to (fetch|download)|download failed|network is unreachable|temporary failure|connection (reset|timed out)|timed out (while|waiting)|TLS handshake timeout|could not resolve' \
+    "$launch_log"
+}
+
 cleanup_vm() {
   local delete_status=0
 
@@ -78,6 +88,55 @@ cleanup_host() {
     rm -rf "$RUN_DIR"
   fi
   return "$status"
+}
+
+launch_vm() {
+  local attempt
+  local launch_log
+  local launch_status
+
+  for attempt in $(seq 1 "$VM_LAUNCH_ATTEMPTS"); do
+    launch_log="$ARTIFACT_DIR/multipass-launch-attempt-$attempt.log"
+
+    log "Launching disposable Multipass VM $VM_NAME ($VM_IMAGE), attempt $attempt/$VM_LAUNCH_ATTEMPTS"
+    if "$MULTIPASS_BIN" launch "$VM_IMAGE" \
+      --name "$VM_NAME" \
+      --cpus "$VM_CPUS" \
+      --memory "$VM_MEMORY" \
+      --disk "$VM_DISK" \
+      --cloud-init "$1" \
+      --timeout "$VM_TIMEOUT" >"$launch_log" 2>&1; then
+      cat "$launch_log"
+      VM_CREATED=1
+      return 0
+    else
+      launch_status=$?
+    fi
+
+    cat "$launch_log" >&2
+
+    # Multipass can leave an instance behind when provisioning fails after
+    # creation. Remove it before retrying with the same isolated name.
+    if "$MULTIPASS_BIN" info "$VM_NAME" >/dev/null 2>&1; then
+      VM_CREATED=1
+      if ! cleanup_vm; then
+        fail "could not clean up the partially created VM after launch failure"
+        return 1
+      fi
+    fi
+
+    if ! is_retryable_vm_launch_failure "$launch_log"; then
+      fail "Multipass launch failed with a non-retryable error (status $launch_status); see $launch_log"
+      return "$launch_status"
+    fi
+    if [ "$attempt" -eq "$VM_LAUNCH_ATTEMPTS" ]; then
+      fail "Multipass launch still failed after $VM_LAUNCH_ATTEMPTS attempts; see $launch_log"
+      return "$launch_status"
+    fi
+
+    log "Retrying Multipass launch in ${VM_LAUNCH_RETRY_SECONDS}s after a transient provisioning failure"
+    sleep "$VM_LAUNCH_RETRY_SECONDS"
+  done
 }
 
 write_cloud_init() {
@@ -147,6 +206,8 @@ run_host() {
   validate_positive_integer "SSH_MAN_E2E_VM_CPUS" "$VM_CPUS"
   validate_positive_integer "SSH_MAN_E2E_VM_TIMEOUT" "$VM_TIMEOUT"
   validate_positive_integer "SSH_MAN_E2E_SSH_WAIT_SECONDS" "$VM_SSH_WAIT_SECONDS"
+  validate_positive_integer "SSH_MAN_E2E_VM_LAUNCH_ATTEMPTS" "$VM_LAUNCH_ATTEMPTS"
+  validate_positive_integer "SSH_MAN_E2E_VM_LAUNCH_RETRY_SECONDS" "$VM_LAUNCH_RETRY_SECONDS"
   if ! validate_vm_name "$VM_NAME"; then
     fail "invalid VM name: $VM_NAME"
   fi
@@ -169,15 +230,7 @@ run_host() {
   create_source_archive "$source_archive"
   write_cloud_init "$cloud_init"
 
-  log "Launching disposable Multipass VM $VM_NAME ($VM_IMAGE)"
-  VM_CREATED=1
-  "$MULTIPASS_BIN" launch "$VM_IMAGE" \
-    --name "$VM_NAME" \
-    --cpus "$VM_CPUS" \
-    --memory "$VM_MEMORY" \
-    --disk "$VM_DISK" \
-    --cloud-init "$cloud_init" \
-    --timeout "$VM_TIMEOUT"
+  launch_vm "$cloud_init"
 
   wait_for_vm_ssh
 
@@ -467,6 +520,8 @@ Optional environment:
   SSH_MAN_E2E_VM_DISK=20G
   SSH_MAN_E2E_VM_TIMEOUT=1200
   SSH_MAN_E2E_SSH_WAIT_SECONDS=300
+  SSH_MAN_E2E_VM_LAUNCH_ATTEMPTS=4
+  SSH_MAN_E2E_VM_LAUNCH_RETRY_SECONDS=10
   SSH_MAN_E2E_VM_NAME=ssh-man-e2e-custom
   SSH_MAN_E2E_GO_VERSION=1.25.0
   SSH_MAN_E2E_NODE_MAJOR=25
