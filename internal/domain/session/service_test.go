@@ -473,6 +473,32 @@ func TestStartAllStartsEachConfigurationForServer(t *testing.T) {
 	}
 }
 
+func TestStartAllLeavesManagedBrowserProxyForTheWorkspaceAction(t *testing.T) {
+	managedID := configdomain.ManagedSOCKSConfigurationID("server-1")
+	runtimes := NewRuntimeStore()
+	service := NewService(
+		stubConfigStore{items: []configdomain.ConnectionConfiguration{
+			{ID: managedID, ServerID: "server-1", Label: "Browser proxy", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 55123},
+			{ID: "config-1", ServerID: "server-1", Label: "Docs", ConnectionType: configdomain.ConnectionTypeLocalForward, LocalPort: 9000, RemoteHost: "127.0.0.1", RemotePort: 3000},
+		}},
+		stubServerStore{item: serverdomain.Server{ID: "server-1", Name: "Host", Host: "example.com", Port: 22, SocksPort: 55123, Username: "eric", AuthMode: serverdomain.AuthModeAgent}},
+		nil,
+		runtimes,
+	)
+	service.factory = &stubFactory{runners: []*stubRunner{{}}}
+
+	states, err := service.StartAll(context.Background(), "server-1")
+	if err != nil {
+		t.Fatalf("start all tunnels: %v", err)
+	}
+	if len(states) != 1 || states[0].ConfigurationID != "config-1" {
+		t.Fatalf("started states = %#v, want only user-created tunnel", states)
+	}
+	if _, ok := runtimes.Get(managedID); ok {
+		t.Fatal("managed browser proxy started during user tunnel bulk start")
+	}
+}
+
 func TestConfigurationsStartingOnLaunchSelectsOnlyEnabledConfigurations(t *testing.T) {
 	configurations := []configdomain.ConnectionConfiguration{
 		{ID: "config-1", StartOnLaunch: true},

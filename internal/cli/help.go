@@ -29,8 +29,8 @@ Global options:
 const serverUsage = `Usage:
   ssh-man server list
   ssh-man server get SERVER
-  ssh-man server add NAME --host HOST [--port 22] [--user USER] [--auth agent|key] [--key PATH]
-  ssh-man server update SERVER [--name NAME] [--host HOST] [--port PORT] [--user USER] [--auth agent|key] [--key PATH]
+  ssh-man server add NAME --host HOST [--port 22] [--socks-port auto|PORT] [--user USER] [--auth agent|key] [--key PATH]
+  ssh-man server update SERVER [--name NAME] [--host HOST] [--port PORT] [--socks-port auto|PORT] [--user USER] [--auth agent|key] [--key PATH]
   ssh-man server delete SERVER --yes [--stop-active]
   ssh-man server start SERVER
   ssh-man server stop SERVER

@@ -9,6 +9,9 @@ import (
 )
 
 func (a *AppBindings) SaveConnectionConfiguration(input configdomain.ConnectionConfiguration) (configdomain.ConnectionConfiguration, error) {
+	if configdomain.IsManagedSOCKSConfigurationID(input.ID) {
+		return configdomain.ConnectionConfiguration{}, fmt.Errorf("edit the browser SOCKS port in the server configuration")
+	}
 	ctx := context.Background()
 	var saved configdomain.ConnectionConfiguration
 	err := a.app.SessionService.WithExclusiveMutation(ctx, func(ctx context.Context) error {
@@ -28,6 +31,9 @@ func (a *AppBindings) SaveConnectionConfiguration(input configdomain.ConnectionC
 }
 
 func (a *AppBindings) DeleteConnectionConfiguration(configurationID string) error {
+	if configdomain.IsManagedSOCKSConfigurationID(configurationID) {
+		return fmt.Errorf("the automatic browser proxy belongs to its server")
+	}
 	ctx := context.Background()
 	return a.app.SessionService.WithExclusiveMutation(ctx, func(ctx context.Context) error {
 		if err := a.requireConfigurationStopped(configurationID); err != nil {

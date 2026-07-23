@@ -77,3 +77,45 @@ func TestPersistedNestedServerAndConfigurationManagement(t *testing.T) {
 		t.Fatalf("expected one configuration after delete, got %d", len(configs))
 	}
 }
+
+func TestServerGetsPersistedAutomaticBrowserProxy(t *testing.T) {
+	db := sqliteTestDB(t)
+	serverStore := sqlite.NewServerStore(db)
+	configStore := sqlite.NewConfigStore(db)
+	configService := configdomain.NewService(configStore)
+	serverService := serverdomain.NewService(serverStore)
+	serverService.SetSOCKSPortAvailabilityCheck(configService.ValidateManagedSOCKSPort)
+	ctx := context.Background()
+
+	server, err := serverService.Save(ctx, serverdomain.Server{
+		Name:     "Workspace",
+		Host:     "workspace.example.com",
+		Port:     22,
+		Username: "deploy",
+		AuthMode: serverdomain.AuthModeAgent,
+	})
+	if err != nil {
+		t.Fatalf("save server: %v", err)
+	}
+	if server.SocksPort < 49152 || server.SocksPort > 65535 {
+		t.Fatalf("automatic SOCKS port = %d, want high port", server.SocksPort)
+	}
+	if _, err := configService.EnsureManagedSOCKSConfiguration(ctx, server); err != nil {
+		t.Fatalf("ensure managed SOCKS configuration: %v", err)
+	}
+
+	reloaded, err := serverStore.Get(ctx, server.ID)
+	if err != nil {
+		t.Fatalf("reload server: %v", err)
+	}
+	if reloaded.SocksPort != server.SocksPort {
+		t.Fatalf("reloaded SOCKS port = %d, want %d", reloaded.SocksPort, server.SocksPort)
+	}
+	managed, err := configStore.Get(ctx, configdomain.ManagedSOCKSConfigurationID(server.ID))
+	if err != nil {
+		t.Fatalf("load managed SOCKS configuration: %v", err)
+	}
+	if managed.SocksPort != server.SocksPort || !managed.AutoReconnectEnabled {
+		t.Fatalf("managed SOCKS configuration = %#v", managed)
+	}
+}

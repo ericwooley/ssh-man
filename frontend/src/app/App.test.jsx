@@ -8,9 +8,24 @@ const savedServer = {
   name: 'Production bastion',
   host: 'bastion.example.com',
   port: 22,
+  socksPort: 55123,
   username: 'deploy',
   authMode: 'agent',
   keyReference: '',
+}
+
+const managedBrowserProxy = {
+  id: `server-socks:${savedServer.id}`,
+  serverId: savedServer.id,
+  label: 'Browser proxy',
+  connectionType: 'socks_proxy',
+  localPort: 0,
+  remoteHost: '',
+  remotePort: 0,
+  socksPort: savedServer.socksPort,
+  autoReconnectEnabled: true,
+  startOnLaunch: false,
+  notes: '',
 }
 
 const savedTunnel = {
@@ -247,8 +262,30 @@ describe('React application flows', () => {
       host: 'staging.example.com',
       username: 'deploy',
       port: 2222,
+      socksPort: 0,
     })
     expect(screen.getByText('deploy@staging.example.com:2222')).toBeTruthy()
+  })
+
+  test('edits the saved browser SOCKS port as part of the server', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy] }],
+    })
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(screen.getByRole('button', { name: 'Edit Production bastion' }))
+    const socksPort = screen.getByLabelText(/^Browser SOCKS port/)
+    expect(socksPort.value).toBe('55123')
+    await user.clear(socksPort)
+    await user.type(socksPort, '61234')
+    await user.click(screen.getByRole('button', { name: 'Save server' }))
+
+    await waitFor(() => expect(api.saveServer).toHaveBeenCalledWith(expect.objectContaining({
+      id: savedServer.id,
+      socksPort: 61234,
+    })))
   })
 
   test('offers discovered SSH keys and a custom path option', async () => {
@@ -309,16 +346,72 @@ describe('React application flows', () => {
     expect(screen.getByText('16379 → 127.0.0.1:6379')).toBeTruthy()
   })
 
-  test('opens a persistent explorer window for the selected server', async () => {
+  test('opens Chrome through the automatic server proxy and the explorer with one action', async () => {
     const user = userEvent.setup()
-    const { api } = createFakeApi({ servers: [{ server: savedServer, configurations: [] }] })
+    const managedStopped = {
+      ...stoppedSession,
+      configurationId: managedBrowserProxy.id,
+    }
+    const { api } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy] }],
+      sessions: [managedStopped],
+    })
     renderApp(api)
 
     await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
-    await user.click(screen.getByRole('button', { name: 'Explore files' }))
+    expect(screen.getByRole('heading', { name: 'No tunnels yet' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Open Chrome + files' }))
 
+    await waitFor(() => expect(api.startConfiguration).toHaveBeenCalledWith(managedBrowserProxy.id))
+    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, 'google-chrome'))
     await waitFor(() => expect(api.openServerExplorer).toHaveBeenCalledWith(savedServer.id))
-    expect(await screen.findByText('Server explorer opened in its own window.')).toBeTruthy()
+    expect(await screen.findByText('Chrome and the server explorer are open.')).toBeTruthy()
+  })
+
+  test('resumes the combined workspace action after unlocking an encrypted key', async () => {
+    const user = userEvent.setup()
+    const managedStopped = {
+      ...stoppedSession,
+      configurationId: managedBrowserProxy.id,
+    }
+    const needsAttention = {
+      ...managedStopped,
+      status: 'needs_attention',
+      statusDetail: 'Unlock the SSH key to continue.',
+      needsUserInput: true,
+    }
+    const connected = {
+      ...managedStopped,
+      status: 'connected',
+      boundPort: managedBrowserProxy.socksPort,
+      statusDetail: `Listening on localhost:${managedBrowserProxy.socksPort}`,
+    }
+    const { api, state } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy] }],
+      sessions: [managedStopped],
+    })
+    api.startConfiguration.mockImplementationOnce(async () => {
+      state.sessions = [needsAttention]
+      return clone(needsAttention)
+    })
+    api.submitKeyUnlock.mockImplementationOnce(async () => {
+      state.sessions = [connected]
+      return clone(connected)
+    })
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: /Production bastion/ }))
+    await user.click(screen.getByRole('button', { name: 'Open Chrome + files' }))
+    expect(await screen.findByRole('dialog', { name: 'Unlock SSH key' })).toBeTruthy()
+    expect(api.launchBrowserThroughSocks).not.toHaveBeenCalled()
+    expect(api.openServerExplorer).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('Passphrase'), 'secret')
+    await user.click(screen.getByRole('button', { name: 'Unlock and connect' }))
+
+    await waitFor(() => expect(api.submitKeyUnlock).toHaveBeenCalledWith(managedBrowserProxy.id, 'secret'))
+    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, 'google-chrome'))
+    await waitFor(() => expect(api.openServerExplorer).toHaveBeenCalledWith(savedServer.id))
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {

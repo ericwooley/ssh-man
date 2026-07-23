@@ -1,6 +1,6 @@
 import {
   ArrowRight,
-  FolderOpen,
+  Globe2,
   KeyRound,
   LoaderCircle,
   Pencil,
@@ -12,7 +12,12 @@ import {
   Square,
   Trash2,
 } from 'lucide-react'
-import { configurationEndpoint, sessionCapabilities } from '../model/appModel'
+import {
+  configurationEndpoint,
+  isManagedSOCKSConfiguration,
+  sessionCapabilities,
+  userConfigurations,
+} from '../model/appModel'
 import { EmptyState, IconButton, StatusPill } from '../components/AppChrome'
 
 function serverLiveCount(item, sessions) {
@@ -54,6 +59,7 @@ export function ServersScreen({ servers, sessions, onAdd, onOpen }) {
       <ul className="row-list" aria-label="Saved servers">
         {servers.map((item) => {
           const liveCount = serverLiveCount(item, sessions)
+          const tunnelCount = userConfigurations(item.configurations).length
           return (
             <li key={item.server.id} className="server-row">
               <button className="row-main" type="button" onClick={() => onOpen(item.server.id)}>
@@ -62,7 +68,7 @@ export function ServersScreen({ servers, sessions, onAdd, onOpen }) {
                   <strong>{item.server.name}</strong>
                   <span className="row-meta">{item.server.username}@{item.server.host}:{item.server.port}</span>
                   <span className="row-detail">
-                    {item.configurations.length} tunnel{item.configurations.length === 1 ? '' : 's'}
+                    {tunnelCount} tunnel{tunnelCount === 1 ? '' : 's'}
                     {liveCount ? <span className="live-inline"> · {liveCount} active</span> : null}
                   </span>
                 </span>
@@ -121,15 +127,22 @@ export function ServerDetailScreen({
   onStopTunnel,
   onStartAll,
   onRefreshRuntime,
-  onExplore,
+  onOpenWorkspace,
 }) {
   const { server, configurations } = record
+  const tunnels = userConfigurations(configurations)
+  const managedProxy = configurations.find(isManagedSOCKSConfiguration) || null
+  const managedSession = managedProxy
+    ? sessions.find((session) => session.configurationId === managedProxy.id) || null
+    : null
+  const managedCapabilities = sessionCapabilities(managedSession)
   const liveCount = serverLiveCount(record, sessions)
-  const startableCount = configurations.filter((configuration) => {
+  const startableCount = tunnels.filter((configuration) => {
     const session = sessions.find((item) => item.configurationId === configuration.id)
     return sessionCapabilities(session).canStart
   }).length
   const bulkPending = Boolean(pending[`start-all:${server.id}`])
+  const workspacePending = Boolean(pending[`workspace:${server.id}`])
 
   return (
     <div className="detail-layout" aria-label={`${server.name} tunnels`}>
@@ -147,25 +160,44 @@ export function ServerDetailScreen({
             </IconButton>
           </div>
           <div className="server-summary__stats">
-            <div><strong>{configurations.length}</strong><span>Tunnels</span></div>
+            <div><strong>{tunnels.length}</strong><span>Tunnels</span></div>
             <div><strong>{liveCount}</strong><span>Active</span></div>
             <div className={runtimeFresh ? 'is-fresh' : 'is-stale'}>
               <ShieldCheck aria-hidden="true" />
               <span>{runtimeFresh ? 'Live status' : 'Status stale'}</span>
             </div>
           </div>
+          <div className="managed-proxy-line">
+            <div>
+              <Globe2 aria-hidden="true" />
+              <span><strong>Browser proxy</strong><small>localhost:{server.socksPort}</small></span>
+            </div>
+            <StatusPill status={managedSession?.status || 'stopped'} compact />
+            {managedProxy && managedCapabilities.canStop ? (
+              <IconButton
+                label="Stop browser proxy"
+                className="tunnel-quick-action is-stop"
+                disabled={Boolean(pending[`session:${managedProxy.id}`])}
+                onClick={() => onStopTunnel(managedProxy.id)}
+              >
+                {pending[`session:${managedProxy.id}`]
+                  ? <LoaderCircle className="spin" aria-hidden="true" />
+                  : <Square aria-hidden="true" />}
+              </IconButton>
+            ) : null}
+          </div>
           <button
             className="primary-button primary-button--full"
             type="button"
-            disabled={Boolean(pending[`explore-server:${server.id}`])}
-            onClick={() => onExplore(server.id)}
+            disabled={workspacePending || !managedProxy}
+            onClick={() => onOpenWorkspace(server.id)}
           >
-            {pending[`explore-server:${server.id}`]
+            {workspacePending
               ? <LoaderCircle className="spin" aria-hidden="true" />
-              : <FolderOpen aria-hidden="true" />}
-            Explore files
+              : <Globe2 aria-hidden="true" />}
+            {workspacePending ? 'Opening…' : 'Open Chrome + files'}
           </button>
-          {!runtimeFresh && configurations.length ? (
+          {!runtimeFresh && tunnels.length ? (
             <button
               className="secondary-button secondary-button--full"
               type="button"
@@ -197,9 +229,9 @@ export function ServerDetailScreen({
             </IconButton>
           </div>
 
-          {configurations.length ? (
+          {tunnels.length ? (
             <ul className="row-list row-list--compact">
-              {configurations.map((configuration) => (
+              {tunnels.map((configuration) => (
                 <TunnelRow
                   key={configuration.id}
                   configuration={configuration}

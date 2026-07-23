@@ -13,6 +13,7 @@ var schemaStatements = []string{
 		name TEXT NOT NULL UNIQUE,
 		host TEXT NOT NULL,
 		port INTEGER NOT NULL,
+		socks_port INTEGER NOT NULL DEFAULT 0,
 		username TEXT NOT NULL,
 		auth_mode TEXT NOT NULL,
 		key_reference TEXT NOT NULL DEFAULT '',
@@ -72,6 +73,15 @@ func RunMigrations(db *sql.DB) error {
 		}
 	}
 
+	if _, err := ensureTableColumn(
+		tx,
+		"servers",
+		"socks_port",
+		`ALTER TABLE servers ADD COLUMN socks_port INTEGER NOT NULL DEFAULT 0;`,
+	); err != nil {
+		return err
+	}
+
 	if _, err := ensureUserPreferencesColumn(
 		tx,
 		"browser_switcher_shortcut",
@@ -112,9 +122,13 @@ func RunMigrations(db *sql.DB) error {
 }
 
 func ensureUserPreferencesColumn(tx *sql.Tx, columnName, alterStatement string) (bool, error) {
-	rows, err := tx.Query(`PRAGMA table_info(user_preferences);`)
+	return ensureTableColumn(tx, "user_preferences", columnName, alterStatement)
+}
+
+func ensureTableColumn(tx *sql.Tx, tableName, columnName, alterStatement string) (bool, error) {
+	rows, err := tx.Query(fmt.Sprintf(`PRAGMA table_info(%s);`, tableName))
 	if err != nil {
-		return false, fmt.Errorf("inspect user_preferences columns: %w", err)
+		return false, fmt.Errorf("inspect %s columns: %w", tableName, err)
 	}
 
 	found := false
@@ -129,24 +143,24 @@ func ensureUserPreferencesColumn(tx *sql.Tx, columnName, alterStatement string) 
 		)
 		if err := rows.Scan(&columnID, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
 			_ = rows.Close()
-			return false, fmt.Errorf("inspect user_preferences column: %w", err)
+			return false, fmt.Errorf("inspect %s column: %w", tableName, err)
 		}
 		if name == columnName {
 			found = true
 		}
 	}
 	if err := rows.Close(); err != nil {
-		return false, fmt.Errorf("close user_preferences column inspection: %w", err)
+		return false, fmt.Errorf("close %s column inspection: %w", tableName, err)
 	}
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("inspect user_preferences columns: %w", err)
+		return false, fmt.Errorf("inspect %s columns: %w", tableName, err)
 	}
 	if found {
 		return false, nil
 	}
 
 	if _, err := tx.Exec(alterStatement); err != nil {
-		return false, fmt.Errorf("add user_preferences.%s: %w", columnName, err)
+		return false, fmt.Errorf("add %s.%s: %w", tableName, columnName, err)
 	}
 	return true, nil
 }

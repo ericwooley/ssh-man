@@ -31,6 +31,10 @@ func newControlBackend(app *bootstrap.Application, window *appwindow.Controller,
 				}
 				var err error
 				saved, err = app.ServerService.Save(ctx, server)
+				if err != nil {
+					return err
+				}
+				_, err = app.ConfigService.EnsureManagedSOCKSConfiguration(ctx, saved)
 				return err
 			})
 			return saved, err
@@ -44,6 +48,9 @@ func newControlBackend(app *bootstrap.Application, window *appwindow.Controller,
 			})
 		},
 		SaveConfiguration: func(ctx context.Context, configuration configdomain.ConnectionConfiguration) (configdomain.ConnectionConfiguration, error) {
+			if configdomain.IsManagedSOCKSConfigurationID(configuration.ID) {
+				return configdomain.ConnectionConfiguration{}, fmt.Errorf("edit the browser SOCKS port in the server configuration")
+			}
 			var saved configdomain.ConnectionConfiguration
 			err := app.SessionService.WithExclusiveMutation(ctx, func(ctx context.Context) error {
 				if configuration.ID != "" {
@@ -58,6 +65,9 @@ func newControlBackend(app *bootstrap.Application, window *appwindow.Controller,
 			return saved, err
 		},
 		DeleteConfiguration: func(ctx context.Context, configurationID string) error {
+			if configdomain.IsManagedSOCKSConfigurationID(configurationID) {
+				return fmt.Errorf("the automatic browser proxy belongs to its server")
+			}
 			return app.SessionService.WithExclusiveMutation(ctx, func(ctx context.Context) error {
 				if err := requireConfigurationStopped(app, configurationID); err != nil {
 					return err
@@ -135,7 +145,13 @@ func controlState(ctx context.Context, app *bootstrap.Application) (control.Stat
 		if configurations == nil {
 			configurations = []configdomain.ConnectionConfiguration{}
 		}
-		records = append(records, control.ServerRecord{Server: server, Configurations: configurations})
+		visibleConfigurations := make([]configdomain.ConnectionConfiguration, 0, len(configurations))
+		for _, configuration := range configurations {
+			if !configdomain.IsManagedSOCKSConfigurationID(configuration.ID) {
+				visibleConfigurations = append(visibleConfigurations, configuration)
+			}
+		}
+		records = append(records, control.ServerRecord{Server: server, Configurations: visibleConfigurations})
 	}
 	sessions := app.SessionService.List()
 	sort.Slice(sessions, func(i, j int) bool {

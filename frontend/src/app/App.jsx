@@ -17,6 +17,7 @@ import {
   browserSelectionIndexForDirections,
   emptyServer,
   emptyTunnel,
+  isManagedSOCKSConfiguration,
   moveBrowserSelectionIndex,
   normalizeBrowserSwitchDirection,
   orderBrowsersByRecentActivation,
@@ -300,7 +301,8 @@ export default function App({ api = defaultApi, controllerOptions }) {
 
   function openTunnel(configurationId) {
     const record = app.selectConfiguration(configurationId)
-    if (record) setRoute({ type: 'tunnel' })
+    if (!record) return
+    setRoute(isManagedSOCKSConfiguration(record.configuration) ? { type: 'server' } : { type: 'tunnel' })
   }
 
   function openNewServer() {
@@ -308,7 +310,14 @@ export default function App({ api = defaultApi, controllerOptions }) {
   }
 
   function openEditServer(server) {
-    setForm({ type: 'server', value: { ...server, port: String(server.port) } })
+    setForm({
+      type: 'server',
+      value: {
+        ...server,
+        port: String(server.port),
+        socksPort: server.socksPort ? String(server.socksPort) : '',
+      },
+    })
   }
 
   function openNewTunnel() {
@@ -506,7 +515,7 @@ export default function App({ api = defaultApi, controllerOptions }) {
               onStopTunnel={app.stopTunnel}
               onStartAll={app.startAll}
               onRefreshRuntime={app.refreshRuntimeSessions}
-              onExplore={app.openServerExplorer}
+              onOpenWorkspace={app.openServerWorkspace}
             />
           ) : null}
 

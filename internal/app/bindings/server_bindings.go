@@ -22,6 +22,9 @@ func (a *AppBindings) SaveServer(input serverdomain.Server) (serverdomain.Server
 		if err != nil {
 			return a.storageError("The server could not be saved", err)
 		}
+		if _, err := a.app.ConfigService.EnsureManagedSOCKSConfiguration(ctx, saved); err != nil {
+			return a.storageError("The automatic browser proxy could not be saved", err)
+		}
 		return nil
 	})
 	return saved, err
