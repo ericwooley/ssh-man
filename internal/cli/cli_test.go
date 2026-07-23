@@ -221,8 +221,8 @@ func TestServerAddInfersPrivateKeyAuthFromKeyFlag(t *testing.T) {
 			return nil, fmt.Errorf("unexpected command %s", request.Command)
 		}
 	}}
-	code, _, stderr, _ := runWithCaller(t, caller, "", "server", "add", "Key host", "--host", "key.example.com", "--key", "~/.ssh/id_ed25519")
-	if code != ExitOK || stderr != "" || saved.AuthMode != serverdomain.AuthModePrivateKey || saved.KeyReference != "~/.ssh/id_ed25519" {
+	code, _, stderr, _ := runWithCaller(t, caller, "", "server", "add", "Key host", "--host", "key.example.com", "--socks-port", "61234", "--key", "~/.ssh/id_ed25519")
+	if code != ExitOK || stderr != "" || saved.SocksPort != 61234 || saved.AuthMode != serverdomain.AuthModePrivateKey || saved.KeyReference != "~/.ssh/id_ed25519" {
 		t.Fatalf("code=%d saved=%+v stderr=%q", code, saved, stderr)
 	}
 }

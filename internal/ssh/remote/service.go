@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"os"
 	"path"
@@ -25,7 +24,6 @@ import (
 	sshconnection "ssh-man/internal/ssh/connection"
 
 	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -340,33 +338,10 @@ func dialSFTP(ctx context.Context, server serverdomain.Server, passphrase string
 	if err != nil {
 		return nil, nil, err
 	}
-	hostKeyCallback, err := sshconnection.KnownHostsCallback()
+	sshClient, err := sshconnection.DialSSH(ctx, server, authMethod)
 	if err != nil {
-		return nil, nil, fmt.Errorf("configure SSH host key verification: %w", err)
+		return nil, nil, err
 	}
-	address := fmt.Sprintf("%s:%d", server.Host, server.Port)
-	netConn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", address)
-	if err != nil {
-		return nil, nil, fmt.Errorf("connect to ssh server: %w", err)
-	}
-	handshakeDeadline := time.Now().Add(10 * time.Second)
-	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(handshakeDeadline) {
-		handshakeDeadline = contextDeadline
-	}
-	_ = netConn.SetDeadline(handshakeDeadline)
-	config := &ssh.ClientConfig{
-		User:            server.Username,
-		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: hostKeyCallback,
-		Timeout:         10 * time.Second,
-	}
-	sshConn, channels, requests, err := ssh.NewClientConn(netConn, address, config)
-	if err != nil {
-		_ = netConn.Close()
-		return nil, nil, fmt.Errorf("connect to ssh server: %w", err)
-	}
-	_ = netConn.SetDeadline(time.Time{})
-	sshClient := ssh.NewClient(sshConn, channels, requests)
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
 		_ = sshClient.Close()

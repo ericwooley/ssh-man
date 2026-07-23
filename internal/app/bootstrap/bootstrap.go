@@ -43,6 +43,22 @@ func New(context.Context) (*Application, error) {
 
 	serverService := serverdomain.NewService(serverStore)
 	configService := configdomain.NewService(configStore)
+	serverService.SetSOCKSPortAvailabilityCheck(configService.ValidateManagedSOCKSPort)
+	if err := serverService.EnsureSOCKSPorts(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("assign server SOCKS ports: %w", err)
+	}
+	servers, err := serverService.List(context.Background())
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("list servers for automatic browser proxies: %w", err)
+	}
+	for _, server := range servers {
+		if _, err := configService.EnsureManagedSOCKSConfiguration(context.Background(), server); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("ensure automatic browser proxy for %q: %w", server.Name, err)
+		}
+	}
 	preferencesService := preferencesdomain.NewService(prefStore)
 	sessionService := sessiondomain.NewService(configStore, serverStore, historyStore, runtimeStore)
 	browserService := browser.NewService(configDir, configStore, runtimeStore, serverStore)

@@ -119,6 +119,17 @@ export function ServerFormScreen({ initialValue, currentUsername, sshKeys = [], 
               )}
             </Field>
           </div>
+
+          <Field
+            id="server-socks-port"
+            label="Browser SOCKS port"
+            error={errors.socksPort}
+            hint={isEditing ? 'Used automatically when opening Chrome for this server.' : 'Leave blank and SSH Man will choose an available high port.'}
+          >
+            {({ describedBy }) => (
+              <input id="server-socks-port" ref={(node) => { refs.current.socksPort = node }} type="number" inputMode="numeric" min="1" max="65535" value={draft.socksPort} onChange={(event) => update('socksPort', event.target.value)} placeholder="Automatic" aria-invalid={Boolean(errors.socksPort)} aria-describedby={describedBy} />
+            )}
+          </Field>
         </section>
 
         <section className="form-section" aria-labelledby="authentication-heading">

@@ -19,6 +19,7 @@ func TestServerStoreCRUD(t *testing.T) {
 		Name:         "Primary",
 		Host:         "example.com",
 		Port:         22,
+		SocksPort:    55123,
 		Username:     "eric",
 		AuthMode:     serverdomain.AuthModePrivateKey,
 		KeyReference: "~/.ssh/id_ed25519",
@@ -33,7 +34,7 @@ func TestServerStoreCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get server: %v", err)
 	}
-	if loaded.Name != item.Name || loaded.Host != item.Host {
+	if loaded.Name != item.Name || loaded.Host != item.Host || loaded.SocksPort != item.SocksPort {
 		t.Fatalf("unexpected loaded server: %+v", loaded)
 	}
 

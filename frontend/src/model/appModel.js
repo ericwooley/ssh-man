@@ -12,6 +12,7 @@ const BROWSER_APPEARANCE_ICON_TOKENS = new Set([
   'icon:code',
 ])
 const BROWSER_APPEARANCE_COLOR_PATTERN = /^#[0-9A-F]{6}$/
+const MANAGED_SOCKS_CONFIGURATION_PREFIX = 'server-socks:'
 
 function text(value) {
   return value == null ? '' : String(value).trim()
@@ -70,6 +71,7 @@ export function emptyServer(currentUsername = '') {
     name: '',
     host: 'localhost',
     port: '22',
+    socksPort: '',
     username: currentUsername ?? '',
     authMode: 'agent',
     keyReference: '',
@@ -98,11 +100,43 @@ export function validateServer(server = {}) {
   if (!text(server.host)) errors.host = 'A server host is required.'
   if (!text(server.username)) errors.username = 'An SSH username is required.'
   if (!isValidPort(server.port)) errors.port = 'Port must be between 1 and 65535.'
+  if (text(server.socksPort) && !isValidPort(server.socksPort)) {
+    errors.socksPort = 'SOCKS port must be between 1 and 65535.'
+  }
   if (server.authMode === 'private_key' && !text(server.keyReference)) {
     errors.keyReference = 'A private key path is required.'
   }
 
   return errors
+}
+
+export function managedSOCKSConfigurationID(serverId = '') {
+  return `${MANAGED_SOCKS_CONFIGURATION_PREFIX}${text(serverId)}`
+}
+
+export function isManagedSOCKSConfiguration(configuration = {}) {
+  return text(configuration.id).startsWith(MANAGED_SOCKS_CONFIGURATION_PREFIX)
+}
+
+export function managedSOCKSConfigurationForServer(server = {}) {
+  return {
+    id: managedSOCKSConfigurationID(server.id),
+    serverId: text(server.id),
+    label: 'Browser proxy',
+    connectionType: 'socks_proxy',
+    localPort: 0,
+    remoteHost: '',
+    remotePort: 0,
+    socksPort: positivePort(server.socksPort),
+    autoReconnectEnabled: true,
+    startOnLaunch: false,
+    notes: '',
+  }
+}
+
+export function userConfigurations(configurations = []) {
+  if (!Array.isArray(configurations)) return []
+  return configurations.filter((configuration) => !isManagedSOCKSConfiguration(configuration))
 }
 
 export function validateTunnel(configuration = {}, options = {}) {

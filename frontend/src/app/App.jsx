@@ -17,6 +17,7 @@ import {
   browserSelectionIndexForDirections,
   emptyServer,
   emptyTunnel,
+  isManagedSOCKSConfiguration,
   moveBrowserSelectionIndex,
   normalizeBrowserSwitchDirection,
   orderBrowsersByRecentActivation,
@@ -300,7 +301,8 @@ export default function App({ api = defaultApi, controllerOptions }) {
 
   function openTunnel(configurationId) {
     const record = app.selectConfiguration(configurationId)
-    if (record) setRoute({ type: 'tunnel' })
+    if (!record) return
+    setRoute(isManagedSOCKSConfiguration(record.configuration) ? { type: 'server' } : { type: 'tunnel' })
   }
 
   function openNewServer() {
@@ -308,7 +310,14 @@ export default function App({ api = defaultApi, controllerOptions }) {
   }
 
   function openEditServer(server) {
-    setForm({ type: 'server', value: { ...server, port: String(server.port) } })
+    setForm({
+      type: 'server',
+      value: {
+        ...server,
+        port: String(server.port),
+        socksPort: server.socksPort ? String(server.socksPort) : '',
+      },
+    })
   }
 
   function openNewTunnel() {
@@ -458,7 +467,15 @@ export default function App({ api = defaultApi, controllerOptions }) {
           ) : null}
 
           {app.phase === 'ready' && route.type === 'root' && route.tab === 'servers' ? (
-            <ServersScreen servers={app.servers} sessions={app.runtimeSessions} onAdd={openNewServer} onOpen={openServer} />
+            <ServersScreen
+              servers={app.servers}
+              sessions={app.runtimeSessions}
+              pending={app.pending}
+              onAdd={openNewServer}
+              onOpen={openServer}
+              onOpenBrowser={app.openServerBrowser}
+              onOpenExplorer={app.openServerExplorer}
+            />
           ) : null}
 
           {app.phase === 'ready' && route.type === 'root' && route.tab === 'activity' ? (
@@ -506,7 +523,6 @@ export default function App({ api = defaultApi, controllerOptions }) {
               onStopTunnel={app.stopTunnel}
               onStartAll={app.startAll}
               onRefreshRuntime={app.refreshRuntimeSessions}
-              onExplore={app.openServerExplorer}
             />
           ) : null}
 

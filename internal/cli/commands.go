@@ -199,12 +199,13 @@ func (r *commandRuntime) serverGet(args []string) error {
 
 var serverAddOptionSpecs = map[string]optionKind{
 	"--host": stringOption, "--port": stringOption, "--user": stringOption,
-	"--auth": stringOption, "--key": stringOption,
+	"--auth": stringOption, "--key": stringOption, "--socks-port": stringOption,
 }
 
 var serverUpdateOptionSpecs = map[string]optionKind{
 	"--host": stringOption, "--port": stringOption, "--user": stringOption,
 	"--auth": stringOption, "--key": stringOption, "--name": stringOption,
+	"--socks-port": stringOption,
 }
 
 func (r *commandRuntime) serverAdd(args []string) error {
@@ -238,7 +239,11 @@ func (r *commandRuntime) serverAdd(args []string) error {
 	if strings.TrimSpace(username) == "" {
 		username = state.CurrentUsername
 	}
-	input := serverdomain.Server{Name: parsed.positionals[0], Host: host, Port: port, Username: username, AuthMode: authMode, KeyReference: key}
+	socksPort, err := parseServerSOCKSPort(parsed.string("--socks-port"))
+	if err != nil {
+		return err
+	}
+	input := serverdomain.Server{Name: parsed.positionals[0], Host: host, Port: port, SocksPort: socksPort, Username: username, AuthMode: authMode, KeyReference: key}
 	if err := input.Validate(); err != nil {
 		return usageErrorf("%v", err)
 	}
@@ -285,6 +290,12 @@ func (r *commandRuntime) serverUpdate(args []string) error {
 	if parsed.has("--user") {
 		input.Username = parsed.string("--user")
 	}
+	if parsed.has("--socks-port") {
+		input.SocksPort, err = parseServerSOCKSPort(parsed.string("--socks-port"))
+		if err != nil {
+			return err
+		}
+	}
 	input.AuthMode, input.KeyReference, err = parseAuth(parsed.string("--auth"), parsed.string("--key"), input.AuthMode, input.KeyReference)
 	if err != nil {
 		return err
@@ -298,6 +309,18 @@ func (r *commandRuntime) serverUpdate(args []string) error {
 	}
 	record.Server = saved
 	return writeOutput(r.dependencies.Stdout, r.globals.Output, record, serverTable(state, []control.ServerRecord{record}))
+}
+
+func parseServerSOCKSPort(value string) (int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "0" || strings.EqualFold(value, "auto") {
+		return 0, nil
+	}
+	port, err := strconv.Atoi(value)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, usageErrorf("--socks-port must be auto or a port between 1 and 65535")
+	}
+	return port, nil
 }
 
 func parseAuth(auth string, key string, fallback serverdomain.AuthMode, fallbackKey string) (serverdomain.AuthMode, string, error) {

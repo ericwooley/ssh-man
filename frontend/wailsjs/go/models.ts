@@ -389,6 +389,7 @@ export namespace server {
 	    name: string;
 	    host: string;
 	    port: number;
+	    socksPort: number;
 	    username: string;
 	    authMode: string;
 	    keyReference?: string;
@@ -407,6 +408,7 @@ export namespace server {
 	        this.name = source["name"];
 	        this.host = source["host"];
 	        this.port = source["port"];
+	        this.socksPort = source["socksPort"];
 	        this.username = source["username"];
 	        this.authMode = source["authMode"];
 	        this.keyReference = source["keyReference"];

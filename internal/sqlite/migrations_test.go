@@ -102,6 +102,42 @@ func TestRunMigrationsDoesNotOverwriteSavedBrowserAppearances(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsAddsServerSOCKSPortToLegacySchema(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	if _, err := db.Exec(`
+		CREATE TABLE servers (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL,
+			username TEXT NOT NULL,
+			auth_mode TEXT NOT NULL,
+			key_reference TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		INSERT INTO servers(
+			id, name, host, port, username, auth_mode, key_reference, created_at, updated_at
+		) VALUES(
+			'server-1', 'Production', 'example.com', 22, 'deploy', 'agent', '',
+			'2026-07-23T00:00:00Z', '2026-07-23T00:00:00Z'
+		);
+	`); err != nil {
+		t.Fatalf("create legacy servers: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	var socksPort int
+	if err := db.QueryRow(`SELECT socks_port FROM servers WHERE id = 'server-1'`).Scan(&socksPort); err != nil {
+		t.Fatalf("load migrated SOCKS port: %v", err)
+	}
+	if socksPort != 0 {
+		t.Fatalf("migrated SOCKS port = %d, want pending automatic assignment", socksPort)
+	}
+}
+
 func openUnmigratedDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "migration.db"))

@@ -12,6 +12,8 @@ import {
   emptyTunnel,
   findConfigurationRecord,
   initialBrowserSelectionIndex,
+  isManagedSOCKSConfiguration,
+  managedSOCKSConfigurationID,
   moveBrowserSelectionIndex,
   normalizeHistoryEntry,
   normalizeBrowserAppearance,
@@ -149,6 +151,7 @@ describe('emptyServer', () => {
       name: '',
       host: 'localhost',
       port: '22',
+      socksPort: '',
       username: 'eric',
       authMode: 'agent',
       keyReference: '',
@@ -187,6 +190,7 @@ describe('validateServer', () => {
     name: 'Staging',
     host: 'staging.example.com',
     port: '22',
+    socksPort: '',
     username: 'deploy',
     authMode: 'agent',
     keyReference: '',
@@ -215,11 +219,25 @@ describe('validateServer', () => {
     expect(validateServer({ ...validServer, port }).port).toBeUndefined()
   })
 
+  it('allows automatic browser SOCKS assignment or an editable fixed port', () => {
+    expect(validateServer({ ...validServer, socksPort: '' }).socksPort).toBeUndefined()
+    expect(validateServer({ ...validServer, socksPort: '55123' }).socksPort).toBeUndefined()
+    expect(validateServer({ ...validServer, socksPort: '70000' }).socksPort).toBe('SOCKS port must be between 1 and 65535.')
+  })
+
   it('requires a key path only for private-key authentication', () => {
     expect(validateServer({ ...validServer, authMode: 'private_key' })).toEqual({
       keyReference: 'A private key path is required.',
     })
     expect(validateServer({ ...validServer, authMode: 'private_key', keyReference: '~/.ssh/id_ed25519' })).toEqual({})
+  })
+})
+
+describe('managed server SOCKS configuration', () => {
+  it('uses a stable server-derived identity', () => {
+    expect(managedSOCKSConfigurationID('server-1')).toBe('server-socks:server-1')
+    expect(isManagedSOCKSConfiguration({ id: 'server-socks:server-1' })).toBe(true)
+    expect(isManagedSOCKSConfiguration({ id: 'tunnel-1' })).toBe(false)
   })
 })
 

@@ -74,6 +74,10 @@ func serverTable(state control.State, records []control.ServerRecord) table {
 	rows := make([][]string, 0, len(records))
 	for _, record := range records {
 		active := 0
+		browserSOCKSPort := "auto"
+		if record.Server.SocksPort > 0 {
+			browserSOCKSPort = strconv.Itoa(record.Server.SocksPort)
+		}
 		for _, configuration := range record.Configurations {
 			for _, runtime := range state.Sessions {
 				if runtime.ConfigurationID == configuration.ID && isActive(runtime.Status) {
@@ -86,11 +90,12 @@ func serverTable(state control.State, records []control.ServerRecord) table {
 			record.Server.Name,
 			fmt.Sprintf("%s@%s:%d", record.Server.Username, record.Server.Host, record.Server.Port),
 			string(record.Server.AuthMode),
+			browserSOCKSPort,
 			strconv.Itoa(len(record.Configurations)),
 			strconv.Itoa(active),
 		})
 	}
-	return table{Header: []string{"ID", "NAME", "DESTINATION", "AUTH", "TUNNELS", "ACTIVE"}, Rows: rows}
+	return table{Header: []string{"ID", "NAME", "DESTINATION", "AUTH", "BROWSER SOCKS", "TUNNELS", "ACTIVE"}, Rows: rows}
 }
 
 func tunnelTable(records []tunnelRecord) table {

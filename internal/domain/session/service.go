@@ -124,6 +124,9 @@ func (s *Service) StartAll(ctx context.Context, serverID string) ([]RuntimeSessi
 	states := make([]RuntimeSession, 0, len(configurations))
 	startErrors := make([]error, 0)
 	for _, configuration := range configurations {
+		if configdomain.IsManagedSOCKSConfigurationID(configuration.ID) {
+			continue
+		}
 		state, started, err := s.startIfInactive(ctx, configuration.ID)
 		if err != nil {
 			startErrors = append(startErrors, fmt.Errorf("%s: %w", configuration.Label, err))

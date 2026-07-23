@@ -4,8 +4,11 @@ import {
   activeSessions,
   buildRuntimeSessions,
   findConfigurationRecord,
+  isManagedSOCKSConfiguration,
+  managedSOCKSConfigurationForServer,
   normalizeHistoryEntry,
   selectInitialServerId,
+  userConfigurations,
 } from '../model/appModel'
 
 const defaultPreferences = {
@@ -24,7 +27,8 @@ async function writeClipboard(text) {
 }
 
 function firstConfigurationId(items, serverId) {
-  return items.find((item) => item.server.id === serverId)?.configurations?.[0]?.id || ''
+  const configurations = items.find((item) => item.server.id === serverId)?.configurations || []
+  return userConfigurations(configurations)[0]?.id || ''
 }
 
 function mergeSession(source, session) {
@@ -51,6 +55,7 @@ export function useSshMan(api = defaultApi, options = {}) {
   const [historyByConfiguration, setHistoryByConfiguration] = useState({})
   const [historyLoadingId, setHistoryLoadingId] = useState('')
   const [unlockRequest, setUnlockRequest] = useState(null)
+  const [browserAfterUnlock, setBrowserAfterUnlock] = useState(null)
   const [browserState, setBrowserState] = useState({
     configurationId: '',
     items: [],
@@ -236,20 +241,36 @@ export function useSshMan(api = defaultApi, options = {}) {
     const record = findConfigurationRecord(servers, configurationId)
     if (!record) return null
     setSelectedServerId(record.server.id)
-    setSelectedConfigurationId(configurationId)
+    setSelectedConfigurationId(isManagedSOCKSConfiguration(record.configuration)
+      ? firstConfigurationId(servers, record.server.id)
+      : configurationId)
     void savePreferencesQuietly({ ...preferences, lastSelectedServerId: record.server.id })
-    void refreshHistory(configurationId)
+    if (!isManagedSOCKSConfiguration(record.configuration)) void refreshHistory(configurationId)
     return record
   }, [preferences, refreshHistory, savePreferencesQuietly, servers])
 
   const saveServer = useCallback((value) => runPending(`save-server:${value.id || 'new'}`, async () => {
     try {
-      const saved = await api.saveServer({ ...value, port: Number(value.port || 22) })
+      const saved = await api.saveServer({
+        ...value,
+        port: Number(value.port || 22),
+        socksPort: Number(value.socksPort || 0),
+      })
       setServers((current) => {
         const existing = current.find((item) => item.server.id === saved.id)
+        const managedProxy = managedSOCKSConfigurationForServer(saved)
         return existing
-          ? current.map((item) => item.server.id === saved.id ? { ...item, server: { ...item.server, ...saved } } : item)
-          : current.concat({ server: saved, configurations: [] })
+          ? current.map((item) => {
+              if (item.server.id !== saved.id) return item
+              const hasManagedProxy = item.configurations.some(isManagedSOCKSConfiguration)
+              const configurations = hasManagedProxy
+                ? item.configurations.map((configuration) => isManagedSOCKSConfiguration(configuration)
+                    ? { ...configuration, socksPort: saved.socksPort }
+                    : configuration)
+                : item.configurations.concat(managedProxy)
+              return { ...item, server: { ...item.server, ...saved }, configurations }
+            })
+          : current.concat({ server: saved, configurations: [managedProxy] })
       })
       setSelectedServerId(saved.id)
       setSelectedConfigurationId((current) => value.id ? current : '')
@@ -412,6 +433,51 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }), [api, applySessions, notify, refreshRuntimeSessions, requestUnlock, runPending])
 
+  const launchServerBrowser = useCallback(async (serverName, configurationId) => {
+    try {
+      await api.launchBrowserThroughSocks(configurationId, 'google-chrome')
+      notify('success', `Chrome is open through ${serverName}.`)
+      return true
+    } catch (error) {
+      notify('danger', `Chrome could not be opened through ${serverName}.`, error.message || '')
+      return false
+    }
+  }, [api, notify])
+
+  const openServerBrowser = useCallback((serverId) => runPending(`browser:${serverId}`, async () => {
+    const record = servers.find((item) => item.server.id === serverId)
+    const managedProxy = record?.configurations.find(isManagedSOCKSConfiguration)
+    if (!record || !managedProxy) {
+      notify('danger', 'Chrome could not be opened.', 'The automatic browser proxy is unavailable.')
+      return false
+    }
+
+    try {
+      let session = runtimeSessions.find((item) => item.configurationId === managedProxy.id) || null
+      if (session?.status !== 'connected') {
+        session = await api.startConfiguration(managedProxy.id)
+        applySessions([session])
+      }
+      if (session?.status === 'needs_attention') {
+        setBrowserAfterUnlock({ serverName: record.server.name, configurationId: managedProxy.id })
+        requestUnlock([session])
+        return false
+      }
+      if (session?.status !== 'connected') {
+        notify('danger', `Chrome could not be opened through ${record.server.name}.`, session?.statusDetail || 'The browser proxy did not connect.')
+        return false
+      }
+
+      setBrowserAfterUnlock(null)
+      const opened = await launchServerBrowser(record.server.name, managedProxy.id)
+      await refreshRuntimeSessions({ quiet: true })
+      return opened
+    } catch (error) {
+      notify('danger', `Chrome could not be opened through ${record.server.name}.`, error.message || '')
+      return false
+    }
+  }), [api, applySessions, launchServerBrowser, notify, refreshRuntimeSessions, requestUnlock, runPending, runtimeSessions, servers])
+
   const submitUnlock = useCallback((secret) => {
     if (!unlockRequest) return Promise.resolve(null)
     return runPending('unlock', async () => {
@@ -428,6 +494,14 @@ export function useSshMan(api = defaultApi, options = {}) {
         } else {
           setUnlockRequest(null)
           notify('success', `${nextSessions.filter((session) => session.status === 'connected').length} tunnel${nextSessions.length === 1 ? '' : 's'} unlocked.`)
+          if (
+            browserAfterUnlock &&
+            nextSessions.some((session) => session.configurationId === browserAfterUnlock.configurationId && session.status === 'connected')
+          ) {
+            const browser = browserAfterUnlock
+            setBrowserAfterUnlock(null)
+            await launchServerBrowser(browser.serverName, browser.configurationId)
+          }
         }
         await refreshRuntimeSessions({ quiet: true })
         return nextSessions
@@ -436,9 +510,12 @@ export function useSshMan(api = defaultApi, options = {}) {
         return null
       }
     })
-  }, [api, applySessions, notify, refreshRuntimeSessions, requestUnlock, runPending, unlockRequest])
+  }, [api, applySessions, browserAfterUnlock, launchServerBrowser, notify, refreshRuntimeSessions, requestUnlock, runPending, unlockRequest])
 
-  const closeUnlock = useCallback(() => setUnlockRequest(null), [])
+  const closeUnlock = useCallback(() => {
+    setUnlockRequest(null)
+    setBrowserAfterUnlock(null)
+  }, [])
 
   const openUnlock = useCallback((configurationId) => {
     const session = sessions.find((item) => item.configurationId === configurationId)
@@ -577,15 +654,16 @@ export function useSshMan(api = defaultApi, options = {}) {
   }, [api, notify])
 
   const openServerExplorer = useCallback((serverId) => runPending(`explore-server:${serverId}`, async () => {
+    const serverName = servers.find((item) => item.server.id === serverId)?.server.name || 'Server'
     try {
       await api.openServerExplorer(serverId)
-      notify('success', 'Server explorer opened in its own window.')
+      notify('success', `${serverName} explorer opened in its own window.`)
       return true
     } catch (error) {
       notify('danger', 'The server explorer could not be opened.', error.message || '')
       return false
     }
-  }), [api, notify, runPending])
+  }), [api, notify, runPending, servers])
 
   return {
     phase,
@@ -638,6 +716,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     copyPath,
     openDevTools,
     openServerExplorer,
+    openServerBrowser,
     hideWindow: api.hideApplicationWindow,
     quitApplication: api.quitApplication,
     openExternalURL: api.openExternalURL,

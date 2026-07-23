@@ -474,6 +474,60 @@ svg {
   background: var(--surface-strong);
 }
 
+.server-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.server-row__main {
+  grid-template-columns: auto minmax(0, 1fr);
+  padding-right: 4px;
+}
+
+.server-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 7px 0 2px;
+}
+
+.server-row__quick-action {
+  width: 40px;
+  min-width: 40px;
+  height: 42px;
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
+.server-row__quick-action.is-browser {
+  color: var(--accent);
+}
+
+.server-row__quick-action.is-browser.is-connected {
+  border-color: color-mix(in srgb, var(--positive) 32%, transparent);
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+
+.server-row__quick-action.is-explorer {
+  color: var(--text-muted);
+}
+
+.server-row__details {
+  width: 30px;
+  min-width: 30px;
+  height: 42px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-subtle);
+}
+
+.server-row__details svg {
+  width: 18px;
+  height: 18px;
+}
+
 .row-main {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -856,6 +910,54 @@ svg {
 .server-summary__stats svg {
   width: 18px;
   height: 18px;
+}
+
+.managed-proxy-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 52px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.managed-proxy-line > div:first-child {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 9px;
+}
+
+.managed-proxy-line > div:first-child > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.managed-proxy-line > div:first-child > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.managed-proxy-line strong,
+.managed-proxy-line small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.managed-proxy-line strong {
+  font-size: 12px;
+}
+
+.managed-proxy-line small {
+  color: var(--text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
 }
 
 .section-block {

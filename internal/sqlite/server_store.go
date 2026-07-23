@@ -18,7 +18,7 @@ func NewServerStore(db *sql.DB) *ServerStore {
 }
 
 func (s *ServerStore) List(ctx context.Context) ([]server.Server, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, host, port, username, auth_mode, key_reference, created_at, updated_at FROM servers ORDER BY name ASC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, host, port, socks_port, username, auth_mode, key_reference, created_at, updated_at FROM servers ORDER BY name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list servers: %w", err)
 	}
@@ -30,7 +30,7 @@ func (s *ServerStore) List(ctx context.Context) ([]server.Server, error) {
 		var authMode string
 		var createdAt string
 		var updatedAt string
-		if err := rows.Scan(&item.ID, &item.Name, &item.Host, &item.Port, &item.Username, &authMode, &item.KeyReference, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Host, &item.Port, &item.SocksPort, &item.Username, &authMode, &item.KeyReference, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan server: %w", err)
 		}
 		item.AuthMode = server.AuthMode(authMode)
@@ -47,11 +47,12 @@ func (s *ServerStore) Get(ctx context.Context, id string) (server.Server, error)
 	var authMode string
 	var createdAt string
 	var updatedAt string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, host, port, username, auth_mode, key_reference, created_at, updated_at FROM servers WHERE id = ?`, id).Scan(
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, host, port, socks_port, username, auth_mode, key_reference, created_at, updated_at FROM servers WHERE id = ?`, id).Scan(
 		&item.ID,
 		&item.Name,
 		&item.Host,
 		&item.Port,
+		&item.SocksPort,
 		&item.Username,
 		&authMode,
 		&item.KeyReference,
@@ -69,17 +70,18 @@ func (s *ServerStore) Get(ctx context.Context, id string) (server.Server, error)
 
 func (s *ServerStore) Save(ctx context.Context, item server.Server) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO servers(id, name, host, port, username, auth_mode, key_reference, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO servers(id, name, host, port, socks_port, username, auth_mode, key_reference, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			host = excluded.host,
 			port = excluded.port,
+			socks_port = excluded.socks_port,
 			username = excluded.username,
 			auth_mode = excluded.auth_mode,
 			key_reference = excluded.key_reference,
 			updated_at = excluded.updated_at
-	`, item.ID, item.Name, item.Host, item.Port, item.Username, string(item.AuthMode), item.KeyReference, item.CreatedAt.Format(time.RFC3339Nano), item.UpdatedAt.Format(time.RFC3339Nano))
+	`, item.ID, item.Name, item.Host, item.Port, item.SocksPort, item.Username, string(item.AuthMode), item.KeyReference, item.CreatedAt.Format(time.RFC3339Nano), item.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("save server: %w", err)
 	}

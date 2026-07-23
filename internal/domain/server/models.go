@@ -18,6 +18,7 @@ type Server struct {
 	Name         string    `json:"name"`
 	Host         string    `json:"host"`
 	Port         int       `json:"port"`
+	SocksPort    int       `json:"socksPort"`
 	Username     string    `json:"username"`
 	AuthMode     AuthMode  `json:"authMode"`
 	KeyReference string    `json:"keyReference,omitempty"`
@@ -37,6 +38,9 @@ func (s Server) Validate() error {
 	}
 	if s.Port < 1 || s.Port > 65535 {
 		return fmt.Errorf("server port must be between 1 and 65535")
+	}
+	if s.SocksPort < 0 || s.SocksPort > 65535 {
+		return fmt.Errorf("server SOCKS port must be 0 (automatic) or between 1 and 65535")
 	}
 	if s.AuthMode != AuthModePrivateKey && s.AuthMode != AuthModeAgent {
 		return fmt.Errorf("server auth mode must be private_key or agent")
