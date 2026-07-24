@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { IconButton } from '../components/AppChrome'
+import { ConfirmDialog } from '../components/Dialogs'
 import * as defaultApi from '../lib/commandApi'
 import { activeShellWord, applyPathCompletion } from './commandCompletion'
 
@@ -23,10 +24,6 @@ async function writeClipboard(text) {
     throw new Error('Clipboard access is unavailable.')
   }
   await navigator.clipboard.writeText(text)
-}
-
-function defaultConfirmDelete() {
-  return window.confirm('Delete this command and its saved output from history?')
 }
 
 function formatTimestamp(value) {
@@ -61,7 +58,6 @@ function copyableOutput(entry) {
 export default function CommandApp({
   api = defaultApi,
   copyText = writeClipboard,
-  confirmDelete = defaultConfirmDelete,
 }) {
   const [server, setServer] = useState(null)
   const [phase, setPhase] = useState('loading')
@@ -76,6 +72,7 @@ export default function CommandApp({
   const [runningCommand, setRunningCommand] = useState('')
   const [stopping, setStopping] = useState(false)
   const [deletingID, setDeletingID] = useState('')
+  const [deleteRequest, setDeleteRequest] = useState(null)
   const [passphrase, setPassphrase] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -219,21 +216,33 @@ export default function CommandApp({
     }
   }, [api, running, stopping])
 
-  const deleteEntry = useCallback(async (entry) => {
-    if (!entry || deletingID || !confirmDelete(entry)) return
+  const requestDelete = useCallback((entry) => {
+    if (!entry || deletingID) return
+    setDeleteRequest({
+      entry,
+      title: `Delete ${entry.command}?`,
+      description: 'This permanently removes the command and its saved output from history.',
+      confirmLabel: 'Delete command',
+    })
+  }, [deletingID])
+
+  const deleteEntry = useCallback(async () => {
+    const entry = deleteRequest?.entry
+    if (!entry || deletingID) return
     setDeletingID(entry.id)
     setError('')
     try {
       await api.deleteHistory(entry.id)
       setHistory((current) => current.filter((item) => item.id !== entry.id))
       setSelectedID((current) => current === entry.id ? '' : current)
+      setDeleteRequest(null)
       setNotice('Command history deleted.')
     } catch (nextError) {
       setError(nextError.message || 'The command history could not be deleted.')
     } finally {
       setDeletingID('')
     }
-  }, [api, confirmDelete, deletingID])
+  }, [api, deleteRequest, deletingID])
 
   const copyOutput = useCallback(async () => {
     if (!selectedEntry) return
@@ -378,7 +387,7 @@ export default function CommandApp({
                       label={`Delete ${entry.command} from history`}
                       className="command-history__delete"
                       disabled={deletingID === entry.id}
-                      onClick={() => deleteEntry(entry)}
+                      onClick={() => requestDelete(entry)}
                     >
                       {deletingID === entry.id ? <LoaderCircle className="spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
                     </IconButton>
@@ -495,7 +504,7 @@ export default function CommandApp({
                   </div>
                   <div className="command-output__actions">
                     <IconButton label="Copy command output" onClick={copyOutput}><Copy aria-hidden="true" /></IconButton>
-                    <IconButton label="Delete selected command history" onClick={() => deleteEntry(selectedEntry)}><Trash2 aria-hidden="true" /></IconButton>
+                    <IconButton label="Delete selected command history" onClick={() => requestDelete(selectedEntry)}><Trash2 aria-hidden="true" /></IconButton>
                   </div>
                 </div>
                 <div className={`command-output__status ${entryStatus(selectedEntry).className}`}>
@@ -515,6 +524,14 @@ export default function CommandApp({
           </section>
         </section>
       </main>
+      <ConfirmDialog
+        request={deleteRequest}
+        pending={Boolean(deletingID)}
+        onClose={() => {
+          if (!deletingID) setDeleteRequest(null)
+        }}
+        onConfirm={deleteEntry}
+      />
     </div>
   )
 }

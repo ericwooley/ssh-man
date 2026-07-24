@@ -53,7 +53,7 @@ describe('quick command window', () => {
     const user = userEvent.setup()
     const api = createApi()
     const copyText = vi.fn(async () => undefined)
-    render(<CommandApp api={api} copyText={copyText} confirmDelete={() => true} />)
+    render(<CommandApp api={api} copyText={copyText} />)
 
     expect(await screen.findByRole('heading', { name: 'Production' })).toBeTruthy()
     expect(screen.getByText('/srv/app')).toBeTruthy()
@@ -64,7 +64,7 @@ describe('quick command window', () => {
   test('uses remote file completion and saves the finished command in history', async () => {
     const user = userEvent.setup()
     const api = createApi({ history: [] })
-    render(<CommandApp api={api} copyText={vi.fn()} confirmDelete={() => true} />)
+    render(<CommandApp api={api} copyText={vi.fn()} />)
     const input = await screen.findByLabelText('Command')
 
     await user.type(input, 'cat src/se')
@@ -84,10 +84,19 @@ describe('quick command window', () => {
   test('deletes a selected prompt and its output from saved history', async () => {
     const user = userEvent.setup()
     const api = createApi()
-    render(<CommandApp api={api} copyText={vi.fn()} confirmDelete={() => true} />)
+    render(<CommandApp api={api} copyText={vi.fn()} />)
 
     await screen.findByText('/srv/app')
     await user.click(screen.getByRole('button', { name: 'Delete selected command history' }))
+
+    expect(api.deleteHistory).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Delete pwd?' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(api.deleteHistory).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: 'Delete pwd?' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Delete selected command history' }))
+    await user.click(screen.getByRole('button', { name: 'Delete command' }))
 
     await waitFor(() => expect(api.deleteHistory).toHaveBeenCalledWith(savedEntry.id))
     expect(screen.queryByText('/srv/app')).toBeNull()
@@ -100,7 +109,7 @@ describe('quick command window', () => {
     api.connect
       .mockResolvedValueOnce({ needsPassphrase: true })
       .mockResolvedValueOnce({ connected: true, homePath: '/home/deploy' })
-    render(<CommandApp api={api} copyText={vi.fn()} confirmDelete={() => true} />)
+    render(<CommandApp api={api} copyText={vi.fn()} />)
 
     await user.type(await screen.findByLabelText('Passphrase'), 'secret')
     await user.click(screen.getByRole('button', { name: 'Unlock and connect' }))
