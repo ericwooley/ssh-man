@@ -164,6 +164,12 @@ Text and source files open in Monaco and can be saved back through SFTP. Enable 
 
 Markdown has rendered and source views. HTML, SVG, PDF, images, audio, and video use the native browser renderer; relative HTML assets resolve against the remote file's directory. Active scripts are disabled in HTML previews so a remote document cannot call SSH Man's native bindings. Download the file and open it in a normal browser when script execution is required.
 
+### Quick remote commands
+
+Use the terminal button on any saved server to open its dedicated command window. Commands run through that server's saved SSH credentials, and the prompt, combined output, exit status, and timing are saved in per-server history. History entries can be copied or deleted individually, and a running command can be stopped.
+
+Remote file and folder names autocomplete in the command prompt. Type part of a path and use the suggestions or press `Tab`; absolute paths, paths relative to the remote home directory, `~/`, spaces, and hidden-file prefixes are supported. Saved output is capped at 2 MB per command and clearly marked when truncated.
+
 ### Quick browser switching
 
 On macOS, hold `Alt` and press `X` by default to move forward through running browsers, or `Z` to move backward. Keep `Alt` held while cycling, then release it to activate the selected browser, like the macOS application switcher; press `Escape` to cancel. Proxy-launched instances are labeled with their SSH Man server, while ordinary instances of the same browser are labeled `Regular`. Both directions wrap and recently activated targets are ordered first. Record either global shortcut under **Settings → Quick browser switching**; the two shortcuts must share the same held `Control`, `Alt`, and `Command` modifiers. Choose **Customize** there to give each proxy or regular browser a persistent primary color and either a built-in icon or emoji mark.

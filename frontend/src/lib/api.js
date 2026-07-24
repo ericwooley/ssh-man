@@ -15,6 +15,11 @@ function getSettingsLauncherBindings() {
   return window.go?.bindings?.SettingsLauncherBindings || null
 }
 
+function getCommandLauncherBindings() {
+  if (typeof window === 'undefined') return null
+  return window.go?.bindings?.CommandLauncherBindings || null
+}
+
 const hasWailsRuntime = () => getRuntimeBindings() !== null
 
 const memoryState = {
@@ -381,6 +386,14 @@ export async function openSettingsWindow() {
     return launcher.Open()
   }
   return { opened: true }
+}
+
+export async function openServerCommand(serverId) {
+  const launcher = getCommandLauncherBindings()
+  if (launcher) {
+    return launcher.Open(serverId)
+  }
+  return { serverId, opened: true }
 }
 
 

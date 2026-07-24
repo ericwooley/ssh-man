@@ -114,6 +114,10 @@ func testSettingsLauncher() *bindings.SettingsLauncherBindings {
 	return bindings.NewSettingsLauncherBindingsWithDependency(nil)
 }
 
+func testCommandLauncher() *bindings.CommandLauncherBindings {
+	return bindings.NewCommandLauncherBindingsWithDependencies(nil, nil)
+}
+
 func TestBrowserSwitchEventDispatcherPreservesSessionOrder(t *testing.T) {
 	received := make(chan browserSwitchEvent, 5)
 	dispatcher := newBrowserSwitchEventDispatcher(func(event browserSwitchEvent) {
@@ -301,7 +305,9 @@ func TestNewOptionsConfiguresCompactSingleInstanceApp(t *testing.T) {
 	app := &bindings.AppBindings{}
 	bar := &fakeMenuBar{}
 	launcher := testLauncher()
-	got := newOptions(nil, app, launcher, testSettingsLauncher(), window, bar, testLifecycle(bar))
+	commandLauncher := testCommandLauncher()
+	settingsLauncher := testSettingsLauncher()
+	got := newOptions(nil, app, launcher, settingsLauncher, commandLauncher, window, bar, testLifecycle(bar))
 
 	if got.Title != "SSH Man" {
 		t.Fatalf("Title = %q, want SSH Man", got.Title)
@@ -315,8 +321,8 @@ func TestNewOptionsConfiguresCompactSingleInstanceApp(t *testing.T) {
 	if got.OnStartup == nil || got.OnDomReady == nil || got.OnBeforeClose == nil || got.OnShutdown == nil {
 		t.Fatal("expected complete Wails lifecycle hooks")
 	}
-	wantBindingCount := 3 + len(additionalBindingsForGeneration())
-	if len(got.Bind) != wantBindingCount || got.Bind[0] != app || got.Bind[1] != launcher {
+	wantBindingCount := 4 + len(additionalBindingsForGeneration())
+	if len(got.Bind) != wantBindingCount || got.Bind[0] != app || got.Bind[1] != launcher || got.Bind[2] != settingsLauncher || got.Bind[3] != commandLauncher {
 		t.Fatalf("Bind = %#v, want application bindings", got.Bind)
 	}
 }
@@ -365,11 +371,35 @@ func TestNewSettingsOptionsConfiguresIndependentResizableWindow(t *testing.T) {
 	}
 }
 
+func TestNewCommandOptionsConfiguresIndependentResizableWindow(t *testing.T) {
+	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
+	command := bindings.NewCommandBindings(
+		&bootstrap.Application{},
+		serverdomain.Server{ID: "server-1", Name: "Production"},
+		window,
+	)
+
+	got := newCommandOptions(nil, command, window, "Production", "server-1")
+
+	if got.Title != "Production — SSH Man Command" || got.Width != 940 || got.Height != 700 {
+		t.Fatalf("command window = %q %dx%d", got.Title, got.Width, got.Height)
+	}
+	if got.DisableResize || got.HideWindowOnClose || got.AlwaysOnTop {
+		t.Fatal("command runner should be an ordinary persistent OS window")
+	}
+	if got.SingleInstanceLock == nil || got.SingleInstanceLock.UniqueId != singleInstanceID+".command.server-1" {
+		t.Fatalf("command lock = %#v", got.SingleInstanceLock)
+	}
+	if len(got.Bind) != 1 || got.Bind[0] != command {
+		t.Fatalf("command bindings = %#v", got.Bind)
+	}
+}
+
 func TestSecondInstanceUsesNativeMenuBarWhenAvailable(t *testing.T) {
 	runtime := &fakeWindowRuntime{}
 	window := appwindow.NewWithRuntime(runtime)
 	bar := &fakeMenuBar{showResult: true}
-	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), window, bar, testLifecycle(bar))
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, bar, testLifecycle(bar))
 
 	got.SingleInstanceLock.OnSecondInstanceLaunch(options.SecondInstanceData{})
 
@@ -385,7 +415,7 @@ func TestSecondInstanceDefersWindowShowUntilStartupWhenMenuBarUnavailable(t *tes
 	runtime := &fakeWindowRuntime{}
 	window := appwindow.NewWithRuntime(runtime)
 	bar := &fakeMenuBar{}
-	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), window, bar, testLifecycle(bar))
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, bar, testLifecycle(bar))
 
 	got.SingleInstanceLock.OnSecondInstanceLaunch(options.SecondInstanceData{})
 	if runtime.showCalls != 0 {
@@ -403,7 +433,7 @@ func TestDomReadyShowsFallbackWindowWhenMenuBarStartFails(t *testing.T) {
 	window := appwindow.NewWithRuntime(runtime)
 	window.SetContext(context.Background())
 	bar := &fakeMenuBar{startErr: errors.New("native unavailable")}
-	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), window, bar, testLifecycle(bar))
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, bar, testLifecycle(bar))
 
 	got.OnDomReady(context.Background())
 
@@ -431,7 +461,7 @@ func TestStartupStartsConfiguredTunnelsOnceAndShutdownCancelsIt(t *testing.T) {
 		func(context.Context) error { return nil },
 	)
 	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
-	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), window, &fakeMenuBar{}, lifecycle)
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, &fakeMenuBar{}, lifecycle)
 
 	got.OnStartup(context.Background())
 	got.OnStartup(context.Background())
@@ -457,7 +487,7 @@ func TestLifecycleStartsControlAndStopsItBeforeApplication(t *testing.T) {
 		events = append(events, "application.shutdown")
 		return nil
 	})
-	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), window, bar, lifecycle)
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, bar, lifecycle)
 
 	if err := lifecycle.Start(); err != nil {
 		t.Fatalf("Start() error = %v", err)

@@ -1,5 +1,37 @@
 export namespace bindings {
 
+	export class CommandInitialState {
+	    server: server.Server;
+	    history: commandhistory.Entry[];
+
+	    static createFrom(source: any = {}) {
+	        return new CommandInitialState(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.server = this.convertValues(source["server"], server.Server);
+	        this.history = this.convertValues(source["history"], commandhistory.Entry);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Diagnostics {
 	    appDataPath: string;
 	    databasePath: string;
@@ -135,6 +167,126 @@ export namespace bindings {
 		}
 	}
 
+
+}
+
+export namespace commandhistory {
+
+	export class Entry {
+	    id: string;
+	    serverId: string;
+	    command: string;
+	    output: string;
+	    exitCode: number;
+	    // Go type: time
+	    startedAt: any;
+	    // Go type: time
+	    endedAt: any;
+	    truncated?: boolean;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Entry(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.serverId = source["serverId"];
+	        this.command = source["command"];
+	        this.output = source["output"];
+	        this.exitCode = source["exitCode"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.endedAt = this.convertValues(source["endedAt"], null);
+	        this.truncated = source["truncated"];
+	        this.error = source["error"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace commandrunner {
+
+	export class Completion {
+	    value: string;
+	    name: string;
+	    kind: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Completion(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.name = source["name"];
+	        this.kind = source["kind"];
+	    }
+	}
+	export class CompletionResult {
+	    items: Completion[];
+
+	    static createFrom(source: any = {}) {
+	        return new CompletionResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], Completion);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ConnectResult {
+	    connected: boolean;
+	    needsPassphrase?: boolean;
+	    homePath?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connected = source["connected"];
+	        this.needsPassphrase = source["needsPassphrase"];
+	        this.homePath = source["homePath"];
+	    }
+	}
 
 }
 

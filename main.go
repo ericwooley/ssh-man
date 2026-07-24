@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"ssh-man/internal/app/commandwindow"
 	"ssh-man/internal/app/explorerwindow"
 	"ssh-man/internal/app/runner"
 	"ssh-man/internal/app/settingswindow"
@@ -19,6 +20,12 @@ func main() {
 	if settingswindow.FromArgs(os.Args[1:]) {
 		if err := runner.RunSettings(assets); err != nil {
 			log.Fatalf("run settings: %v", err)
+		}
+		return
+	}
+	if serverID, ok := commandwindow.ServerIDFromArgs(os.Args[1:]); ok {
+		if err := runner.RunCommand(assets, serverID); err != nil {
+			log.Fatalf("run quick command window: %v", err)
 		}
 		return
 	}

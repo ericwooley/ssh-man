@@ -52,6 +52,20 @@ var schemaStatements = []string{
 		message TEXT NOT NULL,
 		FOREIGN KEY(configuration_id) REFERENCES connection_configurations(id) ON DELETE CASCADE
 	);`,
+	`CREATE TABLE IF NOT EXISTS command_history (
+		id TEXT PRIMARY KEY,
+		server_id TEXT NOT NULL,
+		command TEXT NOT NULL,
+		output TEXT NOT NULL DEFAULT '',
+		exit_code INTEGER NOT NULL,
+		started_at TEXT NOT NULL,
+		ended_at TEXT NOT NULL,
+		truncated INTEGER NOT NULL DEFAULT 0,
+		error TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY(server_id) REFERENCES servers(id) ON DELETE CASCADE
+	);`,
+	`CREATE INDEX IF NOT EXISTS command_history_server_started_idx
+		ON command_history(server_id, started_at DESC);`,
 }
 
 func RunMigrations(db *sql.DB) error {
