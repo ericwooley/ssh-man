@@ -21,6 +21,7 @@ const defaultPreferences = {
   proxyBrowserId: '',
   customBrowsers: [],
   urlRules: [],
+  urlPortAssignments: [],
 }
 
 async function writeClipboard(text) {
@@ -607,6 +608,7 @@ export function useSshMan(api = defaultApi, options = {}) {
       proxyBrowserId: String(input.proxyBrowserId || '').trim(),
       customBrowsers: input.customBrowsers || [],
       urlRules: input.urlRules || [],
+      urlPortAssignments: input.urlPortAssignments || [],
     }
     const saved = await savePreferencesQuietly(next)
     if (saved) {

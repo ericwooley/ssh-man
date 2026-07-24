@@ -50,7 +50,8 @@ That means you can develop on a remote machine while keeping a workflow that sti
 - Download remote files or complete folders over SFTP
 - Switch directly between proxy-launched and regular browser instances with a configurable global shortcut on macOS
 - Set SSH Man as the macOS default browser and route links by ordered regular-expression rules
-- Detect which connected SSH hosts accept a `localhost` URL's port and open the link through the matching SOCKS5 browser
+- Pauseable timed link chooser with regular-browser and browser-through-host destinations
+- Probe every explicit URL port through connected SSH hosts and save a default browser/host assignment per port
 - Preview the exact browser command before launch
 - Use the local SSH agent by default
 - Support encrypted private keys when you need file-based auth
@@ -170,15 +171,13 @@ On macOS, hold `Alt` and press `X` by default to move forward through running br
 
 ### Default-browser URL routing
 
-On macOS, open **Settings → URL routing** to choose a regular fallback browser, choose the browser used for SOCKS5 launches, add arbitrary browser applications, and make SSH Man the HTTP/HTTPS handler. Zen is detected as a Firefox-compatible browser and is available for both ordinary links and isolated SOCKS5 launches.
+On macOS, open **Settings → URL routing** to choose a regular fallback browser, choose the browser used for SOCKS5 launches, add arbitrary browser applications, assign URL ports to a saved host/browser combination, and make SSH Man the HTTP/HTTPS handler. Zen is detected as a Firefox-compatible browser and is available for both ordinary links and isolated SOCKS5 launches.
 
 Rules are evaluated from top to bottom and the first matching regular expression wins. A matching rule can open the URL in an installed browser or run a command template. Command templates must contain `<URL>`; SSH Man inserts the URL as escaped shell data, so a template such as `open -a "Zen" "ext+container:name=Work&url=<URL>"` can target a browser-specific container.
 
-When no rule matches a loopback URL such as `http://localhost:3000`, SSH Man:
+Managed browser SOCKS5 proxies start with SSH Man. Every HTTP or HTTPS link opens a compact chooser with the computed route selected and a five-second countdown. Moving the pointer, clicking, scrolling, or pressing a key pauses the countdown; use the arrow keys, Enter, or the mouse to select another regular browser or browser-through-host destination.
 
-1. Starts the managed browser proxy for each saved server when SSH Man is the default browser.
-2. Probes `127.0.0.1:3000` through each connected SOCKS5 proxy.
-3. Opens the URL through the only matching server, asks which server to use if several match, or uses the selected fallback browser if none match.
+For every URL with an explicit port, SSH Man probes that host and port through each connected managed proxy. A saved port assignment selects its browser/host combination by default. Otherwise, the only reachable host is selected automatically; when several or no hosts answer, the regular fallback browser is selected. Rules remain the highest-priority default, and every available route remains selectable before the countdown completes.
 
 Only `http` and `https` URLs are accepted. URL credentials and non-web schemes are rejected.
 

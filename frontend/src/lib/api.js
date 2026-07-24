@@ -29,6 +29,7 @@ const memoryState = {
     proxyBrowserId: '',
     customBrowsers: [],
     urlRules: [],
+    urlPortAssignments: [],
   },
   sessions: [],
   sessionHistory: [],
@@ -296,6 +297,13 @@ export async function dismissURLRoute(requestId) {
   if (hasWailsRuntime()) {
     return appBindings().DismissURLRoute(requestId)
   }
+}
+
+export function setURLRouteWindowMode(compact) {
+  if (typeof window === 'undefined' || !window.runtime?.WindowSetSize) return
+  const [width, height] = compact ? [440, 460] : [420, 720]
+  window.runtime.WindowSetSize(width, height)
+  window.runtime.WindowCenter?.()
 }
 
 export function onURLRouteChoiceRequested(callback) {

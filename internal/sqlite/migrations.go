@@ -142,6 +142,13 @@ func RunMigrations(db *sql.DB) error {
 	); err != nil {
 		return err
 	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"url_port_assignments_json",
+		`ALTER TABLE user_preferences ADD COLUMN url_port_assignments_json TEXT NOT NULL DEFAULT '[]';`,
+	); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migrations: %w", err)

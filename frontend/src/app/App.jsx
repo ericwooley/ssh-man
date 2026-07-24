@@ -263,6 +263,12 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
   }, [api])
 
   useEffect(() => {
+    if (!urlRouteRequest || settingsWindow) return undefined
+    api.setURLRouteWindowMode?.(true)
+    return () => api.setURLRouteWindowMode?.(false)
+  }, [api, settingsWindow, urlRouteRequest])
+
+  useEffect(() => {
     const pendingSessionId = pendingBrowserSwitcherCommitSessionRef.current
     if (!pendingSessionId || browserSwitcher.loading) return
     pendingBrowserSwitcherCommitSessionRef.current = ''
@@ -461,6 +467,7 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
             {app.phase === 'ready' ? (
               <SettingsScreen
                 preferences={app.preferences}
+                servers={app.servers}
                 diagnostics={app.diagnostics}
                 storageIssue={app.storageIssue}
                 runtimeFresh={app.runtimeFresh}

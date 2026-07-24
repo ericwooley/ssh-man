@@ -203,7 +203,7 @@ func (s *Service) StartManagedSOCKSProxies(ctx context.Context) ([]RuntimeSessio
 func configurationsStartingOnLaunch(configurations []configdomain.ConnectionConfiguration) []configdomain.ConnectionConfiguration {
 	selected := make([]configdomain.ConnectionConfiguration, 0, len(configurations))
 	for _, configuration := range configurations {
-		if configuration.StartOnLaunch {
+		if configuration.StartOnLaunch || configdomain.IsManagedSOCKSConfigurationID(configuration.ID) {
 			selected = append(selected, configuration)
 		}
 	}

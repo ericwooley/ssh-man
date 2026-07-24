@@ -23,12 +23,13 @@ func (s *PreferencesStore) Load(ctx context.Context) (preferences.UserPreference
 	var browserAppearancesJSON string
 	var customBrowsersJSON string
 	var urlRulesJSON string
+	var urlPortAssignmentsJSON string
 	var updatedAt string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT theme, last_selected_server_id, browser_switcher_shortcut,
 		       browser_switcher_backward_shortcut, browser_appearances_json,
 		       default_browser_id, proxy_browser_id, custom_browsers_json,
-		       url_rules_json,
+		       url_rules_json, url_port_assignments_json,
 		       updated_at
 		FROM user_preferences
 		WHERE id = 1
@@ -42,6 +43,7 @@ func (s *PreferencesStore) Load(ctx context.Context) (preferences.UserPreference
 		&pref.ProxyBrowserID,
 		&customBrowsersJSON,
 		&urlRulesJSON,
+		&urlPortAssignmentsJSON,
 		&updatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -67,6 +69,12 @@ func (s *PreferencesStore) Load(ctx context.Context) (preferences.UserPreference
 	}
 	if pref.URLRules == nil {
 		pref.URLRules = []preferences.URLRule{}
+	}
+	if err := json.Unmarshal([]byte(urlPortAssignmentsJSON), &pref.URLPortAssignments); err != nil {
+		return preferences.UserPreference{}, fmt.Errorf("load URL port assignments: %w", err)
+	}
+	if pref.URLPortAssignments == nil {
+		pref.URLPortAssignments = []preferences.URLPortAssignment{}
 	}
 	pref.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
 	return pref, nil
@@ -97,15 +105,23 @@ func (s *PreferencesStore) Save(ctx context.Context, pref preferences.UserPrefer
 	if err != nil {
 		return fmt.Errorf("save custom browsers: %w", err)
 	}
+	urlPortAssignments := pref.URLPortAssignments
+	if urlPortAssignments == nil {
+		urlPortAssignments = []preferences.URLPortAssignment{}
+	}
+	urlPortAssignmentsJSON, err := json.Marshal(urlPortAssignments)
+	if err != nil {
+		return fmt.Errorf("save URL port assignments: %w", err)
+	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO user_preferences(
 			id, theme, last_selected_server_id, browser_switcher_shortcut,
 			browser_switcher_backward_shortcut, browser_appearances_json,
 			default_browser_id, proxy_browser_id, custom_browsers_json,
-			url_rules_json,
+			url_rules_json, url_port_assignments_json,
 			updated_at
 		)
-		VALUES(1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES(1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			theme = excluded.theme,
 			last_selected_server_id = excluded.last_selected_server_id,
@@ -116,8 +132,9 @@ func (s *PreferencesStore) Save(ctx context.Context, pref preferences.UserPrefer
 			proxy_browser_id = excluded.proxy_browser_id,
 			custom_browsers_json = excluded.custom_browsers_json,
 			url_rules_json = excluded.url_rules_json,
+			url_port_assignments_json = excluded.url_port_assignments_json,
 			updated_at = excluded.updated_at
-	`, string(pref.Theme), pref.LastSelectedServerID, pref.BrowserSwitcherShortcut, pref.BrowserSwitcherBackwardShortcut, string(browserAppearancesJSON), pref.DefaultBrowserID, pref.ProxyBrowserID, string(customBrowsersJSON), string(urlRulesJSON), pref.UpdatedAt.Format(time.RFC3339Nano))
+	`, string(pref.Theme), pref.LastSelectedServerID, pref.BrowserSwitcherShortcut, pref.BrowserSwitcherBackwardShortcut, string(browserAppearancesJSON), pref.DefaultBrowserID, pref.ProxyBrowserID, string(customBrowsersJSON), string(urlRulesJSON), string(urlPortAssignmentsJSON), pref.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("save preferences: %w", err)
 	}

@@ -94,6 +94,7 @@ function createFakeApi({
       proxyBrowserId: '',
       customBrowsers: [],
       urlRules: [],
+      urlPortAssignments: [],
     },
     nextServerId: 2,
     nextTunnelId: 2,
@@ -196,6 +197,7 @@ function createFakeApi({
     pendingURLRoute: vi.fn(async () => null),
     resolveURLRoute: vi.fn(async () => undefined),
     dismissURLRoute: vi.fn(async () => undefined),
+    setURLRouteWindowMode: vi.fn(),
     onURLRouteChoiceRequested: vi.fn((callback) => {
       api.urlRouteChoiceListener = callback
       return () => { api.urlRouteChoiceListener = null }
@@ -732,6 +734,36 @@ describe('React application flows', () => {
     expect(await screen.findByText('SSH Man is your default browser.')).toBeTruthy()
   })
 
+  test('assigns an explicit URL port to a browser and saved host', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy, savedTunnel] }],
+    })
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    renderSettingsApp(api)
+
+    await screen.findByRole('heading', { name: 'URL routing' })
+    await user.click(screen.getByRole('button', { name: 'Assign port' }))
+    await user.type(screen.getByRole('spinbutton', { name: 'Port assignment 1 port' }), '3000')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Port assignment 1 host' }), savedServer.id)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Port assignment 1 browser' }), 'firefox')
+    await user.click(screen.getByRole('button', { name: 'Save URL routing' }))
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      urlPortAssignments: [
+        expect.objectContaining({
+          port: 3000,
+          serverId: savedServer.id,
+          browserId: 'firefox',
+        }),
+      ],
+    })))
+  })
+
   test('offers installed Zen for regular and SOCKS URL routing', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi()
@@ -777,7 +809,7 @@ describe('React application flows', () => {
     })))
   })
 
-  test('shows a server chooser for ambiguous localhost URL routes', async () => {
+  test('shows a timed destination chooser for opened URLs', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi()
     renderApp(api)
@@ -787,19 +819,23 @@ describe('React application flows', () => {
       api.urlRouteChoiceListener({
         id: 'route-1',
         url: 'http://localhost:3000/dashboard',
+        defaultChoiceId: 'browser:safari',
+        timeoutMilliseconds: 5000,
         choices: [
-          { id: 'server-socks:bts', serverId: 'bts', serverName: 'BTS', configurationId: 'server-socks:bts', browserId: 'google-chrome' },
-          { id: 'server-socks:staging', serverId: 'staging', serverName: 'Staging', configurationId: 'server-socks:staging', browserId: 'google-chrome' },
+          { id: 'browser:safari', kind: 'browser', label: 'Safari', detail: 'Regular browser', browserId: 'safari' },
+          { id: 'proxy:server-socks:staging:google-chrome', kind: 'proxy', label: 'Google Chrome through Staging', detail: 'SOCKS5 proxy', serverId: 'staging', serverName: 'Staging', configurationId: 'server-socks:staging', browserId: 'google-chrome' },
         ],
       })
     })
 
-    const dialog = await screen.findByRole('dialog', { name: 'Choose a server for this URL' })
+    const dialog = await screen.findByRole('dialog', { name: 'Choose where to open this link' })
     expect(within(dialog).getByText('http://localhost:3000/dashboard')).toBeTruthy()
-    await user.click(within(dialog).getByRole('button', { name: 'Open through Staging' }))
+    expect(within(dialog).getByText('Opening Safari in 5s')).toBeTruthy()
+    await user.click(within(dialog).getByRole('option', { name: 'Open in Google Chrome through Staging' }))
 
-    await waitFor(() => expect(api.resolveURLRoute).toHaveBeenCalledWith('route-1', 'server-socks:staging'))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose a server for this URL' })).toBeNull())
+    await waitFor(() => expect(api.resolveURLRoute).toHaveBeenCalledWith('route-1', 'proxy:server-socks:staging:google-chrome'))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose where to open this link' })).toBeNull())
+    expect(api.setURLRouteWindowMode).toHaveBeenCalledWith(true)
     expect(api.hideApplicationWindow).toHaveBeenCalled()
   })
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 
 	configdomain "ssh-man/internal/domain/config"
@@ -51,8 +52,13 @@ type browserCall struct {
 }
 
 type fakeBrowsers struct {
-	regular []browserCall
-	proxy   []browserCall
+	destinations []BrowserDestination
+	regular      []browserCall
+	proxy        []browserCall
+}
+
+func (f *fakeBrowsers) ListDestinations(context.Context) ([]BrowserDestination, error) {
+	return append([]BrowserDestination(nil), f.destinations...), nil
 }
 
 func (f *fakeBrowsers) OpenURL(_ context.Context, browserID, rawURL string) error {
@@ -65,17 +71,17 @@ func (f *fakeBrowsers) LaunchThroughSOCKSURL(_ context.Context, configurationID,
 	return nil
 }
 
-func TestHandleUsesFirstMatchingRuleBeforeLocalhostDiscovery(t *testing.T) {
+func TestHandlePresentsMatchingRuleInsteadOfOpeningImmediately(t *testing.T) {
 	pref := preferencesdomain.Default()
 	pref.DefaultBrowserID = "safari"
 	pref.URLRules = []preferencesdomain.URLRule{
 		{ID: "work", Pattern: `^https://github\.com/workorg/`, Action: preferencesdomain.URLRuleActionBrowser, BrowserID: "brave-browser"},
 		{ID: "later", Pattern: `github`, Action: preferencesdomain.URLRuleActionBrowser, BrowserID: "firefox"},
 	}
-	browsers := &fakeBrowsers{}
+	browsers := routingBrowsers()
 	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, browsers)
 	service.probe = func(context.Context, int, string, int) error {
-		t.Fatal("localhost probe should not run for a matching rule")
+		t.Fatal("a URL without an explicit port must not be probed")
 		return nil
 	}
 
@@ -83,8 +89,18 @@ func TestHandleUsesFirstMatchingRuleBeforeLocalhostDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handle url: %v", err)
 	}
-	if result.Kind != ResultOpened {
-		t.Fatalf("result = %#v, want opened", result)
+	if result.Kind != ResultNeedsChoice || result.Request == nil {
+		t.Fatalf("result = %#v, want choice", result)
+	}
+	if result.Request.DefaultChoiceID != "browser:brave-browser" || result.Request.TimeoutMilliseconds != 5000 {
+		t.Fatalf("request = %#v", result.Request)
+	}
+	if len(browsers.regular) != 0 || len(browsers.proxy) != 0 {
+		t.Fatalf("URL opened before choice: regular=%#v proxy=%#v", browsers.regular, browsers.proxy)
+	}
+
+	if err := service.ResolveChoice(context.Background(), result.Request.ID, result.Request.DefaultChoiceID); err != nil {
+		t.Fatalf("resolve default: %v", err)
 	}
 	want := []browserCall{{browserID: "brave-browser", url: "https://github.com/workorg/repo"}}
 	if !reflect.DeepEqual(browsers.regular, want) {
@@ -92,7 +108,7 @@ func TestHandleUsesFirstMatchingRuleBeforeLocalhostDiscovery(t *testing.T) {
 	}
 }
 
-func TestHandleExecutesMatchingCommandWithURLPlaceholder(t *testing.T) {
+func TestHandlePresentsMatchingCommandAsDefault(t *testing.T) {
 	pref := preferencesdomain.Default()
 	pref.URLRules = []preferencesdomain.URLRule{{
 		ID:      "work-container",
@@ -100,7 +116,7 @@ func TestHandleExecutesMatchingCommandWithURLPlaceholder(t *testing.T) {
 		Action:  preferencesdomain.URLRuleActionCommand,
 		Command: `open -a "Zen" "ext+container:name=Work&url=<URL>"`,
 	}}
-	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, &fakeBrowsers{})
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, routingBrowsers())
 	var gotTemplate, gotURL string
 	service.runCommand = func(template, rawURL string) error {
 		gotTemplate, gotURL = template, rawURL
@@ -111,17 +127,26 @@ func TestHandleExecutesMatchingCommandWithURLPlaceholder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handle url: %v", err)
 	}
-	if result.Kind != ResultCommandExecuted || gotTemplate != pref.URLRules[0].Command || gotURL != "https://github.com/workorg/repo?q=a&b=c" {
-		t.Fatalf("unexpected result/call: %#v template=%q url=%q", result, gotTemplate, gotURL)
+	if result.Kind != ResultNeedsChoice || result.Request == nil || result.Request.DefaultChoiceID != "command:work-container" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if gotTemplate != "" || gotURL != "" {
+		t.Fatal("command executed before the chooser resolved")
+	}
+	if err := service.ResolveChoice(context.Background(), result.Request.ID, result.Request.DefaultChoiceID); err != nil {
+		t.Fatalf("resolve command: %v", err)
+	}
+	if gotTemplate != pref.URLRules[0].Command || gotURL != "https://github.com/workorg/repo?q=a&b=c" {
+		t.Fatalf("template=%q url=%q", gotTemplate, gotURL)
 	}
 }
 
-func TestHandleRoutesLocalhostToOnlyReachableConnectedServer(t *testing.T) {
+func TestHandleProbesEveryConnectedHostForAnyExplicitURLPort(t *testing.T) {
 	pref := preferencesdomain.Default()
 	pref.DefaultBrowserID = "safari"
 	pref.ProxyBrowserID = "google-chrome"
 	configs, servers, runtimes := routingFixtures()
-	browsers := &fakeBrowsers{}
+	browsers := routingBrowsers()
 	service := NewService(
 		fakePreferences{value: pref},
 		fakeConfigurations{items: configs},
@@ -129,35 +154,80 @@ func TestHandleRoutesLocalhostToOnlyReachableConnectedServer(t *testing.T) {
 		fakeRuntimes{items: runtimes},
 		browsers,
 	)
+	probes := map[int]string{}
+	var probesMu sync.Mutex
 	service.probe = func(_ context.Context, socksPort int, host string, port int) error {
-		if host != "127.0.0.1" || port != 3000 {
-			t.Fatalf("probe target = %s:%d, want 127.0.0.1:3000", host, port)
+		if port != 8443 {
+			t.Fatalf("probe port = %d, want 8443", port)
 		}
+		probesMu.Lock()
+		probes[socksPort] = host
+		probesMu.Unlock()
 		if socksPort == 41001 {
 			return nil
 		}
 		return errors.New("closed")
 	}
 
-	result, err := service.Handle(context.Background(), "http://localhost:3000/dashboard")
+	result, err := service.Handle(context.Background(), "https://service.internal:8443/dashboard")
 	if err != nil {
 		t.Fatalf("handle url: %v", err)
 	}
-	if result.Kind != ResultOpened {
-		t.Fatalf("result = %#v, want opened", result)
+	if len(probes) != 2 || probes[41001] != "service.internal" || probes[41002] != "service.internal" {
+		t.Fatalf("probes = %#v", probes)
+	}
+	if result.Request.DefaultChoiceID != "proxy:server-socks:bts:google-chrome" {
+		t.Fatalf("default choice = %q", result.Request.DefaultChoiceID)
+	}
+	if !hasChoice(result.Request.Choices, "proxy:server-socks:bts:firefox") {
+		t.Fatalf("reachable browser/host combinations missing: %#v", result.Request.Choices)
+	}
+}
+
+func TestHandleUsesPortAssignmentForDefaultBrowserHostCombination(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "safari"
+	pref.ProxyBrowserID = "google-chrome"
+	pref.URLPortAssignments = []preferencesdomain.URLPortAssignment{{
+		ID:        "docs",
+		Port:      3000,
+		ServerID:  "staging",
+		BrowserID: "firefox",
+	}}
+	configs, servers, runtimes := routingFixtures()
+	browsers := routingBrowsers()
+	service := NewService(
+		fakePreferences{value: pref},
+		fakeConfigurations{items: configs},
+		fakeServers{items: servers},
+		fakeRuntimes{items: runtimes},
+		browsers,
+	)
+	service.probe = func(context.Context, int, string, int) error { return nil }
+
+	result, err := service.Handle(context.Background(), "http://localhost:3000/")
+	if err != nil {
+		t.Fatalf("handle url: %v", err)
+	}
+	if result.Request.DefaultChoiceID != "proxy:server-socks:staging:firefox" {
+		t.Fatalf("default choice = %q", result.Request.DefaultChoiceID)
+	}
+	if err := service.ResolveChoice(context.Background(), result.Request.ID, result.Request.DefaultChoiceID); err != nil {
+		t.Fatalf("resolve assigned route: %v", err)
 	}
 	want := []browserCall{{
-		configurationID: configdomain.ManagedSOCKSConfigurationID("bts"),
-		browserID:       "google-chrome",
-		url:             "http://localhost:3000/dashboard",
+		configurationID: configdomain.ManagedSOCKSConfigurationID("staging"),
+		browserID:       "firefox",
+		url:             "http://localhost:3000/",
 	}}
 	if !reflect.DeepEqual(browsers.proxy, want) {
 		t.Fatalf("proxy calls = %#v, want %#v", browsers.proxy, want)
 	}
 }
 
-func TestHandleRequestsChoiceWhenMultipleServersReachPort(t *testing.T) {
+func TestHandleUsesFallbackWhenSeveralHostsReachUnassignedPort(t *testing.T) {
 	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "safari"
 	pref.ProxyBrowserID = "firefox"
 	configs, servers, runtimes := routingFixtures()
 	service := NewService(
@@ -165,7 +235,7 @@ func TestHandleRequestsChoiceWhenMultipleServersReachPort(t *testing.T) {
 		fakeConfigurations{items: configs},
 		fakeServers{items: servers},
 		fakeRuntimes{items: runtimes},
-		&fakeBrowsers{},
+		routingBrowsers(),
 	)
 	service.probe = func(context.Context, int, string, int) error { return nil }
 
@@ -173,23 +243,48 @@ func TestHandleRequestsChoiceWhenMultipleServersReachPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handle url: %v", err)
 	}
-	if result.Kind != ResultNeedsChoice || result.Request.ID == "" {
-		t.Fatalf("result = %#v, want choice request", result)
+	if result.Request.DefaultChoiceID != "browser:safari" {
+		t.Fatalf("default choice = %q, want browser:safari", result.Request.DefaultChoiceID)
 	}
-	if len(result.Request.Choices) != 2 ||
-		result.Request.Choices[0].ServerName != "BTS" ||
-		result.Request.Choices[1].ServerName != "Staging" {
-		t.Fatalf("choices = %#v", result.Request.Choices)
+	if len(result.Request.Choices) < 7 {
+		t.Fatalf("choices = %#v, want regular browsers and proxy combinations", result.Request.Choices)
 	}
-	if pending, ok := service.Pending(); !ok || pending.ID != result.Request.ID {
-		t.Fatalf("pending = %#v, %v", pending, ok)
+}
+
+func TestHandleDoesNotProbeURLWithoutExplicitPort(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "safari"
+	configs, servers, runtimes := routingFixtures()
+	service := NewService(
+		fakePreferences{value: pref},
+		fakeConfigurations{items: configs},
+		fakeServers{items: servers},
+		fakeRuntimes{items: runtimes},
+		routingBrowsers(),
+	)
+	service.probe = func(context.Context, int, string, int) error {
+		t.Fatal("unexpected probe")
+		return nil
+	}
+
+	result, err := service.Handle(context.Background(), "https://example.com/path")
+	if err != nil {
+		t.Fatalf("handle url: %v", err)
+	}
+	if result.Request.DefaultChoiceID != "browser:safari" {
+		t.Fatalf("default choice = %q", result.Request.DefaultChoiceID)
+	}
+	for _, choice := range result.Request.Choices {
+		if choice.Kind == RouteChoiceProxy {
+			t.Fatalf("unexpected proxy choice: %#v", choice)
+		}
 	}
 }
 
 func TestResolveChoiceRejectsStaleOrUnlistedTargets(t *testing.T) {
 	pref := preferencesdomain.Default()
 	configs, servers, runtimes := routingFixtures()
-	browsers := &fakeBrowsers{}
+	browsers := routingBrowsers()
 	service := NewService(
 		fakePreferences{value: pref},
 		fakeConfigurations{items: configs},
@@ -209,38 +304,6 @@ func TestResolveChoiceRejectsStaleOrUnlistedTargets(t *testing.T) {
 	if err := service.ResolveChoice(context.Background(), result.Request.ID, "not-a-choice"); err == nil {
 		t.Fatal("expected unknown choice to fail")
 	}
-	if err := service.ResolveChoice(context.Background(), result.Request.ID, result.Request.Choices[1].ID); err != nil {
-		t.Fatalf("resolve valid choice: %v", err)
-	}
-	if len(browsers.proxy) != 1 || browsers.proxy[0].configurationID != configdomain.ManagedSOCKSConfigurationID("staging") {
-		t.Fatalf("proxy calls = %#v", browsers.proxy)
-	}
-}
-
-func TestHandleFallsBackForNonLocalOrUnreachableURLs(t *testing.T) {
-	for _, rawURL := range []string{"https://example.com/path", "http://localhost:3999"} {
-		t.Run(rawURL, func(t *testing.T) {
-			pref := preferencesdomain.Default()
-			pref.DefaultBrowserID = "safari"
-			configs, servers, runtimes := routingFixtures()
-			browsers := &fakeBrowsers{}
-			service := NewService(
-				fakePreferences{value: pref},
-				fakeConfigurations{items: configs},
-				fakeServers{items: servers},
-				fakeRuntimes{items: runtimes},
-				browsers,
-			)
-			service.probe = func(context.Context, int, string, int) error { return errors.New("closed") }
-
-			if _, err := service.Handle(context.Background(), rawURL); err != nil {
-				t.Fatalf("handle url: %v", err)
-			}
-			if len(browsers.regular) != 1 || browsers.regular[0].browserID != "safari" || browsers.regular[0].url != rawURL {
-				t.Fatalf("regular calls = %#v", browsers.regular)
-			}
-		})
-	}
 }
 
 func TestHandleRejectsNonHTTPURLs(t *testing.T) {
@@ -249,7 +312,7 @@ func TestHandleRejectsNonHTTPURLs(t *testing.T) {
 		fakeConfigurations{},
 		fakeServers{},
 		fakeRuntimes{},
-		&fakeBrowsers{},
+		routingBrowsers(),
 	)
 	for _, rawURL := range []string{"", "file:///tmp/private", "javascript:alert(1)", "not a url"} {
 		t.Run(rawURL, func(t *testing.T) {
@@ -258,6 +321,24 @@ func TestHandleRejectsNonHTTPURLs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func routingBrowsers() *fakeBrowsers {
+	return &fakeBrowsers{destinations: []BrowserDestination{
+		{ID: "google-chrome", Name: "Google Chrome", SupportsProxy: true},
+		{ID: "firefox", Name: "Firefox", SupportsProxy: true},
+		{ID: "brave-browser", Name: "Brave", SupportsProxy: true},
+		{ID: "safari", Name: "Safari"},
+	}}
+}
+
+func hasChoice(choices []RouteChoice, id string) bool {
+	for _, choice := range choices {
+		if choice.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func routingFixtures() ([]configdomain.ConnectionConfiguration, []serverdomain.Server, []sessiondomain.RuntimeSession) {
