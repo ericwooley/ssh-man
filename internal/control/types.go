@@ -9,6 +9,7 @@ import (
 	serverdomain "ssh-man/internal/domain/server"
 	sessiondomain "ssh-man/internal/domain/session"
 	"ssh-man/internal/platform/browser"
+	"ssh-man/internal/platform/defaultbrowser"
 )
 
 const ProtocolVersion = 1
@@ -84,6 +85,7 @@ type Backend struct {
 	PreviewBrowser      func(context.Context, string, string) (browser.LaunchPreview, error)
 	LaunchBrowser       func(context.Context, string, string) error
 	SavePreferences     func(context.Context, preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
+	SetDefaultBrowser   func(context.Context) (defaultbrowser.Status, error)
 	Show                func() error
 	Hide                func() error
 	Quit                func() error

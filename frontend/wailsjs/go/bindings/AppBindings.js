@@ -6,6 +6,14 @@ export function ActivateRunningBrowser(arg1) {
   return window['go']['bindings']['AppBindings']['ActivateRunningBrowser'](arg1);
 }
 
+export function ChooseBrowserApplication() {
+  return window['go']['bindings']['AppBindings']['ChooseBrowserApplication']();
+}
+
+export function DefaultBrowserStatus() {
+  return window['go']['bindings']['AppBindings']['DefaultBrowserStatus']();
+}
+
 export function DeleteConnectionConfiguration(arg1) {
   return window['go']['bindings']['AppBindings']['DeleteConnectionConfiguration'](arg1);
 }
@@ -16,6 +24,10 @@ export function DeleteServer(arg1) {
 
 export function DiscoverBrowsers() {
   return window['go']['bindings']['AppBindings']['DiscoverBrowsers']();
+}
+
+export function DismissURLRoute(arg1) {
+  return window['go']['bindings']['AppBindings']['DismissURLRoute'](arg1);
 }
 
 export function HideWindow() {
@@ -46,6 +58,10 @@ export function OpenDevTools() {
   return window['go']['bindings']['AppBindings']['OpenDevTools']();
 }
 
+export function PendingURLRoute() {
+  return window['go']['bindings']['AppBindings']['PendingURLRoute']();
+}
+
 export function PreviewBrowserLaunchThroughSocks(arg1, arg2) {
   return window['go']['bindings']['AppBindings']['PreviewBrowserLaunchThroughSocks'](arg1, arg2);
 }
@@ -56,6 +72,10 @@ export function Quit() {
 
 export function RegisterBrowserShortcuts() {
   return window['go']['bindings']['AppBindings']['RegisterBrowserShortcuts']();
+}
+
+export function ResolveURLRoute(arg1, arg2) {
+  return window['go']['bindings']['AppBindings']['ResolveURLRoute'](arg1, arg2);
 }
 
 export function RetryConfiguration(arg1) {
@@ -78,6 +98,10 @@ export function SaveServer(arg1) {
   return window['go']['bindings']['AppBindings']['SaveServer'](arg1);
 }
 
+export function SetAsDefaultBrowser() {
+  return window['go']['bindings']['AppBindings']['SetAsDefaultBrowser']();
+}
+
 export function SetBrowserShortcutsRegistrar(arg1) {
   return window['go']['bindings']['AppBindings']['SetBrowserShortcutsRegistrar'](arg1);
 }
@@ -88,6 +112,14 @@ export function SetBrowserSwitcherPresenter(arg1) {
 
 export function SetContext(arg1) {
   return window['go']['bindings']['AppBindings']['SetContext'](arg1);
+}
+
+export function SetDefaultBrowserSetter(arg1) {
+  return window['go']['bindings']['AppBindings']['SetDefaultBrowserSetter'](arg1);
+}
+
+export function SetPreferencesSaver(arg1) {
+  return window['go']['bindings']['AppBindings']['SetPreferencesSaver'](arg1);
 }
 
 export function ShowBrowserSwitcher() {

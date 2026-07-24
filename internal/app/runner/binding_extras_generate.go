@@ -30,7 +30,7 @@ func additionalBindingsForGeneration() []interface{} {
 		serverdomain.Server{},
 		appwindow.New(),
 	)
-	return []interface{}{explorer}
+	return []interface{}{explorer, bindings.NewSettingsWindowBindings()}
 }
 
 func maybeRunBindingsGeneration(assets fs.FS) (bool, error) {
@@ -38,7 +38,8 @@ func maybeRunBindingsGeneration(assets fs.FS) (bool, error) {
 	application := &bootstrap.Application{}
 	app := bindings.NewAppBindingsWithApplication(application, window)
 	launcher := bindings.NewExplorerLauncherBindingsWithDependencies(nil, nil)
+	settingsLauncher := bindings.NewSettingsLauncherBindingsWithDependency(nil)
 	bar := bindingsMenuBar{}
 	lifecycle := newApplicationLifecycle(nil, bar, nil, nil, nil)
-	return true, wails.Run(newOptions(assets, app, launcher, window, bar, lifecycle))
+	return true, wails.Run(newOptions(assets, app, launcher, settingsLauncher, window, bar, lifecycle))
 }

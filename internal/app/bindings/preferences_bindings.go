@@ -2,6 +2,7 @@ package bindings
 
 import (
 	"context"
+	"strings"
 
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	"ssh-man/internal/keyboardshortcut"
@@ -26,6 +27,9 @@ func (a *AppBindings) SavePreferences(input preferencesdomain.UserPreference) (p
 	input.BrowserSwitcherBackwardShortcut = backward
 	if err := input.Validate(); err != nil {
 		return preferencesdomain.UserPreference{}, err
+	}
+	if a.savePreferences != nil {
+		return a.savePreferences(input)
 	}
 
 	previous, previousErr := a.app.PreferencesService.Load(context.Background())
@@ -61,14 +65,17 @@ func (a *AppBindings) SaveBrowserAppearance(appearanceKey string, input preferen
 	for key, appearance := range pref.BrowserAppearances {
 		nextAppearances[key] = appearance
 	}
-	nextAppearances[appearanceKey] = input
+	appearanceKey = strings.TrimSpace(appearanceKey)
+	input.Icon = strings.TrimSpace(input.Icon)
+	input.PrimaryColor = strings.ToUpper(strings.TrimSpace(input.PrimaryColor))
+	if input.Icon == "" && input.PrimaryColor == "" {
+		delete(nextAppearances, appearanceKey)
+	} else {
+		nextAppearances[appearanceKey] = input
+	}
 	pref.BrowserAppearances = nextAppearances
 
-	saved, err := a.app.PreferencesService.Save(ctx, pref)
-	if err != nil {
-		return preferencesdomain.UserPreference{}, a.storageError("Browser appearance could not be saved", err)
-	}
-	return saved, nil
+	return a.SavePreferences(pref)
 }
 
 func (a *AppBindings) RegisterBrowserShortcuts() error {

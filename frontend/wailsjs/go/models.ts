@@ -215,12 +215,54 @@ export namespace preferences {
 	        this.primaryColor = source["primaryColor"];
 	    }
 	}
+	export class CustomBrowser {
+	    id: string;
+	    displayName: string;
+	    launchReference: string;
+	    engine: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CustomBrowser(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.launchReference = source["launchReference"];
+	        this.engine = source["engine"];
+	    }
+	}
+	export class URLRule {
+	    id: string;
+	    pattern: string;
+	    action: string;
+	    browserId?: string;
+	    command?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new URLRule(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.pattern = source["pattern"];
+	        this.action = source["action"];
+	        this.browserId = source["browserId"];
+	        this.command = source["command"];
+	    }
+	}
 	export class UserPreference {
 	    theme: string;
 	    lastSelectedServerId?: string;
 	    browserSwitcherShortcut: string;
 	    browserSwitcherBackwardShortcut: string;
 	    browserAppearances: Record<string, BrowserAppearance>;
+	    defaultBrowserId?: string;
+	    proxyBrowserId?: string;
+	    customBrowsers: CustomBrowser[];
+	    urlRules: URLRule[];
 	    // Go type: time
 	    updatedAt: any;
 
@@ -235,6 +277,10 @@ export namespace preferences {
 	        this.browserSwitcherShortcut = source["browserSwitcherShortcut"];
 	        this.browserSwitcherBackwardShortcut = source["browserSwitcherBackwardShortcut"];
 	        this.browserAppearances = this.convertValues(source["browserAppearances"], BrowserAppearance, true);
+	        this.defaultBrowserId = source["defaultBrowserId"];
+	        this.proxyBrowserId = source["proxyBrowserId"];
+	        this.customBrowsers = this.convertValues(source["customBrowsers"], CustomBrowser);
+	        this.urlRules = this.convertValues(source["urlRules"], URLRule);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
 

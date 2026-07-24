@@ -17,6 +17,10 @@ const defaultPreferences = {
   browserSwitcherShortcut: 'Alt+X',
   browserSwitcherBackwardShortcut: 'Alt+Z',
   browserAppearances: {},
+  defaultBrowserId: '',
+  proxyBrowserId: '',
+  customBrowsers: [],
+  urlRules: [],
 }
 
 async function writeClipboard(text) {
@@ -61,6 +65,11 @@ export function useSshMan(api = defaultApi, options = {}) {
     items: [],
     selectedId: '',
     preview: '',
+    loading: false,
+  })
+  const [urlRoutingState, setURLRoutingState] = useState({
+    browsers: [],
+    defaultBrowser: { supported: false, isDefault: false },
     loading: false,
   })
 
@@ -113,6 +122,8 @@ export function useSshMan(api = defaultApi, options = {}) {
         ...defaultPreferences,
         ...(state.preferences || {}),
         browserAppearances: state.preferences?.browserAppearances || {},
+        customBrowsers: state.preferences?.customBrowsers || [],
+        urlRules: state.preferences?.urlRules || [],
       }
       const nextServerId = selectInitialServerId(nextServers, nextPreferences.lastSelectedServerId)
 
@@ -149,7 +160,13 @@ export function useSshMan(api = defaultApi, options = {}) {
       .then((state) => {
         if (!active) return
         const nextServers = state.servers || []
-        const nextPreferences = { ...defaultPreferences, ...(state.preferences || {}) }
+        const nextPreferences = {
+          ...defaultPreferences,
+          ...(state.preferences || {}),
+          browserAppearances: state.preferences?.browserAppearances || {},
+          customBrowsers: state.preferences?.customBrowsers || [],
+          urlRules: state.preferences?.urlRules || [],
+        }
         const nextServerId = selectInitialServerId(nextServers, nextPreferences.lastSelectedServerId)
 
         setServers(nextServers)
@@ -181,6 +198,13 @@ export function useSshMan(api = defaultApi, options = {}) {
       window.clearInterval(intervalId)
     }
   }, [api, notify, pollMs, refreshRuntimeSessions])
+
+  useEffect(() => {
+    if (!api.onPreferencesChanged) return undefined
+    return api.onPreferencesChanged(() => {
+      void hydrate({ quiet: true })
+    })
+  }, [api, hydrate])
 
   const runtimeSessions = useMemo(() => buildRuntimeSessions(sessions), [sessions])
   const selectedServerRecord = useMemo(
@@ -435,20 +459,20 @@ export function useSshMan(api = defaultApi, options = {}) {
 
   const launchServerBrowser = useCallback(async (serverName, configurationId) => {
     try {
-      await api.launchBrowserThroughSocks(configurationId, 'google-chrome')
-      notify('success', `Chrome is open through ${serverName}.`)
+      await api.launchBrowserThroughSocks(configurationId, preferences.proxyBrowserId || '')
+      notify('success', `Browser is open through ${serverName}.`)
       return true
     } catch (error) {
-      notify('danger', `Chrome could not be opened through ${serverName}.`, error.message || '')
+      notify('danger', `The browser could not be opened through ${serverName}.`, error.message || '')
       return false
     }
-  }, [api, notify])
+  }, [api, notify, preferences.proxyBrowserId])
 
   const openServerBrowser = useCallback((serverId) => runPending(`browser:${serverId}`, async () => {
     const record = servers.find((item) => item.server.id === serverId)
     const managedProxy = record?.configurations.find(isManagedSOCKSConfiguration)
     if (!record || !managedProxy) {
-      notify('danger', 'Chrome could not be opened.', 'The automatic browser proxy is unavailable.')
+      notify('danger', 'The browser could not be opened.', 'The automatic browser proxy is unavailable.')
       return false
     }
 
@@ -464,7 +488,7 @@ export function useSshMan(api = defaultApi, options = {}) {
         return false
       }
       if (session?.status !== 'connected') {
-        notify('danger', `Chrome could not be opened through ${record.server.name}.`, session?.statusDetail || 'The browser proxy did not connect.')
+        notify('danger', `The browser could not be opened through ${record.server.name}.`, session?.statusDetail || 'The browser proxy did not connect.')
         return false
       }
 
@@ -473,7 +497,7 @@ export function useSshMan(api = defaultApi, options = {}) {
       await refreshRuntimeSessions({ quiet: true })
       return opened
     } catch (error) {
-      notify('danger', `Chrome could not be opened through ${record.server.name}.`, error.message || '')
+      notify('danger', `The browser could not be opened through ${record.server.name}.`, error.message || '')
       return false
     }
   }), [api, applySessions, launchServerBrowser, notify, refreshRuntimeSessions, requestUnlock, runPending, runtimeSessions, servers])
@@ -554,6 +578,64 @@ export function useSshMan(api = defaultApi, options = {}) {
       : () => api.savePreferences(nextPreferences)
     return savePreferencesQuietly(nextPreferences, persist)
   }, [api, preferences, savePreferencesQuietly])
+
+  const loadURLRoutingSettings = useCallback(async () => {
+    setURLRoutingState((current) => ({ ...current, loading: true }))
+    try {
+      const [browsers, defaultBrowser] = await Promise.all([
+        api.discoverBrowsers(),
+        api.defaultBrowserStatus?.() || Promise.resolve({ supported: false, isDefault: false }),
+      ])
+      const next = {
+        browsers: browsers || [],
+        defaultBrowser: defaultBrowser || { supported: false, isDefault: false },
+        loading: false,
+      }
+      setURLRoutingState(next)
+      return next
+    } catch (error) {
+      setURLRoutingState((current) => ({ ...current, loading: false }))
+      notify('warning', 'URL routing settings could not be loaded.', error.message || '')
+      return null
+    }
+  }, [api, notify])
+
+  const saveURLRoutingSettings = useCallback(async (input) => {
+    const next = {
+      ...preferences,
+      defaultBrowserId: String(input.defaultBrowserId || '').trim(),
+      proxyBrowserId: String(input.proxyBrowserId || '').trim(),
+      customBrowsers: input.customBrowsers || [],
+      urlRules: input.urlRules || [],
+    }
+    const saved = await savePreferencesQuietly(next)
+    if (saved) {
+      notify('success', 'URL routing saved.')
+      await loadURLRoutingSettings()
+    }
+    return saved
+  }, [loadURLRoutingSettings, notify, preferences, savePreferencesQuietly])
+
+  const chooseBrowserApplication = useCallback(async () => {
+    try {
+      return await api.chooseBrowserApplication()
+    } catch (error) {
+      notify('warning', 'The browser application could not be selected.', error.message || '')
+      return ''
+    }
+  }, [api, notify])
+
+  const setAsDefaultBrowser = useCallback(async () => {
+    try {
+      const status = await api.setAsDefaultBrowser()
+      setURLRoutingState((current) => ({ ...current, defaultBrowser: status }))
+      notify('success', 'SSH Man is now your default browser.')
+      return status
+    } catch (error) {
+      notify('danger', 'SSH Man could not become the default browser.', error.message || '')
+      return null
+    }
+  }, [api, notify])
 
   const refreshBrowsers = useCallback(async (configurationId = selectedConfigurationId) => {
     if (!configurationId) return []
@@ -665,6 +747,16 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }), [api, notify, runPending, servers])
 
+  const openSettingsWindow = useCallback(() => runPending('open-settings', async () => {
+    try {
+      await api.openSettingsWindow()
+      return true
+    } catch (error) {
+      notify('danger', 'Settings could not be opened.', error.message || '')
+      return false
+    }
+  }), [api, notify, runPending])
+
   return {
     phase,
     servers,
@@ -689,6 +781,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     historyLoading: historyLoadingId === selectedConfigurationId,
     unlockRequest,
     browserState,
+    urlRoutingState,
     hydrate,
     refreshRuntimeSessions,
     selectServer,
@@ -712,10 +805,15 @@ export function useSshMan(api = defaultApi, options = {}) {
     setBrowserSwitcherShortcut,
     setBrowserSwitcherBackwardShortcut,
     setBrowserAppearance,
+    loadURLRoutingSettings,
+    saveURLRoutingSettings,
+    chooseBrowserApplication,
+    setAsDefaultBrowser,
     copyHistory,
     copyPath,
     openDevTools,
     openServerExplorer,
+    openSettingsWindow,
     openServerBrowser,
     hideWindow: api.hideApplicationWindow,
     quitApplication: api.quitApplication,

@@ -21,6 +21,7 @@ import (
 	serverdomain "ssh-man/internal/domain/server"
 	sessiondomain "ssh-man/internal/domain/session"
 	"ssh-man/internal/platform/browser"
+	"ssh-man/internal/platform/defaultbrowser"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -153,6 +154,10 @@ func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 			record(ctx)
 			return value, nil
 		},
+		SetDefaultBrowser: func(ctx context.Context) (defaultbrowser.Status, error) {
+			record(ctx)
+			return defaultbrowser.Status{Supported: true, IsDefault: true}, nil
+		},
 	}
 
 	tests := []struct {
@@ -175,6 +180,7 @@ func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 		{name: "preview browser", request: Request{Command: "browser.preview", ConfigurationID: "tunnel-1", BrowserID: "browser-1"}},
 		{name: "launch browser", request: Request{Command: "browser.launch", ConfigurationID: "tunnel-1", BrowserID: "browser-1"}},
 		{name: "save preferences", request: Request{Command: "preferences.save", Preferences: &preferencesdomain.UserPreference{}}},
+		{name: "set default browser", request: Request{Command: "browser.default.set"}},
 	}
 
 	server := NewServer("", backend)

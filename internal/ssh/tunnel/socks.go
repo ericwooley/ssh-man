@@ -85,6 +85,12 @@ func (p *SOCKSProxy) readRequest() (string, error) {
 			return "", err
 		}
 		host = string(addr)
+	case 0x04:
+		addr := make([]byte, net.IPv6len)
+		if _, err := io.ReadFull(p.reader, addr); err != nil {
+			return "", err
+		}
+		host = net.IP(addr).String()
 	default:
 		return "", fmt.Errorf("unsupported address type")
 	}
@@ -94,5 +100,5 @@ func (p *SOCKSProxy) readRequest() (string, error) {
 		return "", err
 	}
 	port := binary.BigEndian.Uint16(portBytes)
-	return fmt.Sprintf("%s:%d", host, port), nil
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port)), nil
 }

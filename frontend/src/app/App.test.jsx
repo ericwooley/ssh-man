@@ -90,6 +90,10 @@ function createFakeApi({
       browserSwitcherShortcut: 'Alt+X',
       browserSwitcherBackwardShortcut: 'Alt+Z',
       browserAppearances: {},
+      defaultBrowserId: '',
+      proxyBrowserId: '',
+      customBrowsers: [],
+      urlRules: [],
     },
     nextServerId: 2,
     nextTunnelId: 2,
@@ -182,10 +186,20 @@ function createFakeApi({
     }),
     submitKeyUnlock: vi.fn(async (configurationId) => api.startConfiguration(configurationId)),
     discoverBrowsers: vi.fn(async () => []),
+    chooseBrowserApplication: vi.fn(async () => '/Applications/Kagi Browser.app'),
     previewBrowserLaunchThroughSocks: vi.fn(async () => ({ command: '' })),
     launchBrowserThroughSocks: vi.fn(async () => ({ success: true })),
     listRunningBrowsers: vi.fn(async () => clone(runningBrowsers)),
     activateRunningBrowser: vi.fn(async () => undefined),
+    defaultBrowserStatus: vi.fn(async () => ({ supported: true, isDefault: false })),
+    setAsDefaultBrowser: vi.fn(async () => ({ supported: true, isDefault: true })),
+    pendingURLRoute: vi.fn(async () => null),
+    resolveURLRoute: vi.fn(async () => undefined),
+    dismissURLRoute: vi.fn(async () => undefined),
+    onURLRouteChoiceRequested: vi.fn((callback) => {
+      api.urlRouteChoiceListener = callback
+      return () => { api.urlRouteChoiceListener = null }
+    }),
     onBrowserSwitcherRequested: vi.fn((callback) => {
       api.browserSwitcherListener = callback
       return () => { api.browserSwitcherListener = null }
@@ -201,6 +215,7 @@ function createFakeApi({
     showBrowserSwitcherWindow: vi.fn(async () => undefined),
     openDevTools: vi.fn(async () => undefined),
     openServerExplorer: vi.fn(async () => undefined),
+    openSettingsWindow: vi.fn(async () => undefined),
     hideApplicationWindow: vi.fn(async () => undefined),
     quitApplication: vi.fn(async () => undefined),
     openExternalURL: vi.fn(async () => undefined),
@@ -211,6 +226,10 @@ function createFakeApi({
 
 function renderApp(api, controllerOptions = {}) {
   return render(<App api={api} controllerOptions={{ pollMs: 60_000, copyText: vi.fn(), ...controllerOptions }} />)
+}
+
+function renderSettingsApp(api, controllerOptions = {}) {
+  return render(<App api={api} settingsWindow controllerOptions={{ pollMs: 60_000, copyText: vi.fn(), ...controllerOptions }} />)
 }
 
 async function openSavedTunnel(user, api) {
@@ -358,14 +377,14 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    const browserLauncher = await screen.findByRole('button', { name: 'Open Chrome through Production bastion' })
+    const browserLauncher = await screen.findByRole('button', { name: 'Open browser through Production bastion' })
     const explorerLauncher = screen.getByRole('button', { name: 'Open Production bastion explorer' })
     await user.click(browserLauncher)
 
     await waitFor(() => expect(api.startConfiguration).toHaveBeenCalledWith(managedBrowserProxy.id))
-    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, 'google-chrome'))
+    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, ''))
     expect(api.openServerExplorer).not.toHaveBeenCalled()
-    expect(await screen.findByText('Chrome is open through Production bastion.')).toBeTruthy()
+    expect(await screen.findByText('Browser is open through Production bastion.')).toBeTruthy()
 
     await user.click(explorerLauncher)
     await waitFor(() => expect(api.openServerExplorer).toHaveBeenCalledWith(savedServer.id))
@@ -404,7 +423,7 @@ describe('React application flows', () => {
     })
     renderApp(api)
 
-    await user.click(await screen.findByRole('button', { name: 'Open Chrome through Production bastion' }))
+    await user.click(await screen.findByRole('button', { name: 'Open browser through Production bastion' }))
     expect(await screen.findByRole('dialog', { name: 'Unlock SSH key' })).toBeTruthy()
     expect(api.launchBrowserThroughSocks).not.toHaveBeenCalled()
     expect(api.openServerExplorer).not.toHaveBeenCalled()
@@ -413,8 +432,27 @@ describe('React application flows', () => {
     await user.click(screen.getByRole('button', { name: 'Unlock and connect' }))
 
     await waitFor(() => expect(api.submitKeyUnlock).toHaveBeenCalledWith(managedBrowserProxy.id, 'secret'))
-    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, 'google-chrome'))
+    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, ''))
     expect(api.openServerExplorer).not.toHaveBeenCalled()
+  })
+
+  test('uses the configured Zen browser from a server quick launcher', async () => {
+    const user = userEvent.setup()
+    const connected = {
+      ...stoppedSession,
+      configurationId: managedBrowserProxy.id,
+      status: 'connected',
+      boundPort: managedBrowserProxy.socksPort,
+    }
+    const { api, state } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy] }],
+      sessions: [connected],
+    })
+    state.preferences.proxyBrowserId = 'zen'
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Open browser through Production bastion' }))
+    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(managedBrowserProxy.id, 'zen'))
   })
 
   test('keeps the MoonPixels link in the persistent footer instead of Settings content', async () => {
@@ -428,8 +466,21 @@ describe('React application flows', () => {
     expect(api.openExternalURL).toHaveBeenCalledWith('https://moonpixels.tech')
 
     await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await waitFor(() => expect(api.openSettingsWindow).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('button', { name: 'Visit MoonPixels' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Gifted with love by MoonPixels' })).toBeNull()
+    expect(screen.queryByLabelText('Settings')).toBeNull()
+  })
+
+  test('renders settings as a dedicated window without compact navigation', async () => {
+    const { api } = createFakeApi()
+    render(<App api={api} settingsWindow controllerOptions={{ pollMs: 60_000, copyText: vi.fn() }} />)
+
+    expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeTruthy()
+    expect(screen.getByLabelText('Settings')).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Close Settings' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Quit SSH Man' })).toBeNull()
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {
@@ -613,10 +664,9 @@ describe('React application flows', () => {
   test('records and persists forward and backward browser switcher shortcuts', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi()
-    renderApp(api)
+    renderSettingsApp(api)
 
-    await user.click(await screen.findByRole('button', { name: 'Settings' }))
-    const nextRecorder = screen.getByRole('button', { name: 'Next browser shortcut' })
+    const nextRecorder = await screen.findByRole('button', { name: 'Next browser shortcut' })
     const previousRecorder = screen.getByRole('button', { name: 'Previous browser shortcut' })
     expect(nextRecorder.textContent).toContain('Alt+X')
     expect(previousRecorder.textContent).toContain('Alt+Z')
@@ -640,6 +690,119 @@ describe('React application flows', () => {
     expect(previousRecorder.textContent).toContain('Alt+C')
   })
 
+  test('configures default, proxy, and ordered regex URL routing rules', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+      { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await screen.findByRole('heading', { name: 'URL routing' })
+    await waitFor(() => expect(api.defaultBrowserStatus).toHaveBeenCalled())
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Fallback browser' }), 'safari')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'SOCKS proxy browser' }), 'firefox')
+    await user.click(screen.getByRole('button', { name: 'Add URL rule' }))
+
+    await user.type(screen.getByRole('textbox', { name: 'Rule 1 regular expression' }), String.raw`https:\/\/github.com\/workorg\/.*`)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Rule 1 action' }), 'command')
+    await user.type(
+      screen.getByRole('textbox', { name: 'Rule 1 command' }),
+      'open -a "Zen" "ext+container:name=Work&url=<URL>"',
+    )
+    await user.click(screen.getByRole('button', { name: 'Save URL routing' }))
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      defaultBrowserId: 'safari',
+      proxyBrowserId: 'firefox',
+      urlRules: [
+        expect.objectContaining({
+          pattern: String.raw`https:\/\/github.com\/workorg\/.*`,
+          action: 'command',
+          command: 'open -a "Zen" "ext+container:name=Work&url=<URL>"',
+        }),
+      ],
+    })))
+
+    await user.click(screen.getByRole('button', { name: 'Make SSH Man default' }))
+    await waitFor(() => expect(api.setAsDefaultBrowser).toHaveBeenCalled())
+    expect(await screen.findByText('SSH Man is your default browser.')).toBeTruthy()
+  })
+
+  test('offers installed Zen for regular and SOCKS URL routing', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', engine: 'chromium', supportsProxyLaunch: true },
+      { id: 'zen', displayName: 'Zen', engine: 'firefox', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await waitFor(() => expect(api.discoverBrowsers).toHaveBeenCalled())
+
+    expect(within(screen.getByRole('combobox', { name: 'Fallback browser' })).getByRole('option', { name: 'Zen' })).toBeTruthy()
+    expect(within(screen.getByRole('combobox', { name: 'SOCKS proxy browser' })).getByRole('option', { name: 'Zen' })).toBeTruthy()
+  })
+
+  test('adds an arbitrary browser with explicit engine compatibility', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', engine: 'chromium', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await screen.findByRole('heading', { name: 'URL routing' })
+    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
+    await user.type(screen.getByRole('textbox', { name: 'Custom browser 1 name' }), 'Kagi Browser')
+    await user.click(screen.getByRole('button', { name: 'Browse for custom browser 1' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Custom browser 1 engine' }), 'chromium')
+
+    expect(api.chooseBrowserApplication).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('textbox', { name: 'Custom browser 1 application path' }).value).toBe('/Applications/Kagi Browser.app')
+    expect(within(screen.getByRole('combobox', { name: 'Fallback browser' })).getByRole('option', { name: 'Kagi Browser' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Save URL routing' }))
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      customBrowsers: [
+        expect.objectContaining({
+          displayName: 'Kagi Browser',
+          launchReference: '/Applications/Kagi Browser.app',
+          engine: 'chromium',
+        }),
+      ],
+    })))
+  })
+
+  test('shows a server chooser for ambiguous localhost URL routes', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderApp(api)
+    await waitFor(() => expect(api.urlRouteChoiceListener).toBeTypeOf('function'))
+
+    act(() => {
+      api.urlRouteChoiceListener({
+        id: 'route-1',
+        url: 'http://localhost:3000/dashboard',
+        choices: [
+          { id: 'server-socks:bts', serverId: 'bts', serverName: 'BTS', configurationId: 'server-socks:bts', browserId: 'google-chrome' },
+          { id: 'server-socks:staging', serverId: 'staging', serverName: 'Staging', configurationId: 'server-socks:staging', browserId: 'google-chrome' },
+        ],
+      })
+    })
+
+    const dialog = await screen.findByRole('dialog', { name: 'Choose a server for this URL' })
+    expect(within(dialog).getByText('http://localhost:3000/dashboard')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Open through Staging' }))
+
+    await waitFor(() => expect(api.resolveURLRoute).toHaveBeenCalledWith('route-1', 'server-socks:staging'))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose a server for this URL' })).toBeNull())
+    expect(api.hideApplicationWindow).toHaveBeenCalled()
+  })
+
   test('customizes a running proxy browser with a persistent icon and color', async () => {
     const user = userEvent.setup()
     const proxyBrowser = {
@@ -652,10 +815,9 @@ describe('React application flows', () => {
       serverName: savedServer.name,
     }
     const { api } = createFakeApi({ runningBrowsers: [proxyBrowser] })
-    renderApp(api)
+    renderSettingsApp(api)
 
-    await user.click(await screen.findByRole('button', { name: 'Settings' }))
-    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    await user.click(await screen.findByRole('button', { name: 'Customize' }))
     await screen.findByRole('option', { name: /Google Chrome/ })
     await user.click(screen.getByRole('button', { name: 'Customize selected' }))
     await user.click(screen.getByRole('radio', { name: 'X icon' }))
@@ -844,10 +1006,9 @@ describe('React application flows', () => {
     const browser = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome', kind: 'regular' }
     const { api } = createFakeApi({ runningBrowsers: [browser] })
     const user = userEvent.setup()
-    renderApp(api)
+    renderSettingsApp(api)
 
-    await user.click(await screen.findByRole('button', { name: 'Settings' }))
-    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    await user.click(await screen.findByRole('button', { name: 'Customize' }))
     await screen.findByRole('dialog', { name: 'Switch browser' })
 
     fireEvent.blur(window)
@@ -867,10 +1028,9 @@ describe('React application flows', () => {
     const { api } = createFakeApi({ runningBrowsers: [browser] })
     api.activateRunningBrowser.mockImplementation(() => activationPromise)
     const user = userEvent.setup()
-    renderApp(api)
+    renderSettingsApp(api)
 
-    await user.click(await screen.findByRole('button', { name: 'Settings' }))
-    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    await user.click(await screen.findByRole('button', { name: 'Customize' }))
     const dialog = await screen.findByRole('dialog', { name: 'Switch browser' })
     const option = within(dialog).getByRole('option')
     await user.click(option)
@@ -884,7 +1044,7 @@ describe('React application flows', () => {
       await activationPromise
     })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
-    expect(api.hideApplicationWindow).toHaveBeenCalledTimes(1)
+    expect(api.hideApplicationWindow).not.toHaveBeenCalled()
   })
 
   test('switches between labeled proxy and regular browser instances', async () => {
@@ -892,10 +1052,9 @@ describe('React application flows', () => {
     const proxy = { id: 'browser:202', pid: 202, browserId: 'google-chrome', browserName: 'Google Chrome', kind: 'proxy', serverId: 'server-prod', serverName: 'Production' }
     const regular = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Google Chrome', kind: 'regular' }
     const { api } = createFakeApi({ runningBrowsers: [proxy, regular] })
-    renderApp(api)
+    renderSettingsApp(api)
 
-    await user.click(await screen.findByRole('button', { name: 'Settings' }))
-    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    await user.click(await screen.findByRole('button', { name: 'Customize' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Switch browser' })
     expect(within(dialog).getByText('Click a browser or select it with the arrow keys and press Enter.')).toBeTruthy()
@@ -908,6 +1067,6 @@ describe('React application flows', () => {
 
     await user.click(options[1])
     await waitFor(() => expect(api.activateRunningBrowser).toHaveBeenCalledWith('browser:101'))
-    expect(api.hideApplicationWindow).toHaveBeenCalled()
+    expect(api.hideApplicationWindow).not.toHaveBeenCalled()
   })
 })

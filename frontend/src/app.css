@@ -1418,6 +1418,324 @@ svg {
   font-size: 10px;
 }
 
+.url-routing-settings {
+  gap: 16px;
+}
+
+.url-routing-browser-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.url-routing-browser-grid label,
+.url-rule-card > label,
+.custom-browser-card > label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.url-routing-browser-grid select,
+.url-rule-card input,
+.url-rule-card select,
+.url-rule-card textarea,
+.custom-browser-card input,
+.custom-browser-card select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.url-rule-card textarea {
+  min-height: 88px;
+  cursor: text;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  resize: vertical;
+}
+
+.url-rule-card small {
+  color: var(--text-subtle);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.default-browser-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.default-browser-control > svg {
+  width: 20px;
+  color: var(--accent);
+}
+
+.default-browser-control > div {
+  display: grid;
+  gap: 2px;
+}
+
+.default-browser-control strong {
+  font-size: 12px;
+}
+
+.default-browser-control span {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.default-browser-control button {
+  min-width: 116px;
+}
+
+.custom-browsers-heading,
+.url-rules-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.custom-browsers-heading > div,
+.url-rules-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.custom-browsers-heading strong,
+.url-rules-heading strong {
+  font-size: 12px;
+}
+
+.custom-browsers-heading span,
+.custom-browsers-empty,
+.url-rules-heading span,
+.url-rules-empty {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.custom-browsers-heading .text-button,
+.url-rules-heading .text-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.custom-browsers-heading svg,
+.url-rules-heading svg {
+  width: 14px;
+}
+
+.custom-browser-list,
+.url-rule-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.custom-browser-card,
+.url-rule-card {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.custom-browser-card__header,
+.url-rule-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.custom-browser-card__header strong,
+.url-rule-card__header strong {
+  font-size: 11px;
+}
+
+.url-rule-card__header > div {
+  display: flex;
+  gap: 2px;
+}
+
+.custom-browser-card__header .icon-button,
+.url-rule-card__header .icon-button {
+  width: 30px;
+  height: 30px;
+}
+
+.custom-browser-card__header svg,
+.url-rule-card__header svg {
+  width: 14px;
+}
+
+.custom-browser-path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.custom-browser-path .secondary-button {
+  min-height: 42px;
+  padding-inline: 10px;
+}
+
+.custom-browser-path svg {
+  width: 15px;
+}
+
+.custom-browser-card small {
+  color: var(--text-subtle);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.url-routing-save {
+  width: 100%;
+}
+
+.url-route-mode,
+.url-route-frame {
+  width: 100%;
+  height: 100%;
+}
+
+.url-route-chooser {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.url-route-chooser__header {
+  --wails-draggable: drag;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.url-route-chooser__header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.url-route-chooser__header h1 {
+  font-size: 20px;
+}
+
+.url-route-chooser__url {
+  padding: 11px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--accent);
+  font-size: 11px;
+  user-select: text;
+}
+
+.url-route-chooser > p {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.url-route-choice-list {
+  display: grid;
+  gap: 9px;
+}
+
+.url-route-choice-list > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.url-route-choice-list > button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.url-route-choice-list__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.url-route-choice-list__icon svg,
+.url-route-choice-list > button > svg {
+  width: 17px;
+}
+
+.url-route-choice-list > button > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+}
+
+.url-route-choice-list small {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+@media (max-width: 390px) {
+  .url-routing-browser-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .default-browser-control {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .default-browser-control button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .custom-browsers-heading,
+  .url-rules-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .custom-browser-path {
+    grid-template-columns: 1fr;
+  }
+}
+
 kbd {
   font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
@@ -2425,6 +2743,45 @@ kbd {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Dedicated native settings window */
+.window-shell.settings-window-mode {
+  padding: 0;
+  background: var(--surface);
+}
+
+.settings-window-mode .app-frame {
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.settings-window-mode .app-header {
+  min-height: 78px;
+  padding-right: 24px;
+  padding-left: 24px;
+}
+
+.settings-window-mode .settings-screen {
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 22px 28px 36px;
+}
+
+.settings-window-mode .section-block {
+  padding: 20px;
+}
+
+.settings-window-mode .toast-region {
+  right: 24px;
+  bottom: 24px;
+  left: auto;
+  width: min(420px, calc(100% - 48px));
 }
 
 /* Remote server explorer window */

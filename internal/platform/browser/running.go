@@ -14,14 +14,6 @@ type browserProcess struct {
 	Command string
 }
 
-var darwinExecutables = map[string]string{
-	"google-chrome": "Google Chrome",
-	"chromium":      "Chromium",
-	"brave-browser": "Brave Browser",
-	"firefox":       "firefox",
-	"safari":        "Safari",
-}
-
 func buildRunningTargets(appDataDir string, browsers []BrowserOption, servers []serverdomain.Server, processes []browserProcess) []RunningTarget {
 	serverNames := make(map[string]string, len(servers))
 	for _, server := range servers {
@@ -67,11 +59,10 @@ func buildRunningTargets(appDataDir string, browsers []BrowserOption, servers []
 
 func browserForCommand(browsers []BrowserOption, command string) (BrowserOption, bool) {
 	for _, browser := range browsers {
-		executableName := darwinExecutables[browser.ID]
-		if executableName == "" || browser.LaunchReference == "" {
+		executable := strings.TrimSpace(browser.ExecutableReference)
+		if executable == "" {
 			continue
 		}
-		executable := filepath.Join(browser.LaunchReference, "Contents", "MacOS", executableName)
 		if command == executable || strings.HasPrefix(command, executable+" ") {
 			return browser, true
 		}

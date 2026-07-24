@@ -109,7 +109,7 @@ function BrowserLauncher({ configuration, session, browserState, pending, onRefr
 
           {selectedBrowser && !selectedBrowser.supportsProxyLaunch ? (
             <p className="field-message field-message--error" role="alert">
-              {selectedBrowser.displayName} cannot be launched with an isolated SOCKS proxy. Choose Chrome, Chromium, Brave, or Firefox.
+              {selectedBrowser.displayName} is configured for regular links only. Choose a Chromium- or Firefox-compatible browser.
             </p>
           ) : null}
 
@@ -131,7 +131,7 @@ function BrowserLauncher({ configuration, session, browserState, pending, onRefr
       ) : (
         <div className="compact-empty">
           <Globe2 aria-hidden="true" />
-          <div><strong>No supported browsers found</strong><span>Install Chrome, Chromium, Brave, or Firefox and refresh.</span></div>
+          <div><strong>No supported browsers found</strong><span>Install a browser or add its application path in URL routing settings, then refresh.</span></div>
         </div>
       )}
     </section>

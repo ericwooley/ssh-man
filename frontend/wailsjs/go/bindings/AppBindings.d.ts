@@ -8,11 +8,17 @@ import {context} from '../models';
 
 export function ActivateRunningBrowser(arg1:string):Promise<void>;
 
+export function ChooseBrowserApplication():Promise<string>;
+
+export function DefaultBrowserStatus():Promise<any>;
+
 export function DeleteConnectionConfiguration(arg1:string):Promise<void>;
 
 export function DeleteServer(arg1:string):Promise<void>;
 
 export function DiscoverBrowsers():Promise<any>;
+
+export function DismissURLRoute(arg1:string):Promise<void>;
 
 export function HideWindow():Promise<void>;
 
@@ -28,11 +34,15 @@ export function LoadInitialState():Promise<bindings.LoadInitialStateResult>;
 
 export function OpenDevTools():Promise<void>;
 
+export function PendingURLRoute():Promise<any>;
+
 export function PreviewBrowserLaunchThroughSocks(arg1:string,arg2:string):Promise<any>;
 
 export function Quit():Promise<void>;
 
 export function RegisterBrowserShortcuts():Promise<void>;
+
+export function ResolveURLRoute(arg1:string,arg2:string):Promise<void>;
 
 export function RetryConfiguration(arg1:string):Promise<any>;
 
@@ -44,11 +54,17 @@ export function SavePreferences(arg1:preferences.UserPreference):Promise<prefere
 
 export function SaveServer(arg1:server.Server):Promise<server.Server>;
 
+export function SetAsDefaultBrowser():Promise<any>;
+
 export function SetBrowserShortcutsRegistrar(arg1:any):Promise<void>;
 
 export function SetBrowserSwitcherPresenter(arg1:any):Promise<void>;
 
 export function SetContext(arg1:context.Context):Promise<void>;
+
+export function SetDefaultBrowserSetter(arg1:any):Promise<void>;
+
+export function SetPreferencesSaver(arg1:any):Promise<void>;
 
 export function ShowBrowserSwitcher():Promise<void>;
 

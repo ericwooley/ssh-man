@@ -102,6 +102,90 @@ func TestRunMigrationsDoesNotOverwriteSavedBrowserAppearances(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsAddsURLRoutingDefaultsToLegacySchema(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	var fallback, proxy, rules string
+	if err := db.QueryRow(`
+		SELECT default_browser_id, proxy_browser_id, url_rules_json
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&fallback, &proxy, &rules); err != nil {
+		t.Fatalf("load migrated URL routing settings: %v", err)
+	}
+	if fallback != "" || proxy != "" || rules != "[]" {
+		t.Fatalf("migrated URL routing = (%q, %q, %q)", fallback, proxy, rules)
+	}
+}
+
+func TestRunMigrationsDoesNotOverwriteSavedURLRoutingSettings(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run first migrations: %v", err)
+	}
+	wantRules := `[{"id":"work","pattern":"github","action":"browser","browserId":"firefox"}]`
+	if _, err := db.Exec(`
+		UPDATE user_preferences
+		SET default_browser_id = 'safari',
+		    proxy_browser_id = 'firefox',
+		    url_rules_json = ?
+		WHERE id = 1
+	`, wantRules); err != nil {
+		t.Fatalf("customize URL routing: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run repeated migrations: %v", err)
+	}
+	var fallback, proxy, rules string
+	if err := db.QueryRow(`
+		SELECT default_browser_id, proxy_browser_id, url_rules_json
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&fallback, &proxy, &rules); err != nil {
+		t.Fatalf("load URL routing settings: %v", err)
+	}
+	if fallback != "safari" || proxy != "firefox" || rules != wantRules {
+		t.Fatalf("URL routing = (%q, %q, %q)", fallback, proxy, rules)
+	}
+}
+
+func TestRunMigrationsAddsCustomBrowsersDefaultToLegacySchema(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	var stored string
+	if err := db.QueryRow(`SELECT custom_browsers_json FROM user_preferences WHERE id = 1`).Scan(&stored); err != nil {
+		t.Fatalf("load migrated custom browsers: %v", err)
+	}
+	if stored != "[]" {
+		t.Fatalf("migrated custom browsers = %q, want []", stored)
+	}
+
+	want := `[{"id":"custom-kagi","displayName":"Kagi Browser","launchReference":"/Applications/Kagi Browser.app","engine":"chromium"}]`
+	if _, err := db.Exec(`UPDATE user_preferences SET custom_browsers_json = ? WHERE id = 1`, want); err != nil {
+		t.Fatalf("save custom browsers: %v", err)
+	}
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run repeated migrations: %v", err)
+	}
+	if err := db.QueryRow(`SELECT custom_browsers_json FROM user_preferences WHERE id = 1`).Scan(&stored); err != nil {
+		t.Fatalf("reload custom browsers: %v", err)
+	}
+	if stored != want {
+		t.Fatalf("custom browsers = %q, want %q", stored, want)
+	}
+}
+
 func TestRunMigrationsAddsServerSOCKSPortToLegacySchema(t *testing.T) {
 	db := openUnmigratedDatabase(t)
 	if _, err := db.Exec(`

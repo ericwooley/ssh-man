@@ -2,6 +2,7 @@ package preferences
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -285,5 +286,169 @@ func TestServiceSaveRejectsInvalidBrowserAppearances(t *testing.T) {
 				t.Fatalf("save calls = %d, want 0", store.saveCalls)
 			}
 		})
+	}
+}
+
+func TestServiceSaveNormalizesAndValidatesURLRoutingRules(t *testing.T) {
+	store := &memoryStore{pref: Default()}
+	service := NewService(store)
+	input := Default()
+	input.DefaultBrowserID = "  safari "
+	input.ProxyBrowserID = " google-chrome "
+	input.URLRules = []URLRule{
+		{
+			ID:        " work ",
+			Pattern:   ` https:\/\/github\.com\/workorg\/.* `,
+			Action:    URLRuleActionBrowser,
+			BrowserID: " brave-browser ",
+		},
+		{
+			ID:      "container",
+			Pattern: `^https://intranet\.example/`,
+			Action:  URLRuleActionCommand,
+			Command: ` open -a "Zen" "ext+container:name=Work&url=<URL>" `,
+		},
+	}
+
+	saved, err := service.Save(context.Background(), input)
+	if err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	if saved.DefaultBrowserID != "safari" || saved.ProxyBrowserID != "google-chrome" {
+		t.Fatalf("browser ids were not normalized: %#v", saved)
+	}
+	if got := saved.URLRules[0]; got.ID != "work" || got.Pattern != `https:\/\/github\.com\/workorg\/.*` || got.BrowserID != "brave-browser" {
+		t.Fatalf("browser rule was not normalized: %#v", got)
+	}
+	if got := saved.URLRules[1].Command; got != `open -a "Zen" "ext+container:name=Work&url=<URL>"` {
+		t.Fatalf("command rule was not normalized: %q", got)
+	}
+}
+
+func TestServiceSaveNormalizesCustomBrowsers(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	input := Default()
+	input.CustomBrowsers = []CustomBrowser{
+		{
+			ID:              " custom-kagi ",
+			DisplayName:     " Kagi Browser ",
+			LaunchReference: filepath.Join(string(filepath.Separator), "Applications", "Kagi Browser.app") + string(filepath.Separator),
+			Engine:          BrowserEngineChromium,
+		},
+	}
+
+	saved, err := service.Save(context.Background(), input)
+	if err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	wantPath := filepath.Join(string(filepath.Separator), "Applications", "Kagi Browser.app")
+	if len(saved.CustomBrowsers) != 1 {
+		t.Fatalf("custom browsers = %#v, want one entry", saved.CustomBrowsers)
+	}
+	got := saved.CustomBrowsers[0]
+	if got.ID != "custom-kagi" || got.DisplayName != "Kagi Browser" || got.LaunchReference != wantPath || got.Engine != BrowserEngineChromium {
+		t.Fatalf("normalized custom browser = %#v", got)
+	}
+}
+
+func TestServiceSaveRejectsInvalidCustomBrowsers(t *testing.T) {
+	valid := CustomBrowser{
+		ID:              "custom-kagi",
+		DisplayName:     "Kagi Browser",
+		LaunchReference: filepath.Join(string(filepath.Separator), "Applications", "Kagi Browser.app"),
+		Engine:          BrowserEngineChromium,
+	}
+	tests := []struct {
+		name      string
+		browsers  []CustomBrowser
+		wantError string
+	}{
+		{
+			name:      "missing name",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", LaunchReference: valid.LaunchReference, Engine: BrowserEngineChromium}},
+			wantError: "display name is required",
+		},
+		{
+			name:      "relative path",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", LaunchReference: "Kagi.app", Engine: BrowserEngineChromium}},
+			wantError: "absolute path",
+		},
+		{
+			name:      "unknown engine",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", LaunchReference: valid.LaunchReference, Engine: BrowserEngine("webkit-maybe")}},
+			wantError: "engine must be",
+		},
+		{
+			name:      "duplicate ids",
+			browsers:  []CustomBrowser{valid, {ID: " custom-kagi ", DisplayName: "Other", LaunchReference: filepath.Join(string(filepath.Separator), "Applications", "Other.app"), Engine: BrowserEngineRegular}},
+			wantError: "duplicate id",
+		},
+		{
+			name:      "duplicate paths",
+			browsers:  []CustomBrowser{valid, {ID: "custom-other", DisplayName: "Other", LaunchReference: valid.LaunchReference + string(filepath.Separator), Engine: BrowserEngineRegular}},
+			wantError: "duplicate application path",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &memoryStore{}
+			input := Default()
+			input.CustomBrowsers = test.browsers
+			_, err := NewService(store).Save(context.Background(), input)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("save error = %v, want error containing %q", err, test.wantError)
+			}
+			if store.saveCalls != 0 {
+				t.Fatalf("save calls = %d, want 0", store.saveCalls)
+			}
+		})
+	}
+}
+
+func TestURLRoutingRuleValidationRejectsInvalidRules(t *testing.T) {
+	tests := []struct {
+		name string
+		rule URLRule
+	}{
+		{
+			name: "invalid regex",
+			rule: URLRule{ID: "bad-regex", Pattern: "[", Action: URLRuleActionBrowser, BrowserID: "safari"},
+		},
+		{
+			name: "browser without browser id",
+			rule: URLRule{ID: "missing-browser", Pattern: ".*", Action: URLRuleActionBrowser},
+		},
+		{
+			name: "command without placeholder",
+			rule: URLRule{ID: "missing-url", Pattern: ".*", Action: URLRuleActionCommand, Command: "open -a Safari"},
+		},
+		{
+			name: "unknown action",
+			rule: URLRule{ID: "unknown", Pattern: ".*", Action: URLRuleAction("other")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := Default()
+			input.URLRules = []URLRule{tt.rule}
+			if err := input.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestURLRoutingRuleValidationRejectsDuplicateIDs(t *testing.T) {
+	input := Default()
+	input.URLRules = []URLRule{
+		{ID: "work", Pattern: "github", Action: URLRuleActionBrowser, BrowserID: "safari"},
+		{ID: "work", Pattern: "linear", Action: URLRuleActionBrowser, BrowserID: "safari"},
+	}
+
+	if err := input.Validate(); err == nil {
+		t.Fatal("expected duplicate rule id validation error")
 	}
 }

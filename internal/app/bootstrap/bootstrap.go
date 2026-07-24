@@ -9,7 +9,9 @@ import (
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
 	sessiondomain "ssh-man/internal/domain/session"
+	urlroutingdomain "ssh-man/internal/domain/urlrouting"
 	"ssh-man/internal/platform/browser"
+	"ssh-man/internal/platform/defaultbrowser"
 	"ssh-man/internal/platform/paths"
 	"ssh-man/internal/sqlite"
 )
@@ -23,6 +25,8 @@ type Application struct {
 	PreferencesService *preferencesdomain.Service
 	SessionService     *sessiondomain.Service
 	BrowserService     *browser.Service
+	URLRoutingService  *urlroutingdomain.Service
+	DefaultBrowser     *defaultbrowser.Manager
 }
 
 func New(context.Context) (*Application, error) {
@@ -61,7 +65,9 @@ func New(context.Context) (*Application, error) {
 	}
 	preferencesService := preferencesdomain.NewService(prefStore)
 	sessionService := sessiondomain.NewService(configStore, serverStore, historyStore, runtimeStore)
-	browserService := browser.NewService(configDir, configStore, runtimeStore, serverStore)
+	browserService := browser.NewService(configDir, configStore, runtimeStore, serverStore, preferencesService)
+	urlRoutingService := urlroutingdomain.NewService(preferencesService, configService, serverService, sessionService, browserService)
+	defaultBrowserManager := defaultbrowser.NewManager()
 
 	return &Application{
 		ConfigDir:          configDir,
@@ -72,6 +78,8 @@ func New(context.Context) (*Application, error) {
 		PreferencesService: preferencesService,
 		SessionService:     sessionService,
 		BrowserService:     browserService,
+		URLRoutingService:  urlRoutingService,
+		DefaultBrowser:     defaultBrowserManager,
 	}, nil
 }
 

@@ -10,6 +10,11 @@ function getExplorerLauncherBindings() {
   return window.go?.bindings?.ExplorerLauncherBindings || null
 }
 
+function getSettingsLauncherBindings() {
+  if (typeof window === 'undefined') return null
+  return window.go?.bindings?.SettingsLauncherBindings || null
+}
+
 const hasWailsRuntime = () => getRuntimeBindings() !== null
 
 const memoryState = {
@@ -20,6 +25,10 @@ const memoryState = {
     browserSwitcherShortcut: 'Alt+X',
     browserSwitcherBackwardShortcut: 'Alt+Z',
     browserAppearances: {},
+    defaultBrowserId: '',
+    proxyBrowserId: '',
+    customBrowsers: [],
+    urlRules: [],
   },
   sessions: [],
   sessionHistory: [],
@@ -205,8 +214,16 @@ export async function discoverBrowsers() {
   return [
     { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
     { id: 'chromium', displayName: 'Chromium', supportsProxyLaunch: true },
+    { id: 'zen', displayName: 'Zen', engine: 'firefox', supportsProxyLaunch: true },
     { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: true },
   ]
+}
+
+export async function chooseBrowserApplication() {
+  if (hasWailsRuntime()) {
+    return appBindings().ChooseBrowserApplication()
+  }
+  return ''
 }
 
 export async function previewBrowserLaunchThroughSocks(configurationId, browserId) {
@@ -246,6 +263,53 @@ export async function activateRunningBrowser(targetId) {
   if (hasWailsRuntime()) {
     return appBindings().ActivateRunningBrowser(targetId)
   }
+}
+
+export async function defaultBrowserStatus() {
+  if (hasWailsRuntime()) {
+    return appBindings().DefaultBrowserStatus()
+  }
+  return { supported: false, isDefault: false }
+}
+
+export async function setAsDefaultBrowser() {
+  if (hasWailsRuntime()) {
+    return appBindings().SetAsDefaultBrowser()
+  }
+  return { supported: false, isDefault: false }
+}
+
+export async function pendingURLRoute() {
+  if (hasWailsRuntime()) {
+    return appBindings().PendingURLRoute()
+  }
+  return null
+}
+
+export async function resolveURLRoute(requestId, choiceId) {
+  if (hasWailsRuntime()) {
+    return appBindings().ResolveURLRoute(requestId, choiceId)
+  }
+}
+
+export async function dismissURLRoute(requestId) {
+  if (hasWailsRuntime()) {
+    return appBindings().DismissURLRoute(requestId)
+  }
+}
+
+export function onURLRouteChoiceRequested(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('url-routing:choice', (request) => callback(request))
+  }
+  return () => {}
+}
+
+export function onPreferencesChanged(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('preferences:changed', (preferences) => callback(preferences))
+  }
+  return () => {}
 }
 
 export function onBrowserSwitcherRequested(callback) {
@@ -309,6 +373,14 @@ export async function openServerExplorer(serverId) {
     return launcher.Open(serverId)
   }
   return { serverId, opened: true }
+}
+
+export async function openSettingsWindow() {
+  const launcher = getSettingsLauncherBindings()
+  if (launcher) {
+    return launcher.Open()
+  }
+  return { opened: true }
 }
 
 

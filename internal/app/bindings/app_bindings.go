@@ -12,6 +12,7 @@ import (
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
+	"ssh-man/internal/platform/defaultbrowser"
 	"ssh-man/internal/ssh/auth"
 )
 
@@ -20,6 +21,8 @@ type AppBindings struct {
 	window              *appwindow.Controller
 	setBrowserShortcuts func(string, string) error
 	showBrowserSwitcher func() bool
+	savePreferences     func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
+	setDefaultBrowser   func() (defaultbrowser.Status, error)
 }
 
 func (a *AppBindings) SetBrowserShortcutsRegistrar(registrar func(string, string) error) {
@@ -28,6 +31,14 @@ func (a *AppBindings) SetBrowserShortcutsRegistrar(registrar func(string, string
 
 func (a *AppBindings) SetBrowserSwitcherPresenter(presenter func() bool) {
 	a.showBrowserSwitcher = presenter
+}
+
+func (a *AppBindings) SetPreferencesSaver(saver func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)) {
+	a.savePreferences = saver
+}
+
+func (a *AppBindings) SetDefaultBrowserSetter(setter func() (defaultbrowser.Status, error)) {
+	a.setDefaultBrowser = setter
 }
 
 type ServerWithConfigurations struct {

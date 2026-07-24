@@ -98,6 +98,30 @@ func TestSavePreferencesRejectsDuplicateBrowserShortcutsBeforeRegistration(t *te
 	}
 }
 
+func TestSavePreferencesUsesOwnerSaverAfterNormalization(t *testing.T) {
+	store := &preferenceMemoryStore{pref: preferencesdomain.Default()}
+	app := &bootstrap.Application{PreferencesService: preferencesdomain.NewService(store)}
+	bindings := NewAppBindingsWithApplication(app, nil)
+	var forwarded preferencesdomain.UserPreference
+	bindings.SetPreferencesSaver(func(input preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
+		forwarded = input
+		return input, nil
+	})
+
+	input := store.pref
+	input.BrowserSwitcherShortcut = "option+b"
+	saved, err := bindings.SavePreferences(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forwarded.BrowserSwitcherShortcut != "Alt+B" || saved.BrowserSwitcherShortcut != "Alt+B" {
+		t.Fatalf("forwarded shortcut = %q, saved shortcut = %q", forwarded.BrowserSwitcherShortcut, saved.BrowserSwitcherShortcut)
+	}
+	if store.pref.BrowserSwitcherShortcut != "Alt+X" {
+		t.Fatalf("companion store changed locally to %q", store.pref.BrowserSwitcherShortcut)
+	}
+}
+
 func TestSaveBrowserAppearancePersistsAndResetsWithoutReregisteringShortcuts(t *testing.T) {
 	store := &preferenceMemoryStore{pref: preferencesdomain.Default()}
 	app := &bootstrap.Application{PreferencesService: preferencesdomain.NewService(store)}
