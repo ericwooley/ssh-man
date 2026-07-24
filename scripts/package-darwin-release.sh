@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-}"
-WAILS_VERSION="v2.12.0"
+WAILS_VERSION="v2.13.0"
 APP_PATH="$ROOT_DIR/build/bin/ssh-man.app"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/ssh-man"
 DMG_PATH="$ROOT_DIR/dist/ssh-man.dmg"

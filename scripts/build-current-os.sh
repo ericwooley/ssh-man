@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OS="$(uname -s)"
-WAILS_VERSION="v2.12.0"
+WAILS_VERSION="v2.13.0"
 
 cd "$ROOT_DIR"
 
