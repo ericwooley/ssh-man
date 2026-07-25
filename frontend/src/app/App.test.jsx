@@ -79,6 +79,7 @@ function createFakeApi({
   sshKeys = [],
   currentUsername = 'eric',
   runningBrowsers = [],
+  version = 'Dev build',
 } = {}) {
   const state = {
     servers: clone(servers),
@@ -108,6 +109,7 @@ function createFakeApi({
       diagnostics: {
         appDataPath: '/tmp/ssh-man',
         databasePath: '/tmp/ssh-man/ssh-man.db',
+        version,
       },
       currentUsername,
       recoverable: false,
@@ -487,6 +489,14 @@ describe('React application flows', () => {
     expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Close Settings' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Quit SSH Man' })).toBeNull()
+  })
+
+  test('shows the backend-provided app version', async () => {
+    const { api } = createFakeApi({ version: '1.2.3' })
+    renderSettingsApp(api)
+
+    expect(await screen.findByText('App version')).toBeTruthy()
+    expect(screen.getByText('1.2.3')).toBeTruthy()
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {

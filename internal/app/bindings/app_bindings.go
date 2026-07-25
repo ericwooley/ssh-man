@@ -9,6 +9,7 @@ import (
 
 	"ssh-man/internal/app/bootstrap"
 	appwindow "ssh-man/internal/app/window"
+	"ssh-man/internal/buildinfo"
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
@@ -19,6 +20,7 @@ import (
 type AppBindings struct {
 	app                 *bootstrap.Application
 	window              *appwindow.Controller
+	displayVersion      string
 	setBrowserShortcuts func(string, string) error
 	showBrowserSwitcher func() bool
 	savePreferences     func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
@@ -49,6 +51,7 @@ type ServerWithConfigurations struct {
 type Diagnostics struct {
 	AppDataPath  string `json:"appDataPath"`
 	DatabasePath string `json:"databasePath"`
+	Version      string `json:"version"`
 }
 
 type SSHKeyOption struct {
@@ -83,10 +86,18 @@ func NewAppBindingsWithWindow(window *appwindow.Controller) (*AppBindings, error
 }
 
 func NewAppBindingsWithApplication(app *bootstrap.Application, window *appwindow.Controller) *AppBindings {
+	return newAppBindingsWithApplication(app, window, buildinfo.Version)
+}
+
+func newAppBindingsWithApplication(app *bootstrap.Application, window *appwindow.Controller, version string) *AppBindings {
 	if window == nil {
 		window = appwindow.New()
 	}
-	return &AppBindings{app: app, window: window}
+	return &AppBindings{
+		app:            app,
+		window:         window,
+		displayVersion: buildinfo.DisplayVersion(version),
+	}
 }
 
 func (a *AppBindings) SetContext(ctx context.Context) {
@@ -129,10 +140,14 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 		currentUsername = currentUser.Username
 	}
 	result := LoadInitialStateResult{
-		Preferences:     preferencesdomain.Default(),
-		Sessions:        []any{},
-		SSHKeys:         discoverSSHKeyOptions(),
-		Diagnostics:     Diagnostics{AppDataPath: a.app.ConfigDir, DatabasePath: a.app.DatabasePath},
+		Preferences: preferencesdomain.Default(),
+		Sessions:    []any{},
+		SSHKeys:     discoverSSHKeyOptions(),
+		Diagnostics: Diagnostics{
+			AppDataPath:  a.app.ConfigDir,
+			DatabasePath: a.app.DatabasePath,
+			Version:      a.displayVersion,
+		},
 		CurrentUsername: currentUsername,
 	}
 

@@ -3,6 +3,7 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowDown,
+  BadgeInfo,
   Check,
   Copy,
   Database,
@@ -632,6 +633,11 @@ export function SettingsScreen({
           <IconButton label="Refresh runtime status" onClick={() => onRefreshRuntime({ quiet: false })}>
             <RefreshCw aria-hidden="true" />
           </IconButton>
+        </div>
+
+        <div className="status-line">
+          <BadgeInfo aria-hidden="true" />
+          <div><strong>App version</strong><span>{diagnostics.version}</span></div>
         </div>
 
         <PathCard icon={FolderOpen} label="App data path" value={diagnostics.appDataPath} onCopy={onCopyPath} />
