@@ -564,6 +564,7 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
               onOpen={openServer}
               onOpenBrowser={app.openServerBrowser}
               onOpenExplorer={app.openServerExplorer}
+              onOpenCommand={app.openServerCommand}
             />
           ) : null}
 

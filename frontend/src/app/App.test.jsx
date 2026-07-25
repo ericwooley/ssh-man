@@ -216,6 +216,7 @@ function createFakeApi({
     openDevTools: vi.fn(async () => undefined),
     openServerExplorer: vi.fn(async () => undefined),
     openSettingsWindow: vi.fn(async () => undefined),
+    openServerCommand: vi.fn(async () => undefined),
     hideApplicationWindow: vi.fn(async () => undefined),
     quitApplication: vi.fn(async () => undefined),
     openExternalURL: vi.fn(async () => undefined),
@@ -365,7 +366,7 @@ describe('React application flows', () => {
     expect(screen.getByText('16379 → 127.0.0.1:6379')).toBeTruthy()
   })
 
-  test('offers independent browser and explorer quick launchers on each server card', async () => {
+  test('offers independent browser, explorer, and command launchers on each server card', async () => {
     const user = userEvent.setup()
     const managedStopped = {
       ...stoppedSession,
@@ -379,6 +380,7 @@ describe('React application flows', () => {
 
     const browserLauncher = await screen.findByRole('button', { name: 'Open browser through Production bastion' })
     const explorerLauncher = screen.getByRole('button', { name: 'Open Production bastion explorer' })
+    const commandLauncher = screen.getByRole('button', { name: 'Open Production bastion quick command' })
     await user.click(browserLauncher)
 
     await waitFor(() => expect(api.startConfiguration).toHaveBeenCalledWith(managedBrowserProxy.id))
@@ -389,6 +391,10 @@ describe('React application flows', () => {
     await user.click(explorerLauncher)
     await waitFor(() => expect(api.openServerExplorer).toHaveBeenCalledWith(savedServer.id))
     expect(api.launchBrowserThroughSocks).toHaveBeenCalledTimes(1)
+
+    await user.click(commandLauncher)
+    await waitFor(() => expect(api.openServerCommand).toHaveBeenCalledWith(savedServer.id))
+    expect(api.openServerExplorer).toHaveBeenCalledTimes(1)
   })
 
   test('resumes the row browser launcher after unlocking an encrypted key', async () => {

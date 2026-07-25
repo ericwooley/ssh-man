@@ -4,6 +4,7 @@ import {
   onBrowserSwitcherCancelRequested,
   onBrowserSwitcherCommitRequested,
   onBrowserSwitcherRequested,
+  openServerCommand,
   saveBrowserAppearance,
 } from './api'
 
@@ -45,7 +46,7 @@ describe('browser appearance persistence', () => {
   })
 })
 
-describe('settings window launcher', () => {
+describe('companion window launchers', () => {
   test('uses the dedicated settings launcher binding', async () => {
     const Open = vi.fn(async () => undefined)
     window.go = { bindings: { SettingsLauncherBindings: { Open } } }
@@ -53,6 +54,15 @@ describe('settings window launcher', () => {
     await openSettingsWindow()
 
     expect(Open).toHaveBeenCalledTimes(1)
+  })
+
+  test('opens the quick command window through its dedicated binding', async () => {
+    const Open = vi.fn(async () => undefined)
+    window.go = { bindings: { CommandLauncherBindings: { Open } } }
+
+    await openServerCommand('server-1')
+
+    expect(Open).toHaveBeenCalledWith('server-1')
   })
 })
 

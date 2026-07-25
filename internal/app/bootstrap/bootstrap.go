@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	commandhistorydomain "ssh-man/internal/domain/commandhistory"
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
@@ -17,16 +18,17 @@ import (
 )
 
 type Application struct {
-	ConfigDir          string
-	DatabasePath       string
-	DB                 *sql.DB
-	ServerService      *serverdomain.Service
-	ConfigService      *configdomain.Service
-	PreferencesService *preferencesdomain.Service
-	SessionService     *sessiondomain.Service
-	BrowserService     *browser.Service
-	URLRoutingService  *urlroutingdomain.Service
-	DefaultBrowser     *defaultbrowser.Manager
+	ConfigDir             string
+	DatabasePath          string
+	DB                    *sql.DB
+	ServerService         *serverdomain.Service
+	ConfigService         *configdomain.Service
+	PreferencesService    *preferencesdomain.Service
+	SessionService        *sessiondomain.Service
+	BrowserService        *browser.Service
+	CommandHistoryService *commandhistorydomain.Service
+	URLRoutingService     *urlroutingdomain.Service
+	DefaultBrowser        *defaultbrowser.Manager
 }
 
 func New(context.Context) (*Application, error) {
@@ -43,6 +45,7 @@ func New(context.Context) (*Application, error) {
 	configStore := sqlite.NewConfigStore(db)
 	prefStore := sqlite.NewPreferencesStore(db)
 	historyStore := sqlite.NewSessionHistoryStore(db)
+	commandHistoryStore := sqlite.NewCommandHistoryStore(db)
 	runtimeStore := sessiondomain.NewRuntimeStore()
 
 	serverService := serverdomain.NewService(serverStore)
@@ -68,18 +71,20 @@ func New(context.Context) (*Application, error) {
 	browserService := browser.NewService(configDir, configStore, runtimeStore, serverStore, preferencesService)
 	urlRoutingService := urlroutingdomain.NewService(preferencesService, configService, serverService, sessionService, browserService)
 	defaultBrowserManager := defaultbrowser.NewManager()
+	commandHistoryService := commandhistorydomain.NewService(commandHistoryStore)
 
 	return &Application{
-		ConfigDir:          configDir,
-		DatabasePath:       paths.DatabasePath(configDir),
-		DB:                 db,
-		ServerService:      serverService,
-		ConfigService:      configService,
-		PreferencesService: preferencesService,
-		SessionService:     sessionService,
-		BrowserService:     browserService,
-		URLRoutingService:  urlRoutingService,
-		DefaultBrowser:     defaultBrowserManager,
+		ConfigDir:             configDir,
+		DatabasePath:          paths.DatabasePath(configDir),
+		DB:                    db,
+		ServerService:         serverService,
+		ConfigService:         configService,
+		PreferencesService:    preferencesService,
+		SessionService:        sessionService,
+		BrowserService:        browserService,
+		CommandHistoryService: commandHistoryService,
+		URLRoutingService:     urlRoutingService,
+		DefaultBrowser:        defaultBrowserManager,
 	}, nil
 }
 

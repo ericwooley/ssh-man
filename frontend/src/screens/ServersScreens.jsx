@@ -11,6 +11,7 @@ import {
   Server,
   ShieldCheck,
   Square,
+  Terminal,
   Trash2,
 } from 'lucide-react'
 import {
@@ -34,6 +35,7 @@ export function ServersScreen({
   onOpen,
   onOpenBrowser,
   onOpenExplorer,
+  onOpenCommand,
 }) {
   if (!servers.length) {
     return (
@@ -75,6 +77,7 @@ export function ServersScreen({
             : null
           const browserPending = Boolean(pending[`browser:${item.server.id}`])
           const explorerPending = Boolean(pending[`explore-server:${item.server.id}`])
+          const commandPending = Boolean(pending[`command-server:${item.server.id}`])
           return (
             <li key={item.server.id} className="server-row">
               <button
@@ -113,6 +116,16 @@ export function ServersScreen({
                   {explorerPending
                     ? <LoaderCircle className="spin" aria-hidden="true" />
                     : <FolderOpen aria-hidden="true" />}
+                </IconButton>
+                <IconButton
+                  label={`Open ${item.server.name} quick command`}
+                  className="server-row__quick-action is-command"
+                  disabled={commandPending}
+                  onClick={() => onOpenCommand(item.server.id)}
+                >
+                  {commandPending
+                    ? <LoaderCircle className="spin" aria-hidden="true" />
+                    : <Terminal aria-hidden="true" />}
                 </IconButton>
                 <IconButton
                   label={`Show ${item.server.name} details`}

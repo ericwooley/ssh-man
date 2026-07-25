@@ -757,6 +757,18 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }), [api, notify, runPending])
 
+  const openServerCommand = useCallback((serverId) => runPending(`command-server:${serverId}`, async () => {
+    const serverName = servers.find((item) => item.server.id === serverId)?.server.name || 'Server'
+    try {
+      await api.openServerCommand(serverId)
+      notify('success', `${serverName} command window opened.`)
+      return true
+    } catch (error) {
+      notify('danger', 'The command window could not be opened.', error.message || '')
+      return false
+    }
+  }), [api, notify, runPending, servers])
+
   return {
     phase,
     servers,
@@ -814,6 +826,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     openDevTools,
     openServerExplorer,
     openSettingsWindow,
+    openServerCommand,
     openServerBrowser,
     hideWindow: api.hideApplicationWindow,
     quitApplication: api.quitApplication,
