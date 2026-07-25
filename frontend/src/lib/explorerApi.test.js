@@ -5,6 +5,7 @@ import {
   previewWindowState,
   subscribeFileDrop,
   subscribePreviewWindowState,
+  subscribeUploadProgress,
   uploadFiles,
 } from './explorerApi'
 
@@ -56,7 +57,7 @@ describe('preview window lifecycle', () => {
   })
 
   test('uploads local paths through the explorer binding', async () => {
-    const Upload = vi.fn(async (remoteDirectory, localPaths) => (
+    const Upload = vi.fn(async (_uploadID, remoteDirectory, localPaths) => (
       {
         uploaded: localPaths.map((localPath) => `${remoteDirectory}/${localPath.split('/').at(-1)}`),
         failures: [],
@@ -64,9 +65,9 @@ describe('preview window lifecycle', () => {
     ))
     window.go = { bindings: { ExplorerBindings: { Upload } } }
 
-    await expect(uploadFiles('/srv/site', ['/Users/eric/report.txt']))
+    await expect(uploadFiles(7, '/srv/site', ['/Users/eric/report.txt']))
       .resolves.toEqual({ uploaded: ['/srv/site/report.txt'], failures: [] })
-    expect(Upload).toHaveBeenCalledWith('/srv/site', ['/Users/eric/report.txt'])
+    expect(Upload).toHaveBeenCalledWith(7, '/srv/site', ['/Users/eric/report.txt'])
   })
 
   test('subscribes to native file drops on explorer drop targets', () => {
@@ -80,5 +81,23 @@ describe('preview window lifecycle', () => {
 
     unsubscribe()
     expect(OnFileDropOff).toHaveBeenCalledTimes(1)
+  })
+
+  test('subscribes to upload progress events', () => {
+    const callback = vi.fn()
+    const unsubscribe = vi.fn()
+    let listener
+    window.runtime = {
+      EventsOn: vi.fn((eventName, nextListener) => {
+        listener = nextListener
+        return unsubscribe
+      }),
+    }
+
+    expect(subscribeUploadProgress(callback)).toBe(unsubscribe)
+    expect(window.runtime.EventsOn).toHaveBeenCalledWith('explorer:upload-progress', expect.any(Function))
+
+    listener({ fileIndex: 0, status: 'transferring', bytesTransferred: 12 })
+    expect(callback).toHaveBeenCalledWith({ fileIndex: 0, status: 'transferring', bytesTransferred: 12 })
   })
 })

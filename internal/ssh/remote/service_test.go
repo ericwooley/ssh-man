@@ -357,6 +357,60 @@ func TestUploadCopiesLocalFilesIntoRemoteDirectory(t *testing.T) {
 	}
 }
 
+func TestUploadReportsByteProgressAndTerminalStateForEveryFile(t *testing.T) {
+	service := connectedTestService(t)
+	localDirectory := t.TempDir()
+	firstPath := filepath.Join(localDirectory, "first.txt")
+	existingPath := filepath.Join(localDirectory, "README.md")
+	if err := os.WriteFile(firstPath, []byte("first upload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(existingPath, []byte("existing name"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var progress []UploadProgress
+
+	result, err := service.UploadWithProgress(
+		context.Background(),
+		[]string{firstPath, existingPath},
+		"~",
+		func(next UploadProgress) {
+			progress = append(progress, next)
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.Uploaded, []string{"/home/eric/first.txt"}) {
+		t.Fatalf("uploaded paths = %#v", result.Uploaded)
+	}
+
+	var started, completed, failed *UploadProgress
+	for index := range progress {
+		next := &progress[index]
+		switch {
+		case next.FileIndex == 0 && next.Status == UploadStatusTransferring && next.BytesTransferred == 0:
+			started = next
+		case next.FileIndex == 0 && next.Status == UploadStatusCompleted:
+			completed = next
+		case next.FileIndex == 1 && next.Status == UploadStatusFailed:
+			failed = next
+		}
+	}
+	if started == nil || started.Name != "first.txt" || started.TotalBytes != int64(len("first upload")) {
+		t.Fatalf("starting progress = %#v", started)
+	}
+	if completed == nil || completed.BytesTransferred != completed.TotalBytes || completed.FilesProcessed != 1 {
+		t.Fatalf("completed progress = %#v", completed)
+	}
+	if failed == nil || failed.FailureCode != UploadFailureExists || failed.FilesProcessed != 2 {
+		t.Fatalf("failed progress = %#v", failed)
+	}
+	if failed.OverallBytesProcessed != failed.OverallBytesTotal {
+		t.Fatalf("final overall progress = %d/%d, want all work settled", failed.OverallBytesProcessed, failed.OverallBytesTotal)
+	}
+}
+
 func TestUploadRemovesUnsafeWritePermissionsFromLocalFiles(t *testing.T) {
 	service := connectedTestService(t)
 	localPath := filepath.Join(t.TempDir(), "shared-script.sh")

@@ -22,4 +22,4 @@ export function SetContext(arg1:context.Context):Promise<void>;
 
 export function Shutdown(arg1:context.Context):Promise<void>;
 
-export function Upload(arg1:string,arg2:Array<string>):Promise<remote.UploadResult>;
+export function Upload(arg1:number,arg2:string,arg3:Array<string>):Promise<remote.UploadResult>;

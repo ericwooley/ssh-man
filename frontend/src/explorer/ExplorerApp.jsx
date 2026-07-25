@@ -38,6 +38,14 @@ import {
   formatFileSize,
   parentRemotePath,
 } from './pathUtils'
+import UploadTransfers from './UploadTransfers'
+import {
+  applyUploadProgress,
+  completeUploadQueue,
+  createUploadQueue,
+  failUploadQueue,
+  summarizeUploadQueue,
+} from './uploadQueue'
 
 function itemIcon(entry) {
   if (entry.kind === 'directory') return Folder
@@ -152,8 +160,8 @@ export default function ExplorerApp({ api = defaultApi }) {
   const [error, setError] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [downloading, setDownloading] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [uploadDestination, setUploadDestination] = useState('')
+  const [uploadQueue, setUploadQueue] = useState(null)
+  const [detailTab, setDetailTab] = useState('preview')
   const [notice, setNotice] = useState('')
   const [previewWindowPaths, setPreviewWindowPaths] = useState(() => new Set())
   const [previewWindowPendingPath, setPreviewWindowPendingPath] = useState('')
@@ -164,10 +172,13 @@ export default function ExplorerApp({ api = defaultApi }) {
   const directoryPathRef = useRef('')
   const uploadingRef = useRef(false)
   const uploadDestinationRef = useRef('')
+  const uploadIDRef = useRef(0)
   const previewWindowStateRequestsRef = useRef(new Map())
   const previewWindowOpenRef = useRef(false)
   const previewPopoutButtonRef = useRef(null)
   const previewFocusButtonRef = useRef(null)
+  const previewTabRef = useRef(null)
+  const transfersTabRef = useRef(null)
 
   useEffect(() => {
     directoryPathRef.current = directory.path
@@ -336,17 +347,20 @@ export default function ExplorerApp({ api = defaultApi }) {
       return
     }
     const remoteDirectory = directory.path
+    const uploadID = uploadIDRef.current + 1
+    uploadIDRef.current = uploadID
     uploadingRef.current = true
     uploadDestinationRef.current = remoteDirectory
-    setUploadDestination(remoteDirectory)
-    setUploading(true)
+    setUploadQueue(createUploadQueue(files, remoteDirectory, uploadID))
+    setDetailTab('transfers')
     setError('')
     setNotice('')
     let uploadError = null
     let uploadedCount = 0
     try {
-      const result = await api.uploadFiles(remoteDirectory, files)
+      const result = await api.uploadFiles(uploadID, remoteDirectory, files)
       uploadedCount = Array.isArray(result?.uploaded) ? result.uploaded.length : 0
+      setUploadQueue((current) => current?.id === uploadID ? completeUploadQueue(current, result) : current)
       const feedback = uploadFeedback(result, remoteDirectory)
       if (feedback.error) {
         uploadError = new Error(feedback.error)
@@ -356,26 +370,28 @@ export default function ExplorerApp({ api = defaultApi }) {
       }
     } catch (nextError) {
       uploadError = nextError
+      setUploadQueue((current) => current?.id === uploadID ? failUploadQueue(current) : current)
       setError('The files could not be uploaded. Check the connection and try again.')
-    }
-    try {
-      if (directoryPathRef.current === remoteDirectory) {
-        const refreshed = await api.listDirectory(remoteDirectory)
-        setDirectory((current) => current.path === remoteDirectory ? refreshed : current)
-      }
-    } catch (nextError) {
-      if (uploadedCount > 0 && uploadError) {
-        setNotice('')
-        setError(`${uploadError.message} Reopen ${remoteDirectory} to see the files that were added.`)
-      } else if (!uploadError) {
-        setNotice('')
-        setError(`Your files uploaded to ${remoteDirectory}, but it could not be refreshed. Reopen it to see them.`)
-      }
     } finally {
       uploadingRef.current = false
       uploadDestinationRef.current = ''
-      setUploading(false)
-      setUploadDestination('')
+    }
+    if (directoryPathRef.current === remoteDirectory) {
+      setUploadQueue((current) => current?.id === uploadID ? { ...current, refreshStatus: 'refreshing' } : current)
+      try {
+        const refreshed = await api.listDirectory(remoteDirectory)
+        setDirectory((current) => current.path === remoteDirectory ? refreshed : current)
+        setUploadQueue((current) => current?.id === uploadID ? { ...current, refreshStatus: 'completed' } : current)
+      } catch (nextError) {
+        setUploadQueue((current) => current?.id === uploadID ? { ...current, refreshStatus: 'failed' } : current)
+        if (uploadedCount > 0 && uploadError) {
+          setNotice('')
+          setError(`${uploadError.message} Reopen ${remoteDirectory} to see the files that were added.`)
+        } else if (!uploadError) {
+          setNotice('')
+          setError(`Your files uploaded to ${remoteDirectory}, but it could not be refreshed. Reopen it to see them.`)
+        }
+      }
     }
   }, [api, directory.path, phase])
 
@@ -383,6 +399,13 @@ export default function ExplorerApp({ api = defaultApi }) {
     if (!api.subscribeFileDrop) return undefined
     return api.subscribeFileDrop(uploadDroppedFiles)
   }, [api, uploadDroppedFiles])
+
+  useEffect(() => {
+    if (!api.subscribeUploadProgress) return undefined
+    return api.subscribeUploadProgress((progress) => {
+      setUploadQueue((current) => applyUploadProgress(current, progress))
+    })
+  }, [api])
 
   useEffect(() => {
     if (!dirty) return undefined
@@ -527,6 +550,7 @@ export default function ExplorerApp({ api = defaultApi }) {
   const previewOpenInWindow = Boolean(preview?.path && previewWindowPaths.has(preview.path))
   const previewWindowPending = previewWindowPendingPath === preview?.path
   const sourceEditorVisible = !previewOpenInWindow && (preview?.kind === 'text' || (previewMode === 'source' && ['markdown', 'browser'].includes(preview?.kind)))
+  const uploadSummary = useMemo(() => summarizeUploadQueue(uploadQueue), [uploadQueue])
 
   useEffect(() => {
     const wasOpen = previewWindowOpenRef.current
@@ -590,7 +614,7 @@ export default function ExplorerApp({ api = defaultApi }) {
         <main
           className="explorer-browser"
           style={{ '--wails-drop-target': phase === 'ready' ? 'drop' : undefined }}
-          aria-busy={phase === 'loading' || phase === 'connecting' || uploading}
+          aria-busy={phase === 'loading' || phase === 'connecting'}
         >
           <div className="explorer-location-title">
             <FolderOpen />
@@ -635,17 +659,59 @@ export default function ExplorerApp({ api = defaultApi }) {
               })}
             </div>
           ) : null}
-          <div className={`explorer-drop-overlay${uploading ? ' is-uploading' : ''}`} role={uploading ? 'status' : undefined} aria-hidden={!uploading}>
-            {uploading ? <LoaderCircle className="spin" /> : <CloudUpload />}
-            <strong>{uploading ? 'Uploading files…' : 'Drop files to upload'}</strong>
-            <span>{uploading ? 'Adding files to' : 'Add files to'} {uploadDestination || directory.path || 'this folder'}</span>
+          <div className="explorer-drop-overlay" aria-hidden="true">
+            <CloudUpload />
+            <strong>Drop files to upload</strong>
+            <span>Add files to {directory.path || 'this folder'}</span>
           </div>
         </main>
 
         <aside className="explorer-preview">
           <div className="explorer-preview__header">
-            <div><Eye /><strong>{previewTitle(preview)}</strong>{dirty ? <span className="explorer-edited">Edited</span> : null}</div>
-            <div className="explorer-preview-actions">
+            <div className="explorer-preview-tabs" role="tablist" aria-label="Preview and transfers">
+              <button
+                type="button"
+                role="tab"
+                ref={previewTabRef}
+                id="explorer-preview-tab"
+                aria-controls="explorer-preview-panel"
+                aria-selected={detailTab === 'preview'}
+                tabIndex={detailTab === 'preview' ? 0 : -1}
+                className={detailTab === 'preview' ? 'is-current' : ''}
+                title={previewTitle(preview)}
+                onClick={() => setDetailTab('preview')}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowRight' || !uploadQueue) return
+                  event.preventDefault()
+                  setDetailTab('transfers')
+                  transfersTabRef.current?.focus()
+                }}
+              ><Eye /><span>Preview</span><small>{previewTitle(preview)}</small>{dirty ? <i>Edited</i> : null}</button>
+              {uploadQueue ? (
+                <button
+                  type="button"
+                  role="tab"
+                  ref={transfersTabRef}
+                  id="explorer-transfers-tab"
+                  aria-controls="explorer-transfers-panel"
+                  aria-selected={detailTab === 'transfers'}
+                  tabIndex={detailTab === 'transfers' ? 0 : -1}
+                  className={detailTab === 'transfers' ? 'is-current' : ''}
+                  onClick={() => setDetailTab('transfers')}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'ArrowLeft') return
+                    event.preventDefault()
+                    setDetailTab('preview')
+                    previewTabRef.current?.focus()
+                  }}
+                >
+                  <CloudUpload />
+                  <span>Transfers</span>
+                  {uploadSummary.remainingCount > 0 ? <b>{uploadSummary.remainingCount}</b> : null}
+                </button>
+              ) : null}
+            </div>
+            {detailTab === 'preview' ? <div className="explorer-preview-actions">
               {previewOpenInWindow ? <span className="explorer-preview-window-badge"><ExternalLink />In window</span> : null}
               {!previewOpenInWindow && preview?.kind === 'browser' && previewMode === 'rendered' ? <span className="explorer-preview-safety">Scripts disabled</span> : null}
               {sourceEditorVisible && editablePreview ? <label className="explorer-vim-toggle"><input type="checkbox" checked={vimMode} onChange={toggleVimMode} />Vim controls</label> : null}
@@ -667,40 +733,49 @@ export default function ExplorerApp({ api = defaultApi }) {
                 ><ExternalLink /></button>
               ) : null}
               {!previewOpenInWindow && editablePreview ? <button type="button" className="explorer-save" aria-label="Save" title="Save (Command/Ctrl+S or :w in Vim mode)" disabled={!dirty || saving} onClick={() => saveCurrentFile()}>{saving ? <LoaderCircle className="spin" /> : <Save />}<span>{saving ? 'Saving' : 'Save'}</span></button> : null}
-            </div>
+            </div> : null}
           </div>
-          {previewLoading ? <div className="explorer-preview-empty"><LoaderCircle className="spin" /> Loading preview…</div> : null}
-          {!previewLoading && !selectedEntry ? <div className="explorer-preview-empty"><File /><span>Select one file to preview it.</span></div> : null}
-          {!previewLoading && selectedEntry?.kind === 'directory' ? <div className="explorer-preview-empty"><Folder /><strong>{selectedEntry.name}</strong><span>Double-click to open this folder.</span></div> : null}
-          {!previewLoading && previewOpenInWindow ? (
-            <div className="explorer-preview-detached">
-              <div className="explorer-preview-detached__status" role="status" aria-live="polite">
-                <ExternalLink aria-hidden="true" />
-                <strong>Preview open in window</strong>
-                <span>{preview.name} is showing in its own window. Close that window to bring the preview back here.</span>
-              </div>
-              <button
-                type="button"
-                ref={previewFocusButtonRef}
-                aria-label={`Focus preview window for ${preview.name}`}
-                title="Bring the preview window to the front"
-                disabled={previewWindowPending}
-                onClick={focusPreviewWindow}
-              >
-                {previewWindowPending ? <LoaderCircle className="spin" aria-hidden="true" /> : <ExternalLink aria-hidden="true" />}
-                {previewWindowPending ? 'Focusing…' : 'Focus preview window'}
-              </button>
+          {detailTab === 'preview' ? (
+            <div className="explorer-preview-panel" id="explorer-preview-panel" role="tabpanel" aria-labelledby="explorer-preview-tab">
+              {previewLoading ? <div className="explorer-preview-empty"><LoaderCircle className="spin" /> Loading preview…</div> : null}
+              {!previewLoading && !selectedEntry ? <div className="explorer-preview-empty"><File /><span>Select one file to preview it.</span></div> : null}
+              {!previewLoading && selectedEntry?.kind === 'directory' ? <div className="explorer-preview-empty"><Folder /><strong>{selectedEntry.name}</strong><span>Double-click to open this folder.</span></div> : null}
+              {!previewLoading && previewOpenInWindow ? (
+                <div className="explorer-preview-detached">
+                  <div className="explorer-preview-detached__status" role="status" aria-live="polite">
+                    <ExternalLink aria-hidden="true" />
+                    <strong>Preview open in window</strong>
+                    <span>{preview.name} is showing in its own window. Close that window to bring the preview back here.</span>
+                  </div>
+                  <button
+                    type="button"
+                    ref={previewFocusButtonRef}
+                    aria-label={`Focus preview window for ${preview.name}`}
+                    title="Bring the preview window to the front"
+                    disabled={previewWindowPending}
+                    onClick={focusPreviewWindow}
+                  >
+                    {previewWindowPending ? <LoaderCircle className="spin" aria-hidden="true" /> : <ExternalLink aria-hidden="true" />}
+                    {previewWindowPending ? 'Focusing…' : 'Focus preview window'}
+                  </button>
+                </div>
+              ) : null}
+              {!previewLoading && preview && !previewOpenInWindow ? (
+                <PreviewContent
+                  content={draftContent}
+                  mode={previewMode}
+                  preview={preview}
+                  vimMode={vimMode}
+                  onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }}
+                  onSave={saveCurrentFile}
+                />
+              ) : null}
             </div>
           ) : null}
-          {!previewLoading && preview && !previewOpenInWindow ? (
-            <PreviewContent
-              content={draftContent}
-              mode={previewMode}
-              preview={preview}
-              vimMode={vimMode}
-              onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }}
-              onSave={saveCurrentFile}
-            />
+          {detailTab === 'transfers' && uploadQueue ? (
+            <div className="explorer-preview-panel" id="explorer-transfers-panel" role="tabpanel" aria-labelledby="explorer-transfers-tab">
+              <UploadTransfers queue={uploadQueue} />
+            </div>
           ) : null}
         </aside>
       </div>

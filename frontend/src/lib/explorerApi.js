@@ -46,8 +46,8 @@ export async function saveFile(path, content, expectedRevision) {
   return requireBindings().SaveFile(path, content, expectedRevision)
 }
 
-export async function uploadFiles(remoteDirectory, localPaths) {
-  return requireBindings().Upload(remoteDirectory, localPaths)
+export async function uploadFiles(uploadID, remoteDirectory, localPaths) {
+  return requireBindings().Upload(uploadID, remoteDirectory, localPaths)
 }
 
 export async function download(paths) {
@@ -77,6 +77,13 @@ export function subscribeFileDrop(callback) {
   if (typeof window !== 'undefined' && window.runtime?.OnFileDrop) {
     window.runtime.OnFileDrop(callback, true)
     return () => window.runtime?.OnFileDropOff?.()
+  }
+  return () => {}
+}
+
+export function subscribeUploadProgress(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('explorer:upload-progress', (progress) => callback(progress))
   }
   return () => {}
 }

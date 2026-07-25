@@ -52,6 +52,8 @@ const (
 	UploadFailureFailed          = "failed"
 )
 
+const uploadProgressInterval = 100 * time.Millisecond
+
 type ReadSeekCloser interface {
 	io.Reader
 	io.Seeker
@@ -305,6 +307,10 @@ func (s *Service) Open(remotePath string) (ReadSeekCloser, os.FileInfo, error) {
 }
 
 func (s *Service) Upload(ctx context.Context, localPaths []string, remoteDirectory string) (UploadResult, error) {
+	return s.UploadWithProgress(ctx, localPaths, remoteDirectory, nil)
+}
+
+func (s *Service) UploadWithProgress(ctx context.Context, localPaths []string, remoteDirectory string, report UploadProgressReporter) (UploadResult, error) {
 	result := UploadResult{
 		Uploaded: []string{},
 		Failures: []UploadFailure{},
@@ -325,22 +331,77 @@ func (s *Service) Upload(ctx context.Context, localPaths []string, remoteDirecto
 		return result, fmt.Errorf("upload destination %q is not a directory", remoteDirectory)
 	}
 
-	for _, localPath := range localPaths {
+	fileSizes, overallBytesTotal := plannedUploadSizes(localPaths)
+	overallBytesProcessed := int64(0)
+	filesProcessed := 0
+	for fileIndex, localPath := range localPaths {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		remotePath, uploadErr := uploadFile(ctx, remoteFS, localPath, remoteDirectory)
+		name := uploadFailureName(localPath)
+		fileSize := fileSizes[fileIndex]
+		emitUploadProgress(report, UploadProgress{
+			FileIndex:             fileIndex,
+			Name:                  name,
+			Status:                UploadStatusTransferring,
+			TotalBytes:            fileSize,
+			OverallBytesProcessed: overallBytesProcessed,
+			OverallBytesTotal:     overallBytesTotal,
+			FilesProcessed:        filesProcessed,
+			FilesTotal:            len(localPaths),
+		})
+		bytesTransferred := int64(0)
+		remotePath, uploadErr := uploadFile(ctx, remoteFS, localPath, remoteDirectory, func(transferred int64) {
+			bytesTransferred = transferred
+			emitUploadProgress(report, UploadProgress{
+				FileIndex:             fileIndex,
+				Name:                  name,
+				Status:                UploadStatusTransferring,
+				BytesTransferred:      transferred,
+				TotalBytes:            fileSize,
+				OverallBytesProcessed: overallBytesProcessed + minInt64(transferred, fileSize),
+				OverallBytesTotal:     overallBytesTotal,
+				FilesProcessed:        filesProcessed,
+				FilesTotal:            len(localPaths),
+			})
+		})
+		filesProcessed++
+		overallBytesProcessed += fileSize
 		if uploadErr != nil {
 			if errors.Is(uploadErr, context.Canceled) || errors.Is(uploadErr, context.DeadlineExceeded) {
 				return result, uploadErr
 			}
+			failureCode := uploadFailureCode(uploadErr)
 			result.Failures = append(result.Failures, UploadFailure{
-				Name: uploadFailureName(localPath),
-				Code: uploadFailureCode(uploadErr),
+				Name: name,
+				Code: failureCode,
+			})
+			emitUploadProgress(report, UploadProgress{
+				FileIndex:             fileIndex,
+				Name:                  name,
+				Status:                UploadStatusFailed,
+				BytesTransferred:      bytesTransferred,
+				TotalBytes:            fileSize,
+				OverallBytesProcessed: overallBytesProcessed,
+				OverallBytesTotal:     overallBytesTotal,
+				FilesProcessed:        filesProcessed,
+				FilesTotal:            len(localPaths),
+				FailureCode:           failureCode,
 			})
 			continue
 		}
 		result.Uploaded = append(result.Uploaded, remotePath)
+		emitUploadProgress(report, UploadProgress{
+			FileIndex:             fileIndex,
+			Name:                  name,
+			Status:                UploadStatusCompleted,
+			BytesTransferred:      fileSize,
+			TotalBytes:            fileSize,
+			OverallBytesProcessed: overallBytesProcessed,
+			OverallBytesTotal:     overallBytesTotal,
+			FilesProcessed:        filesProcessed,
+			FilesTotal:            len(localPaths),
+		})
 	}
 	return result, nil
 }
@@ -384,7 +445,7 @@ func (s *Service) Download(ctx context.Context, remotePaths []string, destinatio
 	return results, nil
 }
 
-func uploadFile(ctx context.Context, remoteFS FileSystem, localPath, remoteDirectory string) (string, error) {
+func uploadFile(ctx context.Context, remoteFS FileSystem, localPath, remoteDirectory string, report func(int64)) (string, error) {
 	if strings.TrimSpace(localPath) == "" {
 		return "", ErrUnsupportedUpload
 	}
@@ -436,7 +497,13 @@ func uploadFile(ctx context.Context, remoteFS FileSystem, localPath, remoteDirec
 		uploadErr := fmt.Errorf("%w for %q: %v", ErrUploadPermissions, remotePath, err)
 		return "", discardIncompleteUpload(remoteFS, remotePath, remoteFile, uploadErr)
 	}
-	if _, err := io.Copy(remoteFile, &contextReader{ctx: ctx, reader: localFile}); err != nil {
+	progressWriter := &uploadProgressWriter{
+		writer:     remoteFile,
+		total:      localInfo.Size(),
+		report:     report,
+		lastReport: time.Now(),
+	}
+	if _, err := io.Copy(progressWriter, &contextReader{ctx: ctx, reader: localFile}); err != nil {
 		uploadErr := fmt.Errorf("upload %q: %w", localPath, err)
 		return "", discardIncompleteUpload(remoteFS, remotePath, remoteFile, uploadErr)
 	}
@@ -445,6 +512,52 @@ func uploadFile(ctx context.Context, remoteFS FileSystem, localPath, remoteDirec
 		return "", discardIncompleteUpload(remoteFS, remotePath, nil, uploadErr)
 	}
 	return remotePath, nil
+}
+
+type uploadProgressWriter struct {
+	writer      io.Writer
+	total       int64
+	transferred int64
+	report      func(int64)
+	lastReport  time.Time
+}
+
+func (w *uploadProgressWriter) Write(content []byte) (int, error) {
+	written, err := w.writer.Write(content)
+	w.transferred += int64(written)
+	now := time.Now()
+	if w.report != nil && (err != nil || w.transferred >= w.total || now.Sub(w.lastReport) >= uploadProgressInterval) {
+		w.report(w.transferred)
+		w.lastReport = now
+	}
+	return written, err
+}
+
+func plannedUploadSizes(localPaths []string) ([]int64, int64) {
+	sizes := make([]int64, len(localPaths))
+	total := int64(0)
+	for index, localPath := range localPaths {
+		info, err := os.Stat(localPath)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		sizes[index] = info.Size()
+		total += info.Size()
+	}
+	return sizes, total
+}
+
+func emitUploadProgress(report UploadProgressReporter, progress UploadProgress) {
+	if report != nil {
+		report(progress)
+	}
+}
+
+func minInt64(left, right int64) int64 {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func discardIncompleteUpload(remoteFS FileSystem, remotePath string, remoteFile io.Closer, uploadErr error) error {

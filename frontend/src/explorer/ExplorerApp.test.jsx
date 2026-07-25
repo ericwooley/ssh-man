@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import ExplorerApp from './ExplorerApp'
@@ -15,6 +15,7 @@ vi.mock('./MonacoPreview', () => ({
 function fakeApi() {
   const previewWindowListeners = new Set()
   const fileDropListeners = new Set()
+  const uploadProgressListeners = new Set()
   const directories = {
     '/home/deploy': {
       path: '/home/deploy',
@@ -48,7 +49,7 @@ function fakeApi() {
       revision: 'revision-2',
     })),
     download: vi.fn(async () => ['/Users/eric/Downloads/README.md']),
-    uploadFiles: vi.fn(async (remoteDirectory, localPaths) => ({
+    uploadFiles: vi.fn(async (_uploadID, remoteDirectory, localPaths) => ({
       uploaded: localPaths.map((localPath) => `${remoteDirectory}/${localPath.split('/').at(-1)}`),
       failures: [],
     })),
@@ -63,12 +64,19 @@ function fakeApi() {
       fileDropListeners.add(listener)
       return () => fileDropListeners.delete(listener)
     }),
+    subscribeUploadProgress: vi.fn((listener) => {
+      uploadProgressListeners.add(listener)
+      return () => uploadProgressListeners.delete(listener)
+    }),
     openExternalURL: vi.fn(async () => undefined),
     emitPreviewWindowState(state) {
       previewWindowListeners.forEach((listener) => listener(state))
     },
     emitFileDrop(paths) {
       fileDropListeners.forEach((listener) => listener(120, 200, paths))
+    },
+    emitUploadProgress(progress) {
+      uploadProgressListeners.forEach((listener) => listener(progress))
     },
   }
   return api
@@ -189,6 +197,7 @@ describe('server explorer window', () => {
     })
 
     await waitFor(() => expect(api.uploadFiles).toHaveBeenCalledWith(
+      1,
       '/home/deploy',
       ['/Users/eric/report.txt', '/Users/eric/screenshot.png'],
     ))
@@ -483,6 +492,187 @@ describe('server explorer window', () => {
     })
     expect(await screen.findByText('Uploaded report.txt to /home/deploy.')).toBeTruthy()
     expect(api.listDirectory).toHaveBeenCalledTimes(2)
+  })
+
+  test('shows byte progress, the active file, and queued files in a Transfers tab', async () => {
+    let finishUpload
+    const api = fakeApi()
+    api.uploadFiles.mockImplementation(() => new Promise((resolve) => {
+      finishUpload = resolve
+    }))
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop([
+        '/Users/eric/first.bin',
+        '/Users/eric/second.zip',
+        '/Users/eric/third.txt',
+      ])
+    })
+    const transfersTab = await screen.findByRole('tab', { name: /Transfers/ })
+    expect(transfersTab.textContent).toContain('3')
+
+    act(() => {
+      api.emitUploadProgress({
+        uploadId: 1,
+        fileIndex: 0,
+        name: 'first.bin',
+        status: 'transferring',
+        bytesTransferred: 25,
+        totalBytes: 100,
+        overallBytesProcessed: 25,
+        overallBytesTotal: 400,
+        filesProcessed: 0,
+        filesTotal: 3,
+      })
+    })
+
+    expect(screen.getByRole('tab', { name: /Transfers/ }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('progressbar', { name: 'Overall upload progress' }).getAttribute('aria-valuenow')).toBe('6')
+    expect(screen.getByText('first.bin')).toBeTruthy()
+    expect(screen.getByText('25 B of 100 B')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Queued' })).toBeTruthy()
+    expect(screen.getByText('second.zip')).toBeTruthy()
+    expect(screen.getByText('third.txt')).toBeTruthy()
+
+    await act(async () => {
+      api.emitUploadProgress({
+        uploadId: 1,
+        fileIndex: 0,
+        name: 'first.bin',
+        status: 'completed',
+        bytesTransferred: 100,
+        totalBytes: 100,
+        overallBytesProcessed: 100,
+        overallBytesTotal: 400,
+        filesProcessed: 1,
+        filesTotal: 3,
+      })
+      finishUpload({
+        uploaded: [
+          '/home/deploy/first.bin',
+          '/home/deploy/second.zip',
+          '/home/deploy/third.txt',
+        ],
+        failures: [],
+      })
+    })
+
+    expect(await screen.findByText('Upload complete')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Transfers' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('heading', { name: 'Completed' })).toBeTruthy()
+  })
+
+  test('finishes the transfer UI even when refreshing the uploaded folder never settles', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: ['/home/deploy/report.txt'],
+      failures: [],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+    api.listDirectory.mockImplementationOnce(() => new Promise(() => {}))
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt'])
+    })
+
+    expect(await screen.findByText('Upload complete')).toBeTruthy()
+    expect(screen.getByText('Refreshing deploy…')).toBeTruthy()
+    expect(screen.getByText('Upload complete').closest('.explorer-transfers__status')?.classList.contains('is-completed')).toBe(true)
+  })
+
+  test('keeps a new queue isolated from progress events sent by the previous upload', async () => {
+    let finishSecondUpload
+    const api = fakeApi()
+    api.uploadFiles
+      .mockResolvedValueOnce({ uploaded: ['/home/deploy/first.txt'], failures: [] })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        finishSecondUpload = resolve
+      }))
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+    api.listDirectory.mockImplementationOnce(() => new Promise(() => {}))
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/first.txt'])
+    })
+    expect(await screen.findByText('Upload complete')).toBeTruthy()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/second.txt'])
+    })
+    expect(await screen.findByText('second.txt')).toBeTruthy()
+
+    act(() => {
+      api.emitUploadProgress({
+        uploadId: 1,
+        fileIndex: 0,
+        name: 'first.txt',
+        status: 'completed',
+        bytesTransferred: 10,
+        totalBytes: 10,
+        overallBytesProcessed: 10,
+        overallBytesTotal: 10,
+        filesProcessed: 1,
+        filesTotal: 1,
+      })
+    })
+    expect(screen.getByRole('heading', { name: 'Queued' })).toBeTruthy()
+    expect(screen.getByText('second.txt')).toBeTruthy()
+
+    act(() => {
+      api.emitUploadProgress({
+        uploadId: 2,
+        fileIndex: 0,
+        name: 'second.txt',
+        status: 'transferring',
+        bytesTransferred: 5,
+        totalBytes: 10,
+        overallBytesProcessed: 5,
+        overallBytesTotal: 10,
+        filesProcessed: 0,
+        filesTotal: 1,
+      })
+    })
+    expect(screen.getByRole('heading', { name: 'Transferring now' })).toBeTruthy()
+    expect(screen.getByText('5 B of 10 B')).toBeTruthy()
+
+    await act(async () => {
+      finishSecondUpload({ uploaded: ['/home/deploy/second.txt'], failures: [] })
+    })
+  })
+
+  test('moves focus when switching Preview and Transfers with arrow keys', async () => {
+    let finishUpload
+    const api = fakeApi()
+    api.uploadFiles.mockImplementation(() => new Promise((resolve) => {
+      finishUpload = resolve
+    }))
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt'])
+    })
+    const previewTab = screen.getByRole('tab', { name: /Preview/ })
+    const transfersTab = await screen.findByRole('tab', { name: /Transfers/ })
+
+    previewTab.focus()
+    fireEvent.keyDown(previewTab, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(transfersTab)
+    expect(transfersTab.getAttribute('aria-selected')).toBe('true')
+    expect(transfersTab.getAttribute('tabindex')).toBe('0')
+
+    fireEvent.keyDown(transfersTab, { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(previewTab)
+    expect(previewTab.getAttribute('aria-selected')).toBe('true')
+    expect(previewTab.getAttribute('tabindex')).toBe('0')
+
+    await act(async () => {
+      finishUpload({ uploaded: ['/home/deploy/report.txt'], failures: [] })
+    })
   })
 
   test('explains when another drop arrives during an upload', async () => {

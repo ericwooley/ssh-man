@@ -17,6 +17,7 @@ import (
 )
 
 const explorerConnectTimeout = 15 * time.Second
+const explorerUploadProgressEventName = "explorer:upload-progress"
 
 type ExplorerInitialState struct {
 	Server serverdomain.Server `json:"server"`
@@ -64,11 +65,14 @@ func (b *ExplorerBindings) SaveFile(remotePath, content, expectedRevision string
 	return b.remote.Save(remotePath, content, expectedRevision)
 }
 
-func (b *ExplorerBindings) Upload(remoteDirectory string, localPaths []string) (remote.UploadResult, error) {
+func (b *ExplorerBindings) Upload(uploadID int, remoteDirectory string, localPaths []string) (remote.UploadResult, error) {
 	if b.context == nil {
 		return remote.UploadResult{}, fmt.Errorf("explorer window is not ready")
 	}
-	return b.remote.Upload(b.context, localPaths, remoteDirectory)
+	return b.remote.UploadWithProgress(b.context, localPaths, remoteDirectory, func(progress remote.UploadProgress) {
+		progress.UploadID = uploadID
+		runtime.EventsEmit(b.context, explorerUploadProgressEventName, progress)
+	})
 }
 
 func (b *ExplorerBindings) Download(paths []string) ([]string, error) {
