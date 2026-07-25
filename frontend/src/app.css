@@ -4007,6 +4007,27 @@ kbd {
   white-space: nowrap;
 }
 
+.explorer-preview-window-badge {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: 1px solid rgba(111, 150, 244, 0.28);
+  border-radius: 999px;
+  background: rgba(98, 140, 255, 0.1);
+  color: #aebfff;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.explorer-preview-window-badge svg {
+  width: 11px;
+  height: 11px;
+  color: currentColor;
+}
+
 .explorer-preview-toggle {
   display: flex;
   gap: 2px;
@@ -4040,7 +4061,8 @@ kbd {
   accent-color: #6f96f4;
 }
 
-.explorer-save {
+.explorer-save,
+.explorer-preview-popout {
   display: inline-flex;
   height: 27px;
   align-items: center;
@@ -4054,13 +4076,30 @@ kbd {
   font-weight: 700;
 }
 
-.explorer-save:disabled {
+.explorer-save:disabled,
+.explorer-preview-popout:disabled {
   opacity: 0.38;
 }
 
-.explorer-save svg {
+.explorer-save svg,
+.explorer-preview-popout svg {
   width: 13px;
   height: 13px;
+}
+
+.explorer-preview-popout {
+  width: 29px;
+  justify-content: center;
+  padding: 0;
+  border-color: rgba(151, 169, 197, 0.2);
+  background: #151e2b;
+  color: #aab8cc;
+}
+
+.explorer-preview-popout:hover:not(:disabled) {
+  border-color: rgba(134, 169, 255, 0.42);
+  background: #1d2939;
+  color: #e9eff9;
 }
 
 .explorer-preview__body {
@@ -4072,6 +4111,71 @@ kbd {
   flex-direction: column;
   overflow: hidden;
   background: #0a1018;
+}
+
+.explorer-preview-detached {
+  display: grid;
+  flex: 1 1 auto;
+  place-content: center;
+  justify-items: center;
+  gap: 9px;
+  padding: 28px;
+  background: #0a1018;
+  color: #6f7d90;
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.explorer-preview-detached__status {
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+}
+
+.explorer-preview-detached__status > svg {
+  width: 34px;
+  height: 34px;
+  color: #7f9bdc;
+}
+
+.explorer-preview-detached__status strong {
+  color: #dbe5f7;
+  font-size: 12px;
+}
+
+.explorer-preview-detached__status > span {
+  max-width: 31ch;
+}
+
+.explorer-preview-detached button {
+  display: inline-flex;
+  height: 29px;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  padding: 0 10px;
+  border: 1px solid rgba(111, 150, 244, 0.34);
+  border-radius: 7px;
+  background: rgba(98, 140, 255, 0.14);
+  color: #cbd9ff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.explorer-preview-detached button:hover:not(:disabled) {
+  border-color: rgba(134, 169, 255, 0.52);
+  background: rgba(98, 140, 255, 0.22);
+  color: #e9eff9;
+}
+
+.explorer-preview-detached button:disabled {
+  opacity: 0.5;
+}
+
+.explorer-preview-detached button svg {
+  width: 13px;
+  height: 13px;
 }
 
 .explorer-preview__body iframe {
@@ -4241,6 +4345,139 @@ kbd {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+/* Independent remote preview window */
+.preview-window-shell {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: #090e15;
+  color: #e9eff9;
+}
+
+.preview-window__header {
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 12px 9px 15px;
+  border-bottom: 1px solid rgba(151, 169, 197, 0.18);
+  background: #101722;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+
+.preview-window__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.preview-window__identity > svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  color: #86a9ff;
+}
+
+.preview-window__identity > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.preview-window__identity strong,
+.preview-window__identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-window__identity strong {
+  font-size: 12px;
+}
+
+.preview-window__identity span {
+  color: #7f8da1;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+}
+
+.preview-window__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.preview-window__readonly {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(151, 169, 197, 0.1);
+  color: #9eabbf;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.preview-window__actions > button {
+  display: grid;
+  width: 31px;
+  height: 29px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(151, 169, 197, 0.18);
+  border-radius: 7px;
+  background: #151e2b;
+  color: #aab8cc;
+}
+
+.preview-window__actions > button:hover:not(:disabled) {
+  border-color: rgba(134, 169, 255, 0.42);
+  background: #1d2939;
+  color: #e9eff9;
+}
+
+.preview-window__actions > button:disabled {
+  opacity: 0.38;
+}
+
+.preview-window__actions > button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.preview-window__content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.preview-window__content > .explorer-preview__body,
+.preview-window__content > .explorer-preview-empty,
+.preview-window__content > .explorer-state {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .preview-window__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .preview-window__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 .explorer-unlock-backdrop {

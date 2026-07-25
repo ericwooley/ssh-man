@@ -8,6 +8,7 @@ import (
 
 	"ssh-man/internal/app/commandwindow"
 	"ssh-man/internal/app/explorerwindow"
+	"ssh-man/internal/app/previewwindow"
 	"ssh-man/internal/app/runner"
 	"ssh-man/internal/app/settingswindow"
 	"ssh-man/internal/cli"
@@ -26,6 +27,12 @@ func main() {
 	if serverID, ok := commandwindow.ServerIDFromArgs(os.Args[1:]); ok {
 		if err := runner.RunCommand(assets, serverID); err != nil {
 			log.Fatalf("run quick command window: %v", err)
+		}
+		return
+	}
+	if request, ok := previewwindow.RequestFromArgs(os.Args[1:]); ok {
+		if err := runner.RunPreview(assets, request); err != nil {
+			log.Fatalf("run file preview: %v", err)
 		}
 		return
 	}

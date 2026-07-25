@@ -14,6 +14,7 @@ import (
 
 	"ssh-man/internal/app/bindings"
 	"ssh-man/internal/app/bootstrap"
+	"ssh-man/internal/app/previewwindow"
 	appwindow "ssh-man/internal/app/window"
 	"ssh-man/internal/control"
 	serverdomain "ssh-man/internal/domain/server"
@@ -330,8 +331,9 @@ func TestNewOptionsConfiguresCompactSingleInstanceApp(t *testing.T) {
 func TestNewExplorerOptionsConfiguresIndependentResizableWindow(t *testing.T) {
 	window := appwindow.NewWithRuntime(&fakeWindowRuntime{})
 	explorer, middleware := bindings.NewExplorerBindings(&bootstrap.Application{}, serverdomain.Server{ID: "server-1", Name: "Production"}, window)
+	previewLauncher := bindings.NewPreviewLauncherBindingsWithDependencies("server-1", nil, nil, nil)
 
-	got := newExplorerOptions(nil, explorer, middleware, window, "Production", "server-1")
+	got := newExplorerOptions(nil, explorer, previewLauncher, middleware, window, "Production", "server-1", nil, nil)
 
 	if got.Title != "Production — SSH Man Explorer" || got.Width != 1180 || got.Height != 760 {
 		t.Fatalf("explorer window = %q %dx%d", got.Title, got.Width, got.Height)
@@ -342,8 +344,115 @@ func TestNewExplorerOptionsConfiguresIndependentResizableWindow(t *testing.T) {
 	if got.SingleInstanceLock == nil || got.SingleInstanceLock.UniqueId != singleInstanceID+".explorer.server-1" {
 		t.Fatalf("explorer lock = %#v", got.SingleInstanceLock)
 	}
-	if len(got.Bind) != 1 || got.Bind[0] != explorer {
+	if len(got.Bind) != 2 || got.Bind[0] != explorer || got.Bind[1] != previewLauncher {
 		t.Fatalf("explorer bindings = %#v", got.Bind)
+	}
+}
+
+func TestExplorerShutdownGivesApplicationAnIndependentContext(t *testing.T) {
+	applicationCalled := false
+
+	err := shutdownExplorer(
+		context.Background(),
+		10*time.Millisecond,
+		nil,
+		func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		func(ctx context.Context) error {
+			applicationCalled = true
+			if err := ctx.Err(); err != nil {
+				t.Errorf("application shutdown context = %v", err)
+			}
+			return nil
+		},
+	)
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown error = %v", err)
+	}
+	if !applicationCalled {
+		t.Fatal("application shutdown was not called")
+	}
+}
+
+func TestExplorerShutdownStopsPreviewEventsBeforeClosingChildren(t *testing.T) {
+	eventsStopped := false
+	previewsClosed := false
+
+	err := shutdownExplorer(
+		context.Background(),
+		time.Second,
+		func() {
+			eventsStopped = true
+		},
+		func(context.Context) error {
+			if !eventsStopped {
+				t.Error("preview events were still active while children closed")
+			}
+			previewsClosed = true
+			return nil
+		},
+		nil,
+	)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !previewsClosed {
+		t.Fatal("preview children were not closed")
+	}
+}
+
+func TestPreviewStateDispatcherRejectsEventsAfterClose(t *testing.T) {
+	emitted := false
+	dispatcher := newPreviewStateDispatcher(func(previewwindow.State) {
+		emitted = true
+	})
+	dispatcher.Close()
+
+	if dispatcher.Dispatch(previewwindow.State{RemotePath: "/tmp/report.pdf", Open: false}) {
+		t.Fatal("closed dispatcher accepted a preview lifecycle event")
+	}
+	if emitted {
+		t.Fatal("closed dispatcher emitted a preview lifecycle event")
+	}
+}
+
+func TestNewPreviewOptionsConfiguresIndependentResizableWindow(t *testing.T) {
+	windowRuntime := &fakeWindowRuntime{}
+	window := appwindow.NewWithRuntime(windowRuntime)
+	request := previewwindow.Request{ServerID: "server-1", RemotePath: "/var/www/index.html"}
+	preview, middleware := bindings.NewPreviewBindings(
+		&bootstrap.Application{},
+		serverdomain.Server{ID: "server-1", Name: "Production"},
+		request.RemotePath,
+		window,
+	)
+
+	got := newPreviewOptions(nil, preview, middleware, window, "Production", request)
+
+	if got.Title != "index.html — Production — SSH Man Preview" || got.Width != 980 || got.Height != 740 {
+		t.Fatalf("preview window = %q %dx%d", got.Title, got.Width, got.Height)
+	}
+	if got.MinWidth != 560 || got.MinHeight != 400 {
+		t.Fatalf("preview minimum size = %dx%d, want 560x400", got.MinWidth, got.MinHeight)
+	}
+	if got.SingleInstanceLock == nil || got.SingleInstanceLock.UniqueId != singleInstanceID+".preview."+previewwindow.InstanceID(request) {
+		t.Fatalf("preview lock = %#v", got.SingleInstanceLock)
+	}
+	if len(got.Bind) != 1 || got.Bind[0] != preview {
+		t.Fatalf("preview bindings = %#v", got.Bind)
+	}
+
+	got.SingleInstanceLock.OnSecondInstanceLaunch(options.SecondInstanceData{})
+	if windowRuntime.showCalls != 0 {
+		t.Fatal("preview should defer a focus request until startup")
+	}
+	got.OnStartup(context.Background())
+	if windowRuntime.showCalls != 1 {
+		t.Fatal("preview should honor a focus request received before startup")
 	}
 }
 

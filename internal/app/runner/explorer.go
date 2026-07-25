@@ -2,11 +2,14 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
 	"os/signal"
+	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -15,8 +18,48 @@ import (
 
 	"ssh-man/internal/app/bindings"
 	"ssh-man/internal/app/bootstrap"
+	"ssh-man/internal/app/previewwindow"
 	appwindow "ssh-man/internal/app/window"
 )
+
+const (
+	previewShutdownTimeout      = 5 * time.Second
+	previewWindowStateEventName = "preview-window:state"
+)
+
+type previewStateDispatcher struct {
+	mu     sync.Mutex
+	closed bool
+	emit   func(previewwindow.State)
+}
+
+func newPreviewStateDispatcher(emit func(previewwindow.State)) *previewStateDispatcher {
+	return &previewStateDispatcher{emit: emit}
+}
+
+func (d *previewStateDispatcher) Dispatch(state previewwindow.State) bool {
+	if d == nil {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		return false
+	}
+	if d.emit != nil {
+		d.emit(state)
+	}
+	return true
+}
+
+func (d *previewStateDispatcher) Close() {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	d.closed = true
+	d.mu.Unlock()
+}
 
 func RunExplorer(assets fs.FS, serverID string) error {
 	application, err := bootstrap.New(context.Background())
@@ -30,6 +73,21 @@ func RunExplorer(assets fs.FS, serverID string) error {
 	}
 	window := appwindow.New()
 	explorer, middleware := bindings.NewExplorerBindings(application, server, window)
+	previewEvents := newPreviewStateDispatcher(func(state previewwindow.State) {
+		if ctx, contextErr := window.Context(); contextErr == nil {
+			wailsruntime.EventsEmit(ctx, previewWindowStateEventName, state)
+		}
+	})
+	previewManager := previewwindow.NewManager()
+	previewManager.SetStateListener(func(state previewwindow.State) {
+		previewEvents.Dispatch(state)
+	})
+	previewLauncher := bindings.NewPreviewLauncherBindingsWithDependencies(
+		server.ID,
+		previewManager.Launch,
+		previewManager.Focus,
+		previewManager.IsOpen,
+	)
 	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stopSignals()
 	finished := make(chan struct{})
@@ -42,12 +100,62 @@ func RunExplorer(assets fs.FS, serverID string) error {
 		case <-finished:
 		}
 	}()
-	runErr := wails.Run(newExplorerOptions(assets, explorer, middleware, window, server.Name, server.ID))
+	runErr := wails.Run(newExplorerOptions(
+		assets,
+		explorer,
+		previewLauncher,
+		middleware,
+		window,
+		server.Name,
+		server.ID,
+		previewEvents.Close,
+		previewManager.Shutdown,
+	))
+	previewEvents.Close()
 	close(finished)
 	return runErr
 }
 
-func newExplorerOptions(assets fs.FS, explorer *bindings.ExplorerBindings, middleware assetserver.Middleware, window *appwindow.Controller, serverName, serverID string) *options.App {
+func shutdownExplorer(
+	parent context.Context,
+	previewTimeout time.Duration,
+	stopPreviewEvents func(),
+	shutdownPreviews func(context.Context) error,
+	shutdownApplication func(context.Context) error,
+) error {
+	shutdownContext := context.Background()
+	if parent != nil {
+		shutdownContext = context.WithoutCancel(parent)
+	}
+	if stopPreviewEvents != nil {
+		stopPreviewEvents()
+	}
+
+	var previewErr error
+	if shutdownPreviews != nil {
+		previewContext, cancel := context.WithTimeout(shutdownContext, previewTimeout)
+		previewErr = shutdownPreviews(previewContext)
+		cancel()
+	}
+
+	var applicationErr error
+	if shutdownApplication != nil {
+		applicationErr = shutdownApplication(shutdownContext)
+	}
+	return errors.Join(previewErr, applicationErr)
+}
+
+func newExplorerOptions(
+	assets fs.FS,
+	explorer *bindings.ExplorerBindings,
+	previewLauncher *bindings.PreviewLauncherBindings,
+	middleware assetserver.Middleware,
+	window *appwindow.Controller,
+	serverName,
+	serverID string,
+	stopPreviewEvents func(),
+	shutdownPreviews func(context.Context) error,
+) *options.App {
 	return &options.App{
 		Title:             serverName + " — SSH Man Explorer",
 		Width:             1180,
@@ -63,7 +171,7 @@ func newExplorerOptions(assets fs.FS, explorer *bindings.ExplorerBindings, middl
 			Assets:     assets,
 			Middleware: middleware,
 		},
-		Bind: []interface{}{explorer},
+		Bind: []interface{}{explorer, previewLauncher},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: singleInstanceID + ".explorer." + serverID,
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) {
@@ -79,7 +187,7 @@ func newExplorerOptions(assets fs.FS, explorer *bindings.ExplorerBindings, middl
 			explorer.SetContext(ctx)
 		},
 		OnShutdown: func(ctx context.Context) {
-			if err := explorer.Shutdown(ctx); err != nil {
+			if err := shutdownExplorer(ctx, previewShutdownTimeout, stopPreviewEvents, shutdownPreviews, explorer.Shutdown); err != nil {
 				log.Printf("shutdown explorer: %v", err)
 			}
 		},
