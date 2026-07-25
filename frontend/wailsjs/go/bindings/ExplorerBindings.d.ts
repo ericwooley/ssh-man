@@ -21,3 +21,5 @@ export function SaveFile(arg1:string,arg2:string,arg3:string):Promise<remote.Pre
 export function SetContext(arg1:context.Context):Promise<void>;
 
 export function Shutdown(arg1:context.Context):Promise<void>;
+
+export function Upload(arg1:string,arg2:Array<string>):Promise<remote.UploadResult>;

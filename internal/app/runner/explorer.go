@@ -171,6 +171,9 @@ func newExplorerOptions(
 			Assets:     assets,
 			Middleware: middleware,
 		},
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+		},
 		Bind: []interface{}{explorer, previewLauncher},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: singleInstanceID + ".explorer." + serverID,

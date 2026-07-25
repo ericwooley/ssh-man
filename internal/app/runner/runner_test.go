@@ -341,6 +341,9 @@ func TestNewExplorerOptionsConfiguresIndependentResizableWindow(t *testing.T) {
 	if got.DisableResize || got.HideWindowOnClose || got.AlwaysOnTop {
 		t.Fatal("explorer should be an ordinary persistent OS window")
 	}
+	if got.DragAndDrop == nil || !got.DragAndDrop.EnableFileDrop {
+		t.Fatalf("explorer file drop options = %#v, want native file drop enabled", got.DragAndDrop)
+	}
 	if got.SingleInstanceLock == nil || got.SingleInstanceLock.UniqueId != singleInstanceID+".explorer.server-1" {
 		t.Fatalf("explorer lock = %#v", got.SingleInstanceLock)
 	}

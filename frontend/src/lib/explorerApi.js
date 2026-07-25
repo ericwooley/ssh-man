@@ -46,6 +46,10 @@ export async function saveFile(path, content, expectedRevision) {
   return requireBindings().SaveFile(path, content, expectedRevision)
 }
 
+export async function uploadFiles(remoteDirectory, localPaths) {
+  return requireBindings().Upload(remoteDirectory, localPaths)
+}
+
 export async function download(paths) {
   return requireBindings().Download(paths)
 }
@@ -65,6 +69,14 @@ export async function previewWindowState(path) {
 export function subscribePreviewWindowState(callback) {
   if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
     return window.runtime.EventsOn('preview-window:state', (state) => callback(state))
+  }
+  return () => {}
+}
+
+export function subscribeFileDrop(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.OnFileDrop) {
+    window.runtime.OnFileDrop(callback, true)
+    return () => window.runtime?.OnFileDropOff?.()
   }
   return () => {}
 }

@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ChevronRight,
   CircleAlert,
+  CloudUpload,
   Eye,
   ExternalLink,
   File,
@@ -65,6 +66,73 @@ function favoriteName(remotePath) {
   return remotePath.split('/').filter(Boolean).at(-1) || '/'
 }
 
+function uploadedFilesMessage(uploadedPaths, remoteDirectory) {
+  if (uploadedPaths.length === 1) {
+    const name = uploadedPaths[0].split('/').filter(Boolean).at(-1) || 'file'
+    return `Uploaded ${name} to ${remoteDirectory}.`
+  }
+  return `Uploaded ${uploadedPaths.length} files to ${remoteDirectory}.`
+}
+
+function itemNames(failures) {
+  const names = [...new Set(failures.map((failure) => failure?.name || 'this item'))]
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return `${names[0]} and ${names[1]}`
+  if (names.length === 3) return `${names[0]}, ${names[1]}, and ${names[2]}`
+  const remaining = names.length - 3
+  return `${names.slice(0, 3).join(', ')}, and ${remaining} ${remaining === 1 ? 'other' : 'others'}`
+}
+
+function uploadFailureGuidance(failures, remoteDirectory) {
+  const names = itemNames(failures)
+  const uniqueNameCount = new Set(failures.map((failure) => failure?.name || 'this item')).size
+  const plural = uniqueNameCount > 1
+  if (failures[0]?.code === 'exists') {
+    return plural
+      ? `Rename ${names} locally and drop them again; those names are already in ${remoteDirectory}.`
+      : `Rename ${names} locally and drop it again; that name is already in ${remoteDirectory}.`
+  }
+  if (failures[0]?.code === 'directory') {
+    return `Open ${names}, then drop the individual files you want to add.`
+  }
+  if (failures[0]?.code === 'permission') {
+    return `${remoteDirectory} isn’t writable. Open a writable folder, then drop ${names} there.`
+  }
+  if (failures[0]?.code === 'local-permission') {
+    return `Give SSH Man access to ${names}, or check ${plural ? 'their' : 'its'} file permissions, then drop ${plural ? 'them' : 'it'} again.`
+  }
+  if (failures[0]?.code === 'missing') {
+    return `${names} ${plural ? 'aren’t' : 'isn’t'} on this Mac anymore. Save ${plural ? 'them' : 'it'} to a folder, then drop ${plural ? 'them' : 'it'} again.`
+  }
+  if (failures[0]?.code === 'permissions') {
+    return `${names} couldn’t be uploaded safely, so nothing was added to ${remoteDirectory}. Uploads to this server aren’t supported yet.`
+  }
+  if (failures[0]?.code === 'incomplete') {
+    return `${names} may be incomplete in ${remoteDirectory}. Delete ${plural ? 'them' : 'it'} there before trying again.`
+  }
+  if (failures[0]?.code === 'unsupported') {
+    return `${names} can’t be uploaded. Drop a document, image, or other file instead.`
+  }
+  return `Try uploading ${names} to ${remoteDirectory} again.`
+}
+
+function uploadFeedback(result, remoteDirectory) {
+  const uploaded = Array.isArray(result?.uploaded) ? result.uploaded : []
+  const failures = Array.isArray(result?.failures) ? result.failures : []
+  if (!failures.length) {
+    return { notice: uploaded.length ? uploadedFilesMessage(uploaded, remoteDirectory) : '' }
+  }
+  const failureGroups = new Map()
+  failures.forEach((failure) => {
+    const code = failure?.code || 'failed'
+    failureGroups.set(code, [...(failureGroups.get(code) || []), failure])
+  })
+  const prefix = uploaded.length ? `${uploadedFilesMessage(uploaded, remoteDirectory)} ` : ''
+  const attention = failures.length > 1 ? `${failures.length} dropped items need attention. ` : ''
+  const guidance = [...failureGroups.values()].map((group) => uploadFailureGuidance(group, remoteDirectory)).join(' ')
+  return { error: `${prefix}${attention}${guidance}` }
+}
+
 export default function ExplorerApp({ api = defaultApi }) {
   const storage = window.localStorage
   const [server, setServer] = useState(null)
@@ -84,6 +152,8 @@ export default function ExplorerApp({ api = defaultApi }) {
   const [error, setError] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadDestination, setUploadDestination] = useState('')
   const [notice, setNotice] = useState('')
   const [previewWindowPaths, setPreviewWindowPaths] = useState(() => new Set())
   const [previewWindowPendingPath, setPreviewWindowPendingPath] = useState('')
@@ -91,10 +161,17 @@ export default function ExplorerApp({ api = defaultApi }) {
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
   const startedRef = useRef(false)
+  const directoryPathRef = useRef('')
+  const uploadingRef = useRef(false)
+  const uploadDestinationRef = useRef('')
   const previewWindowStateRequestsRef = useRef(new Map())
   const previewWindowOpenRef = useRef(false)
   const previewPopoutButtonRef = useRef(null)
   const previewFocusButtonRef = useRef(null)
+
+  useEffect(() => {
+    directoryPathRef.current = directory.path
+  }, [directory.path])
 
   const setPreviewWindowOpen = useCallback((remotePath, open) => {
     if (!remotePath) return
@@ -247,6 +324,65 @@ export default function ExplorerApp({ api = defaultApi }) {
       setSaving(false)
     }
   }, [api, draftContent, editablePreview, preview, saving])
+
+  const uploadDroppedFiles = useCallback(async (_x, _y, localPaths) => {
+    const files = (localPaths || []).filter((localPath) => (
+      typeof localPath === 'string' && localPath.trim() !== ''
+    ))
+    if (phase !== 'ready' || !directory.path || !files.length) return
+    if (uploadingRef.current) {
+      setError('')
+      setNotice(`Still uploading to ${uploadDestinationRef.current || directory.path}. These files weren’t added — drop them again when it finishes.`)
+      return
+    }
+    const remoteDirectory = directory.path
+    uploadingRef.current = true
+    uploadDestinationRef.current = remoteDirectory
+    setUploadDestination(remoteDirectory)
+    setUploading(true)
+    setError('')
+    setNotice('')
+    let uploadError = null
+    let uploadedCount = 0
+    try {
+      const result = await api.uploadFiles(remoteDirectory, files)
+      uploadedCount = Array.isArray(result?.uploaded) ? result.uploaded.length : 0
+      const feedback = uploadFeedback(result, remoteDirectory)
+      if (feedback.error) {
+        uploadError = new Error(feedback.error)
+        setError(feedback.error)
+      } else if (feedback.notice) {
+        setNotice(feedback.notice)
+      }
+    } catch (nextError) {
+      uploadError = nextError
+      setError('The files could not be uploaded. Check the connection and try again.')
+    }
+    try {
+      if (directoryPathRef.current === remoteDirectory) {
+        const refreshed = await api.listDirectory(remoteDirectory)
+        setDirectory((current) => current.path === remoteDirectory ? refreshed : current)
+      }
+    } catch (nextError) {
+      if (uploadedCount > 0 && uploadError) {
+        setNotice('')
+        setError(`${uploadError.message} Reopen ${remoteDirectory} to see the files that were added.`)
+      } else if (!uploadError) {
+        setNotice('')
+        setError(`Your files uploaded to ${remoteDirectory}, but it could not be refreshed. Reopen it to see them.`)
+      }
+    } finally {
+      uploadingRef.current = false
+      uploadDestinationRef.current = ''
+      setUploading(false)
+      setUploadDestination('')
+    }
+  }, [api, directory.path, phase])
+
+  useEffect(() => {
+    if (!api.subscribeFileDrop) return undefined
+    return api.subscribeFileDrop(uploadDroppedFiles)
+  }, [api, uploadDroppedFiles])
 
   useEffect(() => {
     if (!dirty) return undefined
@@ -451,7 +587,11 @@ export default function ExplorerApp({ api = defaultApi }) {
           </div>
         </aside>
 
-        <main className="explorer-browser" aria-busy={phase === 'loading' || phase === 'connecting'}>
+        <main
+          className="explorer-browser"
+          style={{ '--wails-drop-target': phase === 'ready' ? 'drop' : undefined }}
+          aria-busy={phase === 'loading' || phase === 'connecting' || uploading}
+        >
           <div className="explorer-location-title">
             <FolderOpen />
             <strong>{directory.path ? directory.path.split('/').filter(Boolean).at(-1) || '/' : 'Files'}</strong>
@@ -495,6 +635,11 @@ export default function ExplorerApp({ api = defaultApi }) {
               })}
             </div>
           ) : null}
+          <div className={`explorer-drop-overlay${uploading ? ' is-uploading' : ''}`} role={uploading ? 'status' : undefined} aria-hidden={!uploading}>
+            {uploading ? <LoaderCircle className="spin" /> : <CloudUpload />}
+            <strong>{uploading ? 'Uploading files…' : 'Drop files to upload'}</strong>
+            <span>{uploading ? 'Adding files to' : 'Add files to'} {uploadDestination || directory.path || 'this folder'}</span>
+          </div>
         </main>
 
         <aside className="explorer-preview">

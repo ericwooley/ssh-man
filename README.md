@@ -47,6 +47,7 @@ That means you can develop on a remote machine while keeping a workflow that sti
 - Open one persistent native file-explorer window per saved server
 - Edit and safely save remote source in Monaco with optional Vim controls
 - Favorite per-server folders, render Markdown, and safely render HTML with relative assets
+- Upload local files by dropping them into the open remote folder
 - Download remote files or complete folders over SFTP
 - Switch directly between proxy-launched and regular browser instances with a configurable global shortcut on macOS
 - Set SSH Man as the macOS default browser and route links by ordered regular-expression rules
@@ -158,7 +159,7 @@ Add any other browser under **Settings → URL routing → Custom browsers** by 
 
 ### Remote file explorer
 
-Each saved server can open its own resizable explorer window. It maintains a long-lived SFTP connection, remembers the last remote folder and favorite folders for that server, supports Finder-style multi-selection, and downloads files or recursively downloads folders into a local destination you choose. Explorer windows remain open when the compact control window is hidden and close cleanly when SSH Man is quit.
+Each saved server can open its own resizable explorer window. It maintains a long-lived SFTP connection, remembers the last remote folder and favorite folders for that server, supports Finder-style multi-selection, and downloads files or recursively downloads folders into a local destination you choose. Drag one or more local files onto the explorer's file area to upload them into the open remote folder. Uploads keep the local file owner's permissions without granting group or world write access. When that name is already in the folder, the explorer tells you which file was skipped so you can rename it locally and drop it again. Explorer windows remain open when the compact control window is hidden and close cleanly when SSH Man is quit.
 
 Text and source files open in Monaco and can be saved back through SFTP. Enable the persisted **Vim controls** checkbox for Vim keybindings and `:w`; `Command+S`/`Ctrl+S` and the Save button work in either mode. Saves preserve remote permissions, use an atomic same-directory replacement, and stop rather than overwrite when the remote content changed after it was opened. Files larger than 2 MB remain preview/download-only.
 

@@ -3,7 +3,9 @@ import {
   focusPreview,
   openPreview,
   previewWindowState,
+  subscribeFileDrop,
   subscribePreviewWindowState,
+  uploadFiles,
 } from './explorerApi'
 
 afterEach(() => {
@@ -51,5 +53,32 @@ describe('preview window lifecycle', () => {
 
     expect(listener).toHaveBeenCalledWith({ remotePath: '/tmp/report.pdf', open: false })
     expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  test('uploads local paths through the explorer binding', async () => {
+    const Upload = vi.fn(async (remoteDirectory, localPaths) => (
+      {
+        uploaded: localPaths.map((localPath) => `${remoteDirectory}/${localPath.split('/').at(-1)}`),
+        failures: [],
+      }
+    ))
+    window.go = { bindings: { ExplorerBindings: { Upload } } }
+
+    await expect(uploadFiles('/srv/site', ['/Users/eric/report.txt']))
+      .resolves.toEqual({ uploaded: ['/srv/site/report.txt'], failures: [] })
+    expect(Upload).toHaveBeenCalledWith('/srv/site', ['/Users/eric/report.txt'])
+  })
+
+  test('subscribes to native file drops on explorer drop targets', () => {
+    const OnFileDrop = vi.fn()
+    const OnFileDropOff = vi.fn()
+    window.runtime = { OnFileDrop, OnFileDropOff }
+    const listener = vi.fn()
+
+    const unsubscribe = subscribeFileDrop(listener)
+    expect(OnFileDrop).toHaveBeenCalledWith(listener, true)
+
+    unsubscribe()
+    expect(OnFileDropOff).toHaveBeenCalledTimes(1)
   })
 })

@@ -27,11 +27,29 @@ import (
 )
 
 var (
-	ErrNotConnected       = errors.New("remote file explorer is not connected")
-	ErrRemoteFileChanged  = errors.New("the remote file changed after it was opened")
-	ErrRemoteFileTooLarge = errors.New("remote files larger than 2 MB cannot be edited")
-	ErrUnsupportedEdit    = errors.New("this remote file cannot be edited")
-	ErrUnsupportedSymlink = errors.New("downloading symbolic links is not supported")
+	ErrNotConnected        = errors.New("remote file explorer is not connected")
+	ErrRemoteFileChanged   = errors.New("the remote file changed after it was opened")
+	ErrRemoteFileTooLarge  = errors.New("remote files larger than 2 MB cannot be edited")
+	ErrUnsupportedEdit     = errors.New("this remote file cannot be edited")
+	ErrUnsupportedSymlink  = errors.New("downloading symbolic links is not supported")
+	ErrRemoteFileExists    = errors.New("a remote file with this name already exists")
+	ErrUnsupportedUpload   = errors.New("only regular local files can be uploaded")
+	ErrUploadDirectory     = errors.New("local directories must be opened before uploading their files")
+	ErrLocalFileUnreadable = errors.New("the local file could not be read")
+	ErrUploadPermissions   = errors.New("the server did not accept the file permissions")
+	ErrIncompleteUpload    = errors.New("the incomplete remote file could not be removed")
+)
+
+const (
+	UploadFailureExists          = "exists"
+	UploadFailureDirectory       = "directory"
+	UploadFailureUnsupported     = "unsupported"
+	UploadFailureLocalPermission = "local-permission"
+	UploadFailureMissing         = "missing"
+	UploadFailurePermission      = "permission"
+	UploadFailurePermissions     = "permissions"
+	UploadFailureIncomplete      = "incomplete"
+	UploadFailureFailed          = "failed"
 )
 
 type ReadSeekCloser interface {
@@ -44,6 +62,7 @@ type FileSystem interface {
 	Getwd() (string, error)
 	ReadDir(string) ([]os.FileInfo, error)
 	Lstat(string) (os.FileInfo, error)
+	Stat(string) (os.FileInfo, error)
 	Open(string) (ReadSeekCloser, error)
 	OpenFile(string, int, os.FileMode) (io.WriteCloser, error)
 	Chmod(string, os.FileMode) error
@@ -285,6 +304,47 @@ func (s *Service) Open(remotePath string) (ReadSeekCloser, os.FileInfo, error) {
 	return file, info, nil
 }
 
+func (s *Service) Upload(ctx context.Context, localPaths []string, remoteDirectory string) (UploadResult, error) {
+	result := UploadResult{
+		Uploaded: []string{},
+		Failures: []UploadFailure{},
+	}
+	remoteFS, home, err := s.connectedFS()
+	if err != nil {
+		return result, err
+	}
+	if len(localPaths) == 0 {
+		return result, nil
+	}
+	remoteDirectory = resolveRemotePath(home, remoteDirectory)
+	directoryInfo, err := remoteFS.Stat(remoteDirectory)
+	if err != nil {
+		return result, fmt.Errorf("inspect upload destination %q: %w", remoteDirectory, err)
+	}
+	if !directoryInfo.IsDir() {
+		return result, fmt.Errorf("upload destination %q is not a directory", remoteDirectory)
+	}
+
+	for _, localPath := range localPaths {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		remotePath, uploadErr := uploadFile(ctx, remoteFS, localPath, remoteDirectory)
+		if uploadErr != nil {
+			if errors.Is(uploadErr, context.Canceled) || errors.Is(uploadErr, context.DeadlineExceeded) {
+				return result, uploadErr
+			}
+			result.Failures = append(result.Failures, UploadFailure{
+				Name: uploadFailureName(localPath),
+				Code: uploadFailureCode(uploadErr),
+			})
+			continue
+		}
+		result.Uploaded = append(result.Uploaded, remotePath)
+	}
+	return result, nil
+}
+
 func (s *Service) Download(ctx context.Context, remotePaths []string, destinationDirectory string) ([]string, error) {
 	remoteFS, home, err := s.connectedFS()
 	if err != nil {
@@ -322,6 +382,121 @@ func (s *Service) Download(ctx context.Context, remotePaths []string, destinatio
 		results = append(results, target)
 	}
 	return results, nil
+}
+
+func uploadFile(ctx context.Context, remoteFS FileSystem, localPath, remoteDirectory string) (string, error) {
+	if strings.TrimSpace(localPath) == "" {
+		return "", ErrUnsupportedUpload
+	}
+	localInfo, err := os.Stat(localPath)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return "", fmt.Errorf("%w: inspect local file %q: %v", ErrLocalFileUnreadable, localPath, err)
+		}
+		return "", fmt.Errorf("inspect local file %q: %w", localPath, err)
+	}
+	if localInfo.IsDir() {
+		return "", fmt.Errorf("%q: %w", localPath, ErrUploadDirectory)
+	}
+	if !localInfo.Mode().IsRegular() {
+		return "", fmt.Errorf("%q: %w", localPath, ErrUnsupportedUpload)
+	}
+	name := filepath.Base(localPath)
+	if err := validateRemoteEntryName(name); err != nil {
+		return "", fmt.Errorf("upload %q: %w", localPath, err)
+	}
+	remotePath := path.Join(remoteDirectory, name)
+	if _, err := remoteFS.Lstat(remotePath); err == nil {
+		return "", fmt.Errorf("%q: %w", remotePath, ErrRemoteFileExists)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect upload target %q: %w", remotePath, err)
+	}
+
+	localFile, err := os.Open(localPath)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return "", fmt.Errorf("%w: open local file %q: %v", ErrLocalFileUnreadable, localPath, err)
+		}
+		return "", fmt.Errorf("open local file %q: %w", localPath, err)
+	}
+	defer localFile.Close()
+
+	remoteFile, err := remoteFS.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf("%q: %w", remotePath, ErrRemoteFileExists)
+		}
+		if _, targetErr := remoteFS.Lstat(remotePath); targetErr == nil {
+			return "", fmt.Errorf("%q: %w", remotePath, ErrRemoteFileExists)
+		}
+		return "", fmt.Errorf("create remote file %q: %w", remotePath, err)
+	}
+	mode := safeUploadMode(localInfo.Mode())
+	if err := remoteFS.Chmod(remotePath, mode); err != nil {
+		uploadErr := fmt.Errorf("%w for %q: %v", ErrUploadPermissions, remotePath, err)
+		return "", discardIncompleteUpload(remoteFS, remotePath, remoteFile, uploadErr)
+	}
+	if _, err := io.Copy(remoteFile, &contextReader{ctx: ctx, reader: localFile}); err != nil {
+		uploadErr := fmt.Errorf("upload %q: %w", localPath, err)
+		return "", discardIncompleteUpload(remoteFS, remotePath, remoteFile, uploadErr)
+	}
+	if err := remoteFile.Close(); err != nil {
+		uploadErr := fmt.Errorf("close remote file %q: %w", remotePath, err)
+		return "", discardIncompleteUpload(remoteFS, remotePath, nil, uploadErr)
+	}
+	return remotePath, nil
+}
+
+func discardIncompleteUpload(remoteFS FileSystem, remotePath string, remoteFile io.Closer, uploadErr error) error {
+	if remoteFile != nil {
+		_ = remoteFile.Close()
+	}
+	if err := remoteFS.Remove(remotePath); err != nil {
+		return fmt.Errorf("%w at %q: %v", ErrIncompleteUpload, remotePath, err)
+	}
+	return uploadErr
+}
+
+func safeUploadMode(localMode os.FileMode) os.FileMode {
+	mode := localMode.Perm() & 0o755
+	if mode == 0 {
+		return 0o644
+	}
+	return mode
+}
+
+func uploadFailureName(localPath string) string {
+	if strings.TrimSpace(localPath) == "" {
+		return "Dropped item"
+	}
+	name := filepath.Base(localPath)
+	if name == "." || name == string(filepath.Separator) {
+		return "Dropped item"
+	}
+	return name
+}
+
+func uploadFailureCode(err error) string {
+	switch {
+	case errors.Is(err, ErrRemoteFileExists):
+		return UploadFailureExists
+	case errors.Is(err, ErrUploadDirectory):
+		return UploadFailureDirectory
+	case errors.Is(err, ErrUnsupportedUpload):
+		return UploadFailureUnsupported
+	case errors.Is(err, ErrLocalFileUnreadable):
+		return UploadFailureLocalPermission
+	case errors.Is(err, os.ErrNotExist):
+		return UploadFailureMissing
+	case errors.Is(err, ErrUploadPermissions):
+		return UploadFailurePermissions
+	case errors.Is(err, ErrIncompleteUpload):
+		return UploadFailureIncomplete
+	case errors.Is(err, os.ErrPermission):
+		return UploadFailurePermission
+	default:
+		return UploadFailureFailed
+	}
 }
 
 func (s *Service) connectedFS() (FileSystem, string, error) {

@@ -35,3 +35,13 @@ type ConnectResult struct {
 	NeedsPassphrase bool   `json:"needsPassphrase,omitempty"`
 	HomePath        string `json:"homePath,omitempty"`
 }
+
+type UploadFailure struct {
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+type UploadResult struct {
+	Uploaded []string        `json:"uploaded"`
+	Failures []UploadFailure `json:"failures"`
+}

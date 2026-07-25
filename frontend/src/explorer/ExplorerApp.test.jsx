@@ -14,6 +14,7 @@ vi.mock('./MonacoPreview', () => ({
 
 function fakeApi() {
   const previewWindowListeners = new Set()
+  const fileDropListeners = new Set()
   const directories = {
     '/home/deploy': {
       path: '/home/deploy',
@@ -47,6 +48,10 @@ function fakeApi() {
       revision: 'revision-2',
     })),
     download: vi.fn(async () => ['/Users/eric/Downloads/README.md']),
+    uploadFiles: vi.fn(async (remoteDirectory, localPaths) => ({
+      uploaded: localPaths.map((localPath) => `${remoteDirectory}/${localPath.split('/').at(-1)}`),
+      failures: [],
+    })),
     openPreview: vi.fn(async (remotePath) => ({ remotePath, open: true })),
     focusPreview: vi.fn(async (remotePath) => ({ remotePath, open: true })),
     previewWindowState: vi.fn(async (remotePath) => ({ remotePath, open: false })),
@@ -54,12 +59,26 @@ function fakeApi() {
       previewWindowListeners.add(listener)
       return () => previewWindowListeners.delete(listener)
     }),
+    subscribeFileDrop: vi.fn((listener) => {
+      fileDropListeners.add(listener)
+      return () => fileDropListeners.delete(listener)
+    }),
     openExternalURL: vi.fn(async () => undefined),
     emitPreviewWindowState(state) {
       previewWindowListeners.forEach((listener) => listener(state))
     },
+    emitFileDrop(paths) {
+      fileDropListeners.forEach((listener) => listener(120, 200, paths))
+    },
   }
   return api
+}
+
+async function waitForExplorerReady() {
+  await screen.findByDisplayValue('/home/deploy')
+  await waitFor(() => {
+    expect(document.querySelector('.explorer-browser')?.style.getPropertyValue('--wails-drop-target')).toBe('drop')
+  })
 }
 
 describe('server explorer window', () => {
@@ -158,6 +177,396 @@ describe('server explorer window', () => {
 
     await waitFor(() => expect(api.download).toHaveBeenCalledWith(['/home/deploy/README.md']))
     expect(await screen.findByText(/Downloaded 1 item/)).toBeTruthy()
+  })
+
+  test('uploads dropped local files into the open remote folder and refreshes it', async () => {
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt', '/Users/eric/screenshot.png'])
+    })
+
+    await waitFor(() => expect(api.uploadFiles).toHaveBeenCalledWith(
+      '/home/deploy',
+      ['/Users/eric/report.txt', '/Users/eric/screenshot.png'],
+    ))
+    await waitFor(() => expect(api.listDirectory).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Uploaded 2 files to /home/deploy.')).toBeTruthy()
+  })
+
+  test('enables the native drop target once the folder is ready', async () => {
+    let finishListing
+    let finishUpload
+    const api = fakeApi()
+    api.listDirectory.mockImplementationOnce(() => new Promise((resolve) => {
+      finishListing = resolve
+    }))
+    api.uploadFiles.mockImplementation(() => new Promise((resolve) => {
+      finishUpload = resolve
+    }))
+    const { container } = render(<ExplorerApp api={api} />)
+    const browser = container.querySelector('.explorer-browser')
+    await waitFor(() => expect(typeof finishListing).toBe('function'))
+    expect(browser.style.getPropertyValue('--wails-drop-target')).toBe('')
+    act(() => {
+      api.emitFileDrop(['/Users/eric/too-early.txt'])
+    })
+    expect(api.uploadFiles).not.toHaveBeenCalled()
+
+    await act(async () => {
+      finishListing({
+        path: '/home/deploy',
+        entries: [
+          { name: 'README.md', path: '/home/deploy/README.md', kind: 'file', size: 17, modifiedAt: '2026-07-22T12:00:00Z' },
+        ],
+      })
+    })
+    await waitForExplorerReady()
+    expect(browser.style.getPropertyValue('--wails-drop-target')).toBe('drop')
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt'])
+    })
+
+    await waitFor(() => expect(api.uploadFiles).toHaveBeenCalledTimes(1))
+    expect(browser.style.getPropertyValue('--wails-drop-target')).toBe('drop')
+    await act(async () => {
+      finishUpload({ uploaded: ['/home/deploy/report.txt'], failures: [] })
+    })
+    await waitFor(() => expect(browser.style.getPropertyValue('--wails-drop-target')).toBe('drop'))
+  })
+
+  test('ignores file-drop events without local file paths', async () => {
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['', '   '])
+    })
+
+    expect(api.uploadFiles).not.toHaveBeenCalled()
+  })
+
+  test('reports skipped files and still refreshes the open folder', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: ['/home/deploy/report.txt'],
+      failures: [{ name: 'README.md', code: 'exists' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt', '/Users/eric/README.md'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Uploaded report.txt to /home/deploy. Rename README.md locally and drop it again; that name is already in /home/deploy.',
+    )
+    await waitFor(() => expect(api.listDirectory).toHaveBeenCalledTimes(2))
+  })
+
+  test('groups mixed batch failures with item-specific guidance', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [
+        { name: 'Projects', code: 'directory' },
+        { name: 'Photos', code: 'directory' },
+        { name: 'README.md', code: 'exists' },
+      ],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/Projects', '/Users/eric/Photos', '/Users/eric/README.md'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '3 dropped items need attention. Open Projects and Photos, then drop the individual files you want to add. Rename README.md locally and drop it again; that name is already in /home/deploy.',
+    )
+  })
+
+  test('guides the user to a writable folder after a permission denial', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [{ name: 'index.html', code: 'permission' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/index.html'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '/home/deploy isn’t writable. Open a writable folder, then drop index.html there.',
+    )
+  })
+
+  test('guides the user to a readable local file after a local permission denial', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [{ name: 'private.txt', code: 'local-permission' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/private.txt'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Give SSH Man access to private.txt, or check its file permissions, then drop it again.',
+    )
+  })
+
+  test('explains when a dropped local item is no longer available', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [{ name: 'moved.txt', code: 'missing' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/moved.txt'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'moved.txt isn’t on this Mac anymore. Save it to a folder, then drop it again.',
+    )
+  })
+
+  test('explains when the server rejects file access settings', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [{ name: 'secret.pem', code: 'permissions' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/secret.pem'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'secret.pem couldn’t be uploaded safely, so nothing was added to /home/deploy. Uploads to this server aren’t supported yet.',
+    )
+  })
+
+  test('explains when an incomplete remote file could not be removed', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [{ name: 'broken.txt', code: 'incomplete' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/broken.txt'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'broken.txt may be incomplete in /home/deploy. Delete it there before trying again.',
+    )
+  })
+
+  test('uses consumer-facing guidance for unsupported dropped items', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [{ name: 'local.socket', code: 'unsupported' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/tmp/local.socket'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'local.socket can’t be uploaded. Drop a document, image, or other file instead.',
+    )
+  })
+
+  test('names an unsupported item after uploading the supported files in a batch', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: ['/home/deploy/report.txt'],
+      failures: [{ name: 'local.socket', code: 'unsupported' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt', '/tmp/local.socket'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Uploaded report.txt to /home/deploy. local.socket can’t be uploaded. Drop a document, image, or other file instead.',
+    )
+  })
+
+  test('uses singular copy for one additional skipped name', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [
+        { name: 'one.txt', code: 'failed' },
+        { name: 'two.txt', code: 'failed' },
+        { name: 'three.txt', code: 'failed' },
+        { name: 'four.txt', code: 'failed' },
+      ],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/tmp/one.txt', '/tmp/two.txt', '/tmp/three.txt', '/tmp/four.txt'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '4 dropped items need attention. Try uploading one.txt, two.txt, three.txt, and 1 other to /home/deploy again.',
+    )
+  })
+
+  test('uses singular guidance when duplicate local names share one failure', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: [],
+      failures: [
+        { name: 'report.txt', code: 'exists' },
+        { name: 'report.txt', code: 'exists' },
+      ],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt', '/tmp/report.txt'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      '2 dropped items need attention. Rename report.txt locally and drop it again; that name is already in /home/deploy.',
+    )
+  })
+
+  test('keeps the upload destination visible while browsing another folder', async () => {
+    const user = userEvent.setup()
+    let finishUpload
+    const api = fakeApi()
+    api.uploadFiles.mockImplementation(() => new Promise((resolve) => {
+      finishUpload = resolve
+    }))
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt'])
+    })
+    await screen.findByText('Adding files to /home/deploy')
+    await user.dblClick(screen.getByRole('option', { name: /site/ }))
+
+    expect(screen.getByText('Adding files to /home/deploy')).toBeTruthy()
+    await act(async () => {
+      finishUpload({ uploaded: ['/home/deploy/report.txt'], failures: [] })
+    })
+    expect(await screen.findByText('Uploaded report.txt to /home/deploy.')).toBeTruthy()
+    expect(api.listDirectory).toHaveBeenCalledTimes(2)
+  })
+
+  test('explains when another drop arrives during an upload', async () => {
+    let finishUpload
+    const api = fakeApi()
+    api.uploadFiles.mockImplementation(() => new Promise((resolve) => {
+      finishUpload = resolve
+    }))
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/first.txt'])
+    })
+    await waitFor(() => expect(api.uploadFiles).toHaveBeenCalledTimes(1))
+    act(() => {
+      api.emitFileDrop(['/Users/eric/second.txt'])
+    })
+
+    expect(await screen.findByText('Still uploading to /home/deploy. These files weren’t added — drop them again when it finishes.')).toBeTruthy()
+    expect(api.uploadFiles).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      finishUpload({ uploaded: ['/home/deploy/first.txt'], failures: [] })
+    })
+  })
+
+  test('describes the drop destination before an upload starts', async () => {
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+
+    expect(screen.getByText('Add files to /home/deploy')).toBeTruthy()
+  })
+
+  test('keeps the upload error visible when the folder refresh also fails', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockRejectedValue(new Error('transport reset by peer'))
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+    api.listDirectory.mockRejectedValueOnce(new Error('refresh failed'))
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'The files could not be uploaded. Check the connection and try again.',
+    )
+    await waitFor(() => expect(api.listDirectory).toHaveBeenCalledTimes(2))
+  })
+
+  test('uses actionable copy when an uploaded folder cannot be refreshed', async () => {
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+    api.listDirectory.mockRejectedValueOnce(new Error('list "/home/deploy": permission denied'))
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Your files uploaded to /home/deploy, but it could not be refreshed. Reopen it to see them.',
+    )
+    expect(screen.queryByText('Uploaded report.txt.')).toBeNull()
+  })
+
+  test('reports a stale listing after partial success cannot be refreshed', async () => {
+    const api = fakeApi()
+    api.uploadFiles.mockResolvedValue({
+      uploaded: ['/home/deploy/report.txt'],
+      failures: [{ name: 'README.md', code: 'exists' }],
+    })
+    render(<ExplorerApp api={api} />)
+    await waitForExplorerReady()
+    api.listDirectory.mockRejectedValueOnce(new Error('connection closed'))
+
+    act(() => {
+      api.emitFileDrop(['/Users/eric/report.txt', '/Users/eric/README.md'])
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Uploaded report.txt to /home/deploy. Rename README.md locally and drop it again; that name is already in /home/deploy. Reopen /home/deploy to see the files that were added.',
+    )
   })
 
   test('edits and saves a remote file from Monaco', async () => {

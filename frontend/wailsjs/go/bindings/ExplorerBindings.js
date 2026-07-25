@@ -37,3 +37,7 @@ export function SetContext(arg1) {
 export function Shutdown(arg1) {
   return window['go']['bindings']['ExplorerBindings']['Shutdown'](arg1);
 }
+
+export function Upload(arg1, arg2) {
+  return window['go']['bindings']['ExplorerBindings']['Upload'](arg1, arg2);
+}

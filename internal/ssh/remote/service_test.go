@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,11 +39,18 @@ type memoryFile struct{ *bytes.Reader }
 func (memoryFile) Close() error { return nil }
 
 type memoryWriteFile struct {
-	bytes.Buffer
+	buffer bytes.Buffer
 	fs     *memoryFS
 	name   string
-	mode   os.FileMode
 	closed bool
+}
+
+func (f *memoryWriteFile) Write(content []byte) (int, error) {
+	if path.Base(f.name) == f.fs.failWriteName {
+		written, _ := f.buffer.Write(content[:len(content)/2])
+		return written, errors.New("simulated remote write failure")
+	}
+	return f.buffer.Write(content)
 }
 
 func (f *memoryWriteFile) Close() error {
@@ -52,22 +60,50 @@ func (f *memoryWriteFile) Close() error {
 	f.closed = true
 	f.fs.nodes[f.name] = memoryNode{
 		name:    path.Base(f.name),
-		content: append([]byte(nil), f.Bytes()...),
-		mode:    f.mode,
+		content: append([]byte(nil), f.buffer.Bytes()...),
+		mode:    f.fs.nodes[f.name].mode,
 		modTime: time.Now(),
 	}
 	return nil
 }
 
 type memoryFS struct {
-	home  string
-	nodes map[string]memoryNode
+	home              string
+	nodes             map[string]memoryNode
+	symlinkTargets    map[string]string
+	onOpenFile        func()
+	failWriteName     string
+	openFileErrorName string
+	openFileError     error
+	chmodErrorName    string
+	chmodError        error
+	removeErrorName   string
+	removeError       error
 }
 
 func (f *memoryFS) Getwd() (string, error) { return f.home, nil }
 func (f *memoryFS) Close() error           { return nil }
 func (f *memoryFS) Lstat(name string) (os.FileInfo, error) {
 	node, ok := f.nodes[cleanRemotePath(name)]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return node, nil
+}
+func (f *memoryFS) Stat(name string) (os.FileInfo, error) {
+	name = cleanRemotePath(name)
+	node, ok := f.nodes[name]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	if node.Mode()&os.ModeSymlink == 0 {
+		return node, nil
+	}
+	target, ok := f.symlinkTargets[name]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	node, ok = f.nodes[cleanRemotePath(target)]
 	if !ok {
 		return nil, os.ErrNotExist
 	}
@@ -85,10 +121,24 @@ func (f *memoryFS) OpenFile(name string, flag int, mode os.FileMode) (io.WriteCl
 	if _, exists := f.nodes[name]; exists && flag&os.O_EXCL != 0 {
 		return nil, os.ErrExist
 	}
-	return &memoryWriteFile{fs: f, name: name, mode: mode}, nil
+	if path.Base(name) == f.openFileErrorName {
+		return nil, f.openFileError
+	}
+	f.nodes[name] = memoryNode{
+		name:    path.Base(name),
+		mode:    0o600,
+		modTime: time.Now(),
+	}
+	if f.onOpenFile != nil {
+		f.onOpenFile()
+	}
+	return &memoryWriteFile{fs: f, name: name}, nil
 }
 func (f *memoryFS) Chmod(name string, mode os.FileMode) error {
 	name = cleanRemotePath(name)
+	if path.Base(name) == f.chmodErrorName {
+		return f.chmodError
+	}
 	node, exists := f.nodes[name]
 	if !exists {
 		return os.ErrNotExist
@@ -111,6 +161,9 @@ func (f *memoryFS) PosixRename(oldName, newName string) error {
 }
 func (f *memoryFS) Remove(name string) error {
 	name = cleanRemotePath(name)
+	if path.Base(name) == f.removeErrorName {
+		return f.removeError
+	}
 	if _, exists := f.nodes[name]; !exists {
 		return os.ErrNotExist
 	}
@@ -134,7 +187,8 @@ func (f *memoryFS) ReadDir(name string) ([]os.FileInfo, error) {
 func testMemoryFS() *memoryFS {
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 	return &memoryFS{
-		home: "/home/eric",
+		home:           "/home/eric",
+		symlinkTargets: map[string]string{},
 		nodes: map[string]memoryNode{
 			"/home/eric":             {name: "eric", mode: os.ModeDir | 0o755, modTime: now},
 			"/home/eric/Projects":    {name: "Projects", mode: os.ModeDir | 0o755, modTime: now},
@@ -271,6 +325,354 @@ func TestSaveRejectsAnExternallyChangedRemoteFile(t *testing.T) {
 	}
 	if got := string(remoteFS.nodes["/home/eric/README.md"].content); got != "# Changed elsewhere" {
 		t.Fatalf("remote content = %q, want external edit preserved", got)
+	}
+}
+
+func TestUploadCopiesLocalFilesIntoRemoteDirectory(t *testing.T) {
+	service := connectedTestService(t)
+	localDirectory := t.TempDir()
+	localPath := filepath.Join(localDirectory, "report.txt")
+	if err := os.WriteFile(localPath, []byte("upload contents"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(localPath, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~/Projects")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantPath := "/home/eric/Projects/report.txt"
+	if !reflect.DeepEqual(result.Uploaded, []string{wantPath}) || len(result.Failures) != 0 {
+		t.Fatalf("Upload() = %#v, want uploaded path %q", result, wantPath)
+	}
+	node := service.fs.(*memoryFS).nodes[wantPath]
+	if got := string(node.content); got != "upload contents" {
+		t.Fatalf("uploaded content = %q", got)
+	}
+	if got := node.mode.Perm(); got != 0o750 {
+		t.Fatalf("uploaded mode = %v, want %v", got, os.FileMode(0o750))
+	}
+}
+
+func TestUploadRemovesUnsafeWritePermissionsFromLocalFiles(t *testing.T) {
+	service := connectedTestService(t)
+	localPath := filepath.Join(t.TempDir(), "shared-script.sh")
+	if err := os.WriteFile(localPath, []byte("#!/bin/sh\n"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(localPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantPath := "/home/eric/shared-script.sh"
+	if !reflect.DeepEqual(result.Uploaded, []string{wantPath}) || len(result.Failures) != 0 {
+		t.Fatalf("Upload() = %#v, want uploaded path %q", result, wantPath)
+	}
+	if got := service.fs.(*memoryFS).nodes[wantPath].mode.Perm(); got != 0o755 {
+		t.Fatalf("uploaded mode = %v, want %v", got, os.FileMode(0o755))
+	}
+}
+
+func TestUploadFailureCodeSeparatesLocalReadPermissions(t *testing.T) {
+	err := fmt.Errorf("%w: open local file", ErrLocalFileUnreadable)
+
+	if got := uploadFailureCode(err); got != UploadFailureLocalPermission {
+		t.Fatalf("uploadFailureCode() = %q, want %q", got, UploadFailureLocalPermission)
+	}
+}
+
+func TestUploadReportsUnreadableLocalFiles(t *testing.T) {
+	service := connectedTestService(t)
+	localPath := filepath.Join(t.TempDir(), "private.txt")
+	if err := os.WriteFile(localPath, []byte("private"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(localPath, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(localPath, 0o600) }()
+	if file, err := os.Open(localPath); err == nil {
+		_ = file.Close()
+		t.Log("filesystem allows the current process to read mode-000 files; local permission behavior was not exercised")
+		return
+	}
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []UploadFailure{{Name: "private.txt", Code: UploadFailureLocalPermission}}
+	if len(result.Uploaded) != 0 || !reflect.DeepEqual(result.Failures, want) {
+		t.Fatalf("Upload() = %#v, want local permission failure", result)
+	}
+}
+
+func TestUploadReportsMissingLocalFiles(t *testing.T) {
+	service := connectedTestService(t)
+	localPath := filepath.Join(t.TempDir(), "moved.txt")
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []UploadFailure{{Name: "moved.txt", Code: UploadFailureMissing}}
+	if len(result.Uploaded) != 0 || !reflect.DeepEqual(result.Failures, want) {
+		t.Fatalf("Upload() = %#v, want missing-local-file failure", result)
+	}
+}
+
+func TestUploadContinuesAfterAnExistingRemoteFile(t *testing.T) {
+	service := connectedTestService(t)
+	localDirectory := t.TempDir()
+	localPaths := []string{
+		filepath.Join(localDirectory, "before.txt"),
+		filepath.Join(localDirectory, "README.md"),
+		filepath.Join(localDirectory, "after.txt"),
+	}
+	for _, localPath := range localPaths {
+		if err := os.WriteFile(localPath, []byte(filepath.Base(localPath)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := service.Upload(context.Background(), localPaths, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantUploaded := []string{"/home/eric/before.txt", "/home/eric/after.txt"}
+	if !reflect.DeepEqual(result.Uploaded, wantUploaded) {
+		t.Fatalf("uploaded paths = %#v, want %#v", result.Uploaded, wantUploaded)
+	}
+	wantFailures := []UploadFailure{{Name: "README.md", Code: UploadFailureExists}}
+	if !reflect.DeepEqual(result.Failures, wantFailures) {
+		t.Fatalf("upload failures = %#v, want %#v", result.Failures, wantFailures)
+	}
+	if got := string(service.fs.(*memoryFS).nodes["/home/eric/README.md"].content); got != "# Hello" {
+		t.Fatalf("existing remote content = %q, want original content", got)
+	}
+}
+
+func TestUploadRejectsLocalDirectories(t *testing.T) {
+	service := connectedTestService(t)
+	localDirectory := t.TempDir()
+
+	result, err := service.Upload(context.Background(), []string{localDirectory}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := UploadFailure{Name: filepath.Base(localDirectory), Code: UploadFailureDirectory}
+	if len(result.Uploaded) != 0 || !reflect.DeepEqual(result.Failures, []UploadFailure{want}) {
+		t.Fatalf("Upload() = %#v, want directory failure", result)
+	}
+}
+
+func TestUploadReportsRemotePermissionDenials(t *testing.T) {
+	service := connectedTestService(t)
+	localPath := filepath.Join(t.TempDir(), "index.html")
+	if err := os.WriteFile(localPath, []byte("<h1>Hello</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	remoteFS.openFileErrorName = "index.html"
+	remoteFS.openFileError = os.ErrPermission
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []UploadFailure{{Name: "index.html", Code: UploadFailurePermission}}
+	if len(result.Uploaded) != 0 || !reflect.DeepEqual(result.Failures, want) {
+		t.Fatalf("Upload() = %#v, want permission failure", result)
+	}
+	if _, exists := remoteFS.nodes["/home/eric/index.html"]; exists {
+		t.Fatal("permission-denied upload created a remote file")
+	}
+}
+
+func TestUploadReportsPermissionSettingFailuresWithoutLeavingAFile(t *testing.T) {
+	service := connectedTestService(t)
+	localPath := filepath.Join(t.TempDir(), "secret.pem")
+	if err := os.WriteFile(localPath, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	remoteFS.chmodErrorName = "secret.pem"
+	remoteFS.chmodError = os.ErrPermission
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []UploadFailure{{Name: "secret.pem", Code: UploadFailurePermissions}}
+	if len(result.Uploaded) != 0 || !reflect.DeepEqual(result.Failures, want) {
+		t.Fatalf("Upload() = %#v, want permission-setting failure", result)
+	}
+	if _, exists := remoteFS.nodes["/home/eric/secret.pem"]; exists {
+		t.Fatal("permission-setting failure left a remote file")
+	}
+}
+
+func TestUploadFollowsLocalFileSymlinks(t *testing.T) {
+	service := connectedTestService(t)
+	localDirectory := t.TempDir()
+	target := filepath.Join(localDirectory, "target.txt")
+	link := filepath.Join(localDirectory, "linked.txt")
+	if err := os.WriteFile(target, []byte("linked contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("create local symlink: %v", err)
+	}
+
+	result, err := service.Upload(context.Background(), []string{link}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantPath := "/home/eric/linked.txt"
+	if !reflect.DeepEqual(result.Uploaded, []string{wantPath}) || len(result.Failures) != 0 {
+		t.Fatalf("Upload() = %#v, want uploaded symlink target", result)
+	}
+	if got := string(service.fs.(*memoryFS).nodes[wantPath].content); got != "linked contents" {
+		t.Fatalf("uploaded content = %q", got)
+	}
+}
+
+func TestUploadAcceptsASymlinkedRemoteDirectory(t *testing.T) {
+	service := connectedTestService(t)
+	remoteFS := service.fs.(*memoryFS)
+	remoteFS.nodes["/home/eric/current"] = memoryNode{
+		name: "current",
+		mode: os.ModeSymlink | 0o777,
+	}
+	remoteFS.symlinkTargets["/home/eric/current"] = "/home/eric/Projects"
+	localPath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(localPath, []byte("contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~/current")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(result.Uploaded, []string{"/home/eric/current/report.txt"}) || len(result.Failures) != 0 {
+		t.Fatalf("Upload() = %#v, want symlinked destination upload", result)
+	}
+}
+
+func TestUploadRejectsASymlinkedRemoteFileAsADestination(t *testing.T) {
+	service := connectedTestService(t)
+	remoteFS := service.fs.(*memoryFS)
+	remoteFS.nodes["/home/eric/current"] = memoryNode{
+		name: "current",
+		mode: os.ModeSymlink | 0o777,
+	}
+	remoteFS.symlinkTargets["/home/eric/current"] = "/home/eric/README.md"
+	localPath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(localPath, []byte("contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~/current")
+
+	if err == nil {
+		t.Fatalf("Upload() = %#v, nil; want non-directory destination error", result)
+	}
+	if len(result.Uploaded) != 0 || len(result.Failures) != 0 {
+		t.Fatalf("Upload() = %#v, want no attempted files", result)
+	}
+}
+
+func TestUploadRemovesAFileWhenCopyingIsCancelled(t *testing.T) {
+	service := connectedTestService(t)
+	localPath := filepath.Join(t.TempDir(), "cancelled.txt")
+	if err := os.WriteFile(localPath, []byte("partial contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	service.fs.(*memoryFS).onOpenFile = cancel
+
+	_, err := service.Upload(ctx, []string{localPath}, "~")
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Upload() error = %v, want context canceled", err)
+	}
+	if _, exists := service.fs.(*memoryFS).nodes["/home/eric/cancelled.txt"]; exists {
+		t.Fatal("partially uploaded remote file was not removed")
+	}
+}
+
+func TestUploadRemovesAPartialFileAndContinuesAfterARemoteWriteFailure(t *testing.T) {
+	service := connectedTestService(t)
+	localDirectory := t.TempDir()
+	brokenPath := filepath.Join(localDirectory, "broken.txt")
+	afterPath := filepath.Join(localDirectory, "after.txt")
+	if err := os.WriteFile(brokenPath, []byte("partial contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(afterPath, []byte("complete contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service.fs.(*memoryFS).failWriteName = "broken.txt"
+
+	result, err := service.Upload(context.Background(), []string{brokenPath, afterPath}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantFailures := []UploadFailure{{Name: "broken.txt", Code: UploadFailureFailed}}
+	if !reflect.DeepEqual(result.Failures, wantFailures) {
+		t.Fatalf("upload failures = %#v, want %#v", result.Failures, wantFailures)
+	}
+	if !reflect.DeepEqual(result.Uploaded, []string{"/home/eric/after.txt"}) {
+		t.Fatalf("uploaded paths = %#v", result.Uploaded)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	if _, exists := remoteFS.nodes["/home/eric/broken.txt"]; exists {
+		t.Fatal("partially uploaded remote file was not removed")
+	}
+	if got := string(remoteFS.nodes["/home/eric/after.txt"].content); got != "complete contents" {
+		t.Fatalf("later uploaded content = %q", got)
+	}
+}
+
+func TestUploadReportsAnIncompleteRemoteFileWhenCleanupFails(t *testing.T) {
+	service := connectedTestService(t)
+	localPath := filepath.Join(t.TempDir(), "broken.txt")
+	if err := os.WriteFile(localPath, []byte("partial contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	remoteFS.failWriteName = "broken.txt"
+	remoteFS.removeErrorName = "broken.txt"
+	remoteFS.removeError = errors.New("connection closed")
+
+	result, err := service.Upload(context.Background(), []string{localPath}, "~")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantFailures := []UploadFailure{{Name: "broken.txt", Code: UploadFailureIncomplete}}
+	if len(result.Uploaded) != 0 || !reflect.DeepEqual(result.Failures, wantFailures) {
+		t.Fatalf("Upload() = %#v, want incomplete-file failure", result)
+	}
+	if _, exists := remoteFS.nodes["/home/eric/broken.txt"]; !exists {
+		t.Fatal("cleanup-failure test did not retain the incomplete remote file")
 	}
 }
 

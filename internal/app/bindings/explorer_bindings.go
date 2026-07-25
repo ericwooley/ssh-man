@@ -64,6 +64,13 @@ func (b *ExplorerBindings) SaveFile(remotePath, content, expectedRevision string
 	return b.remote.Save(remotePath, content, expectedRevision)
 }
 
+func (b *ExplorerBindings) Upload(remoteDirectory string, localPaths []string) (remote.UploadResult, error) {
+	if b.context == nil {
+		return remote.UploadResult{}, fmt.Errorf("explorer window is not ready")
+	}
+	return b.remote.Upload(b.context, localPaths, remoteDirectory)
+}
+
 func (b *ExplorerBindings) Download(paths []string) ([]string, error) {
 	if len(paths) == 0 {
 		return []string{}, nil
