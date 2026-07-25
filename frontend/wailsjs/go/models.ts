@@ -35,6 +35,7 @@ export namespace bindings {
 	export class Diagnostics {
 	    appDataPath: string;
 	    databasePath: string;
+	    version: string;
 
 	    static createFrom(source: any = {}) {
 	        return new Diagnostics(source);
@@ -44,6 +45,7 @@ export namespace bindings {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.appDataPath = source["appDataPath"];
 	        this.databasePath = source["databasePath"];
+	        this.version = source["version"];
 	    }
 	}
 	export class ExplorerInitialState {

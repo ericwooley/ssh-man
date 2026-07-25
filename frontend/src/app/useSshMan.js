@@ -23,6 +23,12 @@ const defaultPreferences = {
   urlRules: [],
 }
 
+const unavailableDiagnostics = {
+  appDataPath: '',
+  databasePath: '',
+  version: '',
+}
+
 async function writeClipboard(text) {
   if (!navigator.clipboard?.writeText) {
     throw new Error('Clipboard access is unavailable.')
@@ -49,7 +55,7 @@ export function useSshMan(api = defaultApi, options = {}) {
   const [sessions, setSessions] = useState([])
   const [selectedServerId, setSelectedServerId] = useState('')
   const [selectedConfigurationId, setSelectedConfigurationId] = useState('')
-  const [diagnostics, setDiagnostics] = useState({ appDataPath: '', databasePath: '' })
+  const [diagnostics, setDiagnostics] = useState(unavailableDiagnostics)
   const [currentUsername, setCurrentUsername] = useState('')
   const [sshKeys, setSshKeys] = useState([])
   const [storageIssue, setStorageIssue] = useState('')
@@ -130,7 +136,7 @@ export function useSshMan(api = defaultApi, options = {}) {
       setServers(nextServers)
       setPreferences(nextPreferences)
       setSessions(buildRuntimeSessions(state.sessions || []))
-      setDiagnostics(state.diagnostics || { appDataPath: '', databasePath: '' })
+      setDiagnostics(state.diagnostics || unavailableDiagnostics)
       setCurrentUsername(state.currentUsername || '')
       setSshKeys(state.sshKeys || [])
       setStorageIssue(state.recoverable ? state.message || 'Saved data needs attention.' : '')
@@ -172,7 +178,7 @@ export function useSshMan(api = defaultApi, options = {}) {
         setServers(nextServers)
         setPreferences(nextPreferences)
         setSessions(buildRuntimeSessions(state.sessions || []))
-        setDiagnostics(state.diagnostics || { appDataPath: '', databasePath: '' })
+        setDiagnostics(state.diagnostics || unavailableDiagnostics)
         setCurrentUsername(state.currentUsername || '')
         setSshKeys(state.sshKeys || [])
         setStorageIssue(state.recoverable ? state.message || 'Saved data needs attention.' : '')

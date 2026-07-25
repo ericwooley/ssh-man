@@ -83,6 +83,7 @@ export async function loadInitialState() {
     diagnostics: {
       appDataPath: '~/.config/ssh-man',
       databasePath: '~/.config/ssh-man/ssh-man.db',
+      version: 'Dev build',
     },
     recoverable: false,
     message: '',
