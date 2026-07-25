@@ -3,11 +3,13 @@ import { createRoot } from 'react-dom/client'
 import App from './app/App'
 import { hasCommandRuntime } from './lib/commandApi'
 import { hasExplorerRuntime } from './lib/explorerApi'
+import { hasPreviewRuntime } from './lib/previewApi'
 import { hasSettingsRuntime } from './lib/settingsApi'
 import './app.css'
 
 const ExplorerApp = lazy(() => import('./explorer/ExplorerApp'))
 const CommandApp = lazy(() => import('./command/CommandApp'))
+const PreviewApp = lazy(() => import('./explorer/PreviewApp'))
 
 const target = document.getElementById('app')
 
@@ -17,12 +19,13 @@ if (!target) {
 
 try {
   const commandRuntime = hasCommandRuntime()
-  const explorerRuntime = !commandRuntime && hasExplorerRuntime()
-  const settingsRuntime = !commandRuntime && !explorerRuntime && hasSettingsRuntime()
-  const RootApp = commandRuntime ? CommandApp : explorerRuntime ? ExplorerApp : App
+  const previewRuntime = !commandRuntime && hasPreviewRuntime()
+  const explorerRuntime = !commandRuntime && !previewRuntime && hasExplorerRuntime()
+  const settingsRuntime = !commandRuntime && !previewRuntime && !explorerRuntime && hasSettingsRuntime()
+  const RootApp = commandRuntime ? CommandApp : previewRuntime ? PreviewApp : explorerRuntime ? ExplorerApp : App
   createRoot(target).render(
     <React.StrictMode>
-      {commandRuntime || explorerRuntime
+      {commandRuntime || previewRuntime || explorerRuntime
         ? <Suspense fallback={<div className="startup-error">Opening window…</div>}><RootApp /></Suspense>
         : <RootApp settingsWindow={settingsRuntime} />}
     </React.StrictMode>,

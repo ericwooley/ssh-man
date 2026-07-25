@@ -168,6 +168,38 @@ export namespace bindings {
 		    return a;
 		}
 	}
+	export class PreviewInitialState {
+	    server: server.Server;
+	    remotePath: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PreviewInitialState(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.server = this.convertValues(source["server"], server.Server);
+	        this.remotePath = source["remotePath"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 
 }
@@ -455,6 +487,25 @@ export namespace preferences {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace previewwindow {
+
+	export class State {
+	    remotePath: string;
+	    open: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new State(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.remotePath = source["remotePath"];
+	        this.open = source["open"];
+	    }
 	}
 
 }

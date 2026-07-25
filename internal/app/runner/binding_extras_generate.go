@@ -35,7 +35,19 @@ func additionalBindingsForGeneration() []interface{} {
 		serverdomain.Server{},
 		appwindow.New(),
 	)
-	return []interface{}{explorer, bindings.NewSettingsWindowBindings(), command}
+	preview, _ := bindings.NewPreviewBindings(
+		&bootstrap.Application{},
+		serverdomain.Server{},
+		"",
+		appwindow.New(),
+	)
+	return []interface{}{
+		explorer,
+		command,
+		preview,
+		bindings.NewPreviewLauncherBindingsWithDependencies("", nil, nil, nil),
+		bindings.NewSettingsWindowBindings(),
+	}
 }
 
 func maybeRunBindingsGeneration(assets fs.FS) (bool, error) {

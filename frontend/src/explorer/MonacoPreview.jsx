@@ -12,7 +12,7 @@ if (typeof self !== 'undefined') {
   }
 }
 
-export default function MonacoPreview({ content, language, label, modelKey, onChange, onSave, vimMode = false }) {
+export default function MonacoPreview({ content, language, label, modelKey, onChange, onSave, readOnly = false, vimMode = false }) {
   const hostRef = useRef(null)
   const statusRef = useRef(null)
   const editorRef = useRef(null)
@@ -26,8 +26,8 @@ export default function MonacoPreview({ content, language, label, modelKey, onCh
     const model = monaco.editor.createModel(content || '', language || 'plaintext')
     const editor = monaco.editor.create(hostRef.current, {
       model,
-      readOnly: false,
-      domReadOnly: false,
+      readOnly,
+      domReadOnly: readOnly,
       automaticLayout: true,
       minimap: { enabled: false },
       fontSize: 13,
@@ -41,22 +41,24 @@ export default function MonacoPreview({ content, language, label, modelKey, onCh
     })
     editorRef.current = editor
     const changeSubscription = model.onDidChangeContent(() => onChangeRef.current?.(model.getValue()))
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => onSaveRef.current?.(model.getValue()))
+    if (!readOnly) {
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => onSaveRef.current?.(model.getValue()))
+    }
     return () => {
       changeSubscription.dispose()
       editorRef.current = null
       editor.dispose()
       model.dispose()
     }
-  }, [label, language, modelKey])
+  }, [label, language, modelKey, readOnly])
 
   useEffect(() => {
     const editor = editorRef.current
-    if (!editor || !vimMode) return undefined
+    if (!editor || !vimMode || readOnly) return undefined
     VimMode.Vim.defineEx('write', 'w', () => onSaveRef.current?.(editor.getValue()))
     const mode = initVimMode(editor, statusRef.current)
     return () => mode.dispose()
-  }, [language, modelKey, vimMode])
+  }, [language, modelKey, readOnly, vimMode])
 
   return (
     <div className="explorer-editor">

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import ExplorerApp from './ExplorerApp'
@@ -13,6 +13,7 @@ vi.mock('./MonacoPreview', () => ({
 }))
 
 function fakeApi() {
+  const previewWindowListeners = new Set()
   const directories = {
     '/home/deploy': {
       path: '/home/deploy',
@@ -23,7 +24,7 @@ function fakeApi() {
     },
     '/home/deploy/site': { path: '/home/deploy/site', entries: [] },
   }
-  return {
+  const api = {
     initialState: vi.fn(async () => ({ server: { id: 'server-1', name: 'Production', username: 'deploy', host: 'prod.example.com' } })),
     connect: vi.fn(async () => ({ connected: true, homePath: '/home/deploy' })),
     listDirectory: vi.fn(async (path) => directories[path]),
@@ -46,8 +47,19 @@ function fakeApi() {
       revision: 'revision-2',
     })),
     download: vi.fn(async () => ['/Users/eric/Downloads/README.md']),
+    openPreview: vi.fn(async (remotePath) => ({ remotePath, open: true })),
+    focusPreview: vi.fn(async (remotePath) => ({ remotePath, open: true })),
+    previewWindowState: vi.fn(async (remotePath) => ({ remotePath, open: false })),
+    subscribePreviewWindowState: vi.fn((listener) => {
+      previewWindowListeners.add(listener)
+      return () => previewWindowListeners.delete(listener)
+    }),
     openExternalURL: vi.fn(async () => undefined),
+    emitPreviewWindowState(state) {
+      previewWindowListeners.forEach((listener) => listener(state))
+    },
   }
+  return api
 }
 
 describe('server explorer window', () => {
@@ -112,6 +124,30 @@ describe('server explorer window', () => {
     expect(screen.queryByTitle('capture.mp4 browser preview')).toBeNull()
   })
 
+  test('focuses a detached preview and restores it after the window closes', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+
+    await user.click(await screen.findByRole('option', { name: /README\.md/ }))
+    expect(await screen.findByRole('heading', { name: 'Production', level: 1 })).toBeTruthy()
+    await user.click(await screen.findByRole('button', { name: 'Open README.md preview in new window' }))
+
+    await waitFor(() => expect(api.openPreview).toHaveBeenCalledWith('/home/deploy/README.md'))
+    expect(await screen.findByText('Preview open in window')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Production', level: 1 })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Focus preview window for README.md' }))
+    expect(api.openPreview).toHaveBeenCalledTimes(1)
+    expect(api.focusPreview).toHaveBeenCalledWith('/home/deploy/README.md')
+
+    act(() => {
+      api.emitPreviewWindowState({ remotePath: '/home/deploy/README.md', open: false })
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Production', level: 1 })).toBeTruthy()
+  })
+
   test('downloads the selected remote file through the native destination flow', async () => {
     const user = userEvent.setup()
     const api = fakeApi()
@@ -138,6 +174,22 @@ describe('server explorer window', () => {
 
     await waitFor(() => expect(api.saveFile).toHaveBeenCalledWith('/home/deploy/README.md', '# Updated remotely', 'revision-1'))
     expect(await screen.findByText('Saved README.md.')).toBeTruthy()
+  })
+
+  test('keeps an unsaved editor inline instead of opening a detached preview', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+
+    await user.click(await screen.findByRole('option', { name: /README\.md/ }))
+    await user.click(await screen.findByRole('button', { name: 'Source' }))
+    const editor = await screen.findByRole('textbox', { name: 'README.md source' })
+    await user.type(editor, ' unsaved')
+
+    const popout = screen.getByRole('button', { name: 'Open README.md preview in new window' })
+    expect(popout.disabled).toBe(true)
+    await user.click(popout)
+    expect(api.openPreview).not.toHaveBeenCalled()
   })
 
   test('persists Vim controls from the editor checkbox', async () => {

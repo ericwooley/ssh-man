@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleAlert,
   Eye,
+  ExternalLink,
   File,
   FileCode2,
   FileText,
@@ -21,12 +22,9 @@ import {
   Star,
   X,
 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { MoonPixelsButton } from '../components/AppChrome'
 import * as defaultApi from '../lib/explorerApi'
-import { remoteContentURL } from '../lib/explorerApi'
-import MonacoPreview from './MonacoPreview'
+import PreviewContent from './PreviewContent'
 import {
   addFavorite,
   readFavoritePaths,
@@ -36,10 +34,8 @@ import {
   writeVimMode,
 } from './explorerPreferences'
 import {
-  editorLanguage,
   formatFileSize,
   parentRemotePath,
-  resolveRemoteReference,
 } from './pathUtils'
 
 function itemIcon(entry) {
@@ -89,10 +85,37 @@ export default function ExplorerApp({ api = defaultApi }) {
   const [passphrase, setPassphrase] = useState('')
   const [downloading, setDownloading] = useState(false)
   const [notice, setNotice] = useState('')
+  const [previewWindowPaths, setPreviewWindowPaths] = useState(() => new Set())
+  const [previewWindowPendingPath, setPreviewWindowPendingPath] = useState('')
   const [historyVersion, setHistoryVersion] = useState(0)
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
   const startedRef = useRef(false)
+  const previewWindowStateRequestsRef = useRef(new Map())
+  const previewWindowOpenRef = useRef(false)
+  const previewPopoutButtonRef = useRef(null)
+  const previewFocusButtonRef = useRef(null)
+
+  const setPreviewWindowOpen = useCallback((remotePath, open) => {
+    if (!remotePath) return
+    previewWindowStateRequestsRef.current.delete(remotePath)
+    setPreviewWindowPaths((current) => {
+      const alreadyOpen = current.has(remotePath)
+      if (alreadyOpen === open) return current
+      const next = new Set(current)
+      if (open) next.add(remotePath)
+      else next.delete(remotePath)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!api.subscribePreviewWindowState) return undefined
+    return api.subscribePreviewWindowState((state) => {
+      if (!state?.remotePath || typeof state.open !== 'boolean') return
+      setPreviewWindowOpen(state.remotePath, state.open)
+    })
+  }, [api, setPreviewWindowOpen])
 
   const confirmDiscard = useCallback(() => {
     if (!dirty) return true
@@ -259,6 +282,26 @@ export default function ExplorerApp({ api = defaultApi }) {
     return () => { active = false }
   }, [api, selectedEntry])
 
+  useEffect(() => {
+    if (!preview?.path || !api.previewWindowState) return undefined
+    let active = true
+    const remotePath = preview.path
+    const request = Symbol(remotePath)
+    previewWindowStateRequestsRef.current.set(remotePath, request)
+    api.previewWindowState(preview.path)
+      .then((state) => {
+        const requestIsCurrent = previewWindowStateRequestsRef.current.get(remotePath) === request
+        if (active && requestIsCurrent) setPreviewWindowOpen(remotePath, Boolean(state?.open))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+      if (previewWindowStateRequestsRef.current.get(remotePath) === request) {
+        previewWindowStateRequestsRef.current.delete(remotePath)
+      }
+    }
+  }, [api, preview?.path, setPreviewWindowOpen])
+
   function selectEntry(event, entry) {
     if (!selectedPaths.includes(entry.path) && !confirmDiscard()) return
     if (event.metaKey || event.ctrlKey) {
@@ -293,6 +336,36 @@ export default function ExplorerApp({ api = defaultApi }) {
     }
   }
 
+  async function openPreviewWindow() {
+    if (!preview?.path || dirty) return
+    const remotePath = preview.path
+    setError('')
+    setPreviewWindowPendingPath(remotePath)
+    try {
+      const state = await api.openPreview(remotePath)
+      setPreviewWindowOpen(state?.remotePath || remotePath, state?.open !== false)
+    } catch (nextError) {
+      setError(nextError.message || 'The preview window could not be opened.')
+    } finally {
+      setPreviewWindowPendingPath((current) => current === remotePath ? '' : current)
+    }
+  }
+
+  async function focusPreviewWindow() {
+    if (!preview?.path) return
+    const remotePath = preview.path
+    setError('')
+    setPreviewWindowPendingPath(remotePath)
+    try {
+      const state = await api.focusPreview(remotePath)
+      setPreviewWindowOpen(state?.remotePath || remotePath, state?.open !== false)
+    } catch (nextError) {
+      setError(nextError.message || 'The preview window could not be focused.')
+    } finally {
+      setPreviewWindowPendingPath((current) => current === remotePath ? '' : current)
+    }
+  }
+
   function toggleVimMode(event) {
     const enabled = event.target.checked
     setVimMode(enabled)
@@ -315,7 +388,17 @@ export default function ExplorerApp({ api = defaultApi }) {
   const canGoBack = historyVersion >= 0 && historyIndexRef.current > 0
   const canGoForward = historyIndexRef.current >= 0 && historyIndexRef.current < historyRef.current.length - 1
   const currentFolderIsFavorite = favoritePaths.includes(directory.path)
-  const sourceEditorVisible = preview?.kind === 'text' || (previewMode === 'source' && ['markdown', 'browser'].includes(preview?.kind))
+  const previewOpenInWindow = Boolean(preview?.path && previewWindowPaths.has(preview.path))
+  const previewWindowPending = previewWindowPendingPath === preview?.path
+  const sourceEditorVisible = !previewOpenInWindow && (preview?.kind === 'text' || (previewMode === 'source' && ['markdown', 'browser'].includes(preview?.kind)))
+
+  useEffect(() => {
+    const wasOpen = previewWindowOpenRef.current
+    previewWindowOpenRef.current = previewOpenInWindow
+    if (!document.hasFocus()) return
+    if (!wasOpen && previewOpenInWindow) previewFocusButtonRef.current?.focus()
+    if (wasOpen && !previewOpenInWindow) previewPopoutButtonRef.current?.focus()
+  }, [previewOpenInWindow])
 
   return (
     <div className="explorer-shell">
@@ -418,43 +501,61 @@ export default function ExplorerApp({ api = defaultApi }) {
           <div className="explorer-preview__header">
             <div><Eye /><strong>{previewTitle(preview)}</strong>{dirty ? <span className="explorer-edited">Edited</span> : null}</div>
             <div className="explorer-preview-actions">
-              {preview?.kind === 'browser' && previewMode === 'rendered' ? <span className="explorer-preview-safety">Scripts disabled</span> : null}
+              {previewOpenInWindow ? <span className="explorer-preview-window-badge"><ExternalLink />In window</span> : null}
+              {!previewOpenInWindow && preview?.kind === 'browser' && previewMode === 'rendered' ? <span className="explorer-preview-safety">Scripts disabled</span> : null}
               {sourceEditorVisible && editablePreview ? <label className="explorer-vim-toggle"><input type="checkbox" checked={vimMode} onChange={toggleVimMode} />Vim controls</label> : null}
-              {preview?.content != null && ['markdown', 'browser'].includes(preview.kind) ? (
+              {!previewOpenInWindow && preview?.content != null && ['markdown', 'browser'].includes(preview.kind) ? (
                 <div className="explorer-preview-toggle">
                   <button type="button" className={previewMode === 'rendered' ? 'is-current' : ''} onClick={() => setPreviewMode('rendered')}>Rendered</button>
                   <button type="button" className={previewMode === 'source' ? 'is-current' : ''} onClick={() => setPreviewMode('source')}>Source</button>
                 </div>
               ) : null}
-              {editablePreview ? <button type="button" className="explorer-save" aria-label="Save" title="Save (Command/Ctrl+S or :w in Vim mode)" disabled={!dirty || saving} onClick={() => saveCurrentFile()}>{saving ? <LoaderCircle className="spin" /> : <Save />}<span>{saving ? 'Saving' : 'Save'}</span></button> : null}
+              {!previewOpenInWindow && preview && preview.kind !== 'unsupported' ? (
+                <button
+                  type="button"
+                  ref={previewPopoutButtonRef}
+                  className="explorer-preview-popout"
+                  aria-label={`Open ${preview.name} preview in new window`}
+                  title={dirty ? 'Save this file before opening its preview in a new window' : 'Open preview in new window'}
+                  disabled={dirty || previewWindowPending}
+                  onClick={openPreviewWindow}
+                ><ExternalLink /></button>
+              ) : null}
+              {!previewOpenInWindow && editablePreview ? <button type="button" className="explorer-save" aria-label="Save" title="Save (Command/Ctrl+S or :w in Vim mode)" disabled={!dirty || saving} onClick={() => saveCurrentFile()}>{saving ? <LoaderCircle className="spin" /> : <Save />}<span>{saving ? 'Saving' : 'Save'}</span></button> : null}
             </div>
           </div>
           {previewLoading ? <div className="explorer-preview-empty"><LoaderCircle className="spin" /> Loading preview…</div> : null}
           {!previewLoading && !selectedEntry ? <div className="explorer-preview-empty"><File /><span>Select one file to preview it.</span></div> : null}
           {!previewLoading && selectedEntry?.kind === 'directory' ? <div className="explorer-preview-empty"><Folder /><strong>{selectedEntry.name}</strong><span>Double-click to open this folder.</span></div> : null}
-          {!previewLoading && preview ? (
-            <div className="explorer-preview__body">
-              {preview.truncated ? <div className="explorer-preview-note">Preview limited to the first 2 MB. Download for the full file.</div> : null}
-              {previewMode === 'source' && preview.content != null && ['markdown', 'browser'].includes(preview.kind) ? <MonacoPreview content={draftContent} language={editorLanguage(preview.name)} label={`${preview.name} source`} modelKey={preview.path} vimMode={vimMode} onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }} onSave={saveCurrentFile} /> : null}
-              {previewMode === 'rendered' && preview.kind === 'markdown' ? (
-                <article className="explorer-markdown">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    urlTransform={(url) => resolveRemoteReference(preview.path, url)}
-                    components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}
-                  >{draftContent}</ReactMarkdown>
-                </article>
-              ) : null}
-              {previewMode === 'rendered' && preview.kind === 'browser' ? <iframe key={preview.revision} title={`${preview.name} browser preview`} src={remoteContentURL(preview.path)} sandbox="allow-forms" /> : null}
-              {previewMode === 'rendered' && preview.kind === 'image' ? <div className="explorer-image"><img src={remoteContentURL(preview.path)} alt={preview.name} /></div> : null}
-              {previewMode === 'rendered' && preview.kind === 'video' ? (
-                <div className="explorer-video">
-                  <video aria-label={`${preview.name} video preview`} controls playsInline preload="metadata" src={remoteContentURL(preview.path)} />
-                </div>
-              ) : null}
-              {previewMode === 'rendered' && preview.kind === 'unsupported' ? <div className="explorer-preview-empty"><File /><strong>No preview available</strong><span>{formatFileSize(preview.size)} · Download to open locally.</span></div> : null}
-              {preview.kind === 'text' ? <MonacoPreview content={draftContent} language={editorLanguage(preview.name)} label={`${preview.name} source`} modelKey={preview.path} vimMode={vimMode} onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }} onSave={saveCurrentFile} /> : null}
+          {!previewLoading && previewOpenInWindow ? (
+            <div className="explorer-preview-detached">
+              <div className="explorer-preview-detached__status" role="status" aria-live="polite">
+                <ExternalLink aria-hidden="true" />
+                <strong>Preview open in window</strong>
+                <span>{preview.name} is showing in its own window. Close that window to bring the preview back here.</span>
+              </div>
+              <button
+                type="button"
+                ref={previewFocusButtonRef}
+                aria-label={`Focus preview window for ${preview.name}`}
+                title="Bring the preview window to the front"
+                disabled={previewWindowPending}
+                onClick={focusPreviewWindow}
+              >
+                {previewWindowPending ? <LoaderCircle className="spin" aria-hidden="true" /> : <ExternalLink aria-hidden="true" />}
+                {previewWindowPending ? 'Focusing…' : 'Focus preview window'}
+              </button>
             </div>
+          ) : null}
+          {!previewLoading && preview && !previewOpenInWindow ? (
+            <PreviewContent
+              content={draftContent}
+              mode={previewMode}
+              preview={preview}
+              vimMode={vimMode}
+              onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }}
+              onSave={saveCurrentFile}
+            />
           ) : null}
         </aside>
       </div>

@@ -12,13 +12,33 @@ import (
 
 var ErrManagerClosed = errors.New("the companion process manager is shutting down")
 
+type Process interface {
+	Done() <-chan struct{}
+	Signal(os.Signal) error
+}
+
 type managedProcess struct {
 	done   <-chan struct{}
 	signal func(os.Signal) error
 	kill   func() error
 }
 
-type processStarter func(string) (managedProcess, error)
+type trackedProcess struct {
+	process managedProcess
+}
+
+func (p trackedProcess) Done() <-chan struct{} {
+	return p.process.done
+}
+
+func (p trackedProcess) Signal(signal os.Signal) error {
+	if p.process.signal == nil {
+		return fmt.Errorf("companion process signal is unavailable")
+	}
+	return p.process.signal(signal)
+}
+
+type processStarter func([]string) (managedProcess, error)
 
 type Manager struct {
 	mu      sync.Mutex
@@ -30,8 +50,8 @@ type Manager struct {
 }
 
 func NewManager(argument, action string) *Manager {
-	return newManagerWithStart(action, func(serverID string) (managedProcess, error) {
-		return startProcess(argument, action, serverID)
+	return newManagerWithStart(action, func(arguments []string) (managedProcess, error) {
+		return startProcess(argument, action, arguments)
 	})
 }
 
@@ -54,32 +74,64 @@ func IDFromArgs(args []string, argument string) (string, bool) {
 }
 
 func Launch(argument, action, serverID string) error {
-	_, err := startProcess(argument, action, serverID)
-	return err
-}
-
-func (m *Manager) Launch(serverID string) error {
-	if m == nil {
-		return ErrManagerClosed
-	}
 	serverID = strings.TrimSpace(serverID)
 	if serverID == "" {
 		return fmt.Errorf("server id is required")
 	}
+	_, err := startProcess(argument, action, []string{serverID})
+	return err
+}
+
+func (m *Manager) Launch(serverID string) error {
+	serverID = strings.TrimSpace(serverID)
+	if serverID == "" {
+		return fmt.Errorf("server id is required")
+	}
+	_, err := m.launch([]string{serverID})
+	return err
+}
+
+// LaunchArgsTracked starts a managed child process and returns a signal that
+// closes when that exact process exits.
+func (m *Manager) LaunchArgsTracked(arguments ...string) (Process, error) {
+	arguments, err := validateArguments(arguments)
+	if err != nil {
+		return nil, err
+	}
+	return m.launch(arguments)
+}
+
+func validateArguments(arguments []string) ([]string, error) {
+	if len(arguments) == 0 {
+		return nil, fmt.Errorf("companion process arguments are required")
+	}
+	normalized := append([]string(nil), arguments...)
+	for _, argument := range normalized {
+		if strings.TrimSpace(argument) == "" {
+			return nil, fmt.Errorf("companion process arguments cannot be blank")
+		}
+	}
+	return normalized, nil
+}
+
+func (m *Manager) launch(arguments []string) (Process, error) {
+	if m == nil {
+		return nil, ErrManagerClosed
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closing {
-		return ErrManagerClosed
+		return nil, ErrManagerClosed
 	}
-	process, err := m.start(serverID)
+	process, err := m.start(arguments)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	m.nextID++
 	processID := m.nextID
 	m.running[processID] = process
 	go m.removeWhenDone(processID, process.done)
-	return nil
+	return trackedProcess{process: process}, nil
 }
 
 func (m *Manager) removeWhenDone(processID uint64, done <-chan struct{}) {
@@ -148,16 +200,17 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	}
 }
 
-func startProcess(argument, action, serverID string) (managedProcess, error) {
-	serverID = strings.TrimSpace(serverID)
-	if serverID == "" {
-		return managedProcess{}, fmt.Errorf("server id is required")
+func startProcess(argument, action string, arguments []string) (managedProcess, error) {
+	arguments, err := validateArguments(arguments)
+	if err != nil {
+		return managedProcess{}, err
 	}
 	executable, err := os.Executable()
 	if err != nil {
 		return managedProcess{}, fmt.Errorf("locate SSH Man executable: %w", err)
 	}
-	command := exec.Command(executable, argument, serverID)
+	commandArguments := append([]string{argument}, arguments...)
+	command := exec.Command(executable, commandArguments...)
 	if err := command.Start(); err != nil {
 		return managedProcess{}, fmt.Errorf("open %s: %w", action, err)
 	}

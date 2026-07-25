@@ -5,9 +5,20 @@ function bindings() {
   return window.go?.bindings?.ExplorerBindings || null
 }
 
+function previewLauncherBindings() {
+  if (typeof window === 'undefined') return null
+  return window.go?.bindings?.PreviewLauncherBindings || null
+}
+
 function requireBindings() {
   const value = bindings()
   if (!value) throw new Error('The remote explorer runtime is unavailable.')
+  return value
+}
+
+function requirePreviewLauncherBindings() {
+  const value = previewLauncherBindings()
+  if (!value) throw new Error('The preview window launcher is unavailable.')
   return value
 }
 
@@ -37,6 +48,25 @@ export async function saveFile(path, content, expectedRevision) {
 
 export async function download(paths) {
   return requireBindings().Download(paths)
+}
+
+export async function openPreview(path) {
+  return requirePreviewLauncherBindings().Open(path)
+}
+
+export async function focusPreview(path) {
+  return requirePreviewLauncherBindings().Focus(path)
+}
+
+export async function previewWindowState(path) {
+  return requirePreviewLauncherBindings().State(path)
+}
+
+export function subscribePreviewWindowState(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('preview-window:state', (state) => callback(state))
+  }
+  return () => {}
 }
 
 export async function close() {
