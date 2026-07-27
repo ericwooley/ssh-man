@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import ExplorerApp from './ExplorerApp'
@@ -46,6 +46,11 @@ function fakeApi() {
       size: content.length,
       revision: 'revision-2',
     })),
+    createFolder: vi.fn(async (directoryPath, name) => `${directoryPath}/${name}`),
+    rename: vi.fn(async (remotePath, name) => `${remotePath.slice(0, remotePath.lastIndexOf('/'))}/${name}`),
+    copy: vi.fn(async (paths, destinationDirectory) => paths.map((remotePath) => `${destinationDirectory}/${remotePath.split('/').at(-1)} copy`)),
+    move: vi.fn(async (paths, destinationDirectory) => paths.map((remotePath) => `${destinationDirectory}/${remotePath.split('/').at(-1)}`)),
+    deleteItems: vi.fn(async () => undefined),
     download: vi.fn(async () => ['/Users/eric/Downloads/README.md']),
     openPreview: vi.fn(async (remotePath) => ({ remotePath, open: true })),
     focusPreview: vi.fn(async (remotePath) => ({ remotePath, open: true })),
@@ -158,6 +163,143 @@ describe('server explorer window', () => {
 
     await waitFor(() => expect(api.download).toHaveBeenCalledWith(['/home/deploy/README.md']))
     expect(await screen.findByText(/Downloaded 1 item/)).toBeTruthy()
+  })
+
+  test('copies and pastes remote files from the right-click menu', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+
+    const readme = await screen.findByRole('option', { name: /README\.md/ })
+    fireEvent.contextMenu(readme, { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Copy' }))
+
+    await user.dblClick(screen.getByRole('option', { name: /site/ }))
+    const emptyState = await screen.findByText('This folder is empty')
+    fireEvent.contextMenu(emptyState, { clientX: 60, clientY: 70 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Paste Item' }))
+
+    await waitFor(() => expect(api.copy).toHaveBeenCalledWith(['/home/deploy/README.md'], '/home/deploy/site'))
+    expect(await screen.findByText(/Pasted 1 item into site/)).toBeTruthy()
+  })
+
+  test('renames and permanently deletes a file from its right-click menu', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+
+    const readme = await screen.findByRole('option', { name: /README\.md/ })
+    fireEvent.contextMenu(readme, { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+
+    const nameInput = await screen.findByRole('textbox', { name: 'Rename README.md' })
+    await user.clear(nameInput)
+    await user.type(nameInput, 'NOTES.md{Enter}')
+    await waitFor(() => expect(api.rename).toHaveBeenCalledWith('/home/deploy/README.md', 'NOTES.md'))
+
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /README\.md/ }), { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete Permanently…' }))
+    expect(await screen.findByRole('heading', { name: 'Delete README.md permanently?' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Delete permanently' }))
+
+    await waitFor(() => expect(api.deleteItems).toHaveBeenCalledWith(['/home/deploy/README.md']))
+  })
+
+  test('creates a folder inline from the background context menu', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<ExplorerApp api={api} />)
+
+    const list = await screen.findByRole('listbox', { name: 'Files in /home/deploy' })
+    fireEvent.contextMenu(list, { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'New Folder' }))
+
+    const nameInput = await screen.findByRole('textbox', { name: 'New folder name' })
+    await user.clear(nameInput)
+    await user.type(nameInput, 'releases{Enter}')
+
+    await waitFor(() => expect(api.createFolder).toHaveBeenCalledWith('/home/deploy', 'releases'))
+  })
+
+  test('refreshes the folder after a batch duplicate partially fails', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    api.copy.mockRejectedValueOnce(new Error('Remote copy stopped.'))
+    render(<ExplorerApp api={api} />)
+
+    const readme = await screen.findByRole('option', { name: /README\.md/ })
+    const site = screen.getByRole('option', { name: /site/ })
+    await user.click(readme)
+    fireEvent.click(site, { ctrlKey: true })
+    fireEvent.contextMenu(readme, { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Duplicate 2 Items' }))
+
+    await waitFor(() => expect(api.listDirectory).toHaveBeenCalledTimes(2))
+    expect((await screen.findByRole('alert')).textContent).toContain('Remote copy stopped.')
+  })
+
+  test('keeps folder navigation disabled while a file operation is pending', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    let finishCopy
+    api.copy.mockImplementationOnce(() => new Promise((resolve) => {
+      finishCopy = resolve
+    }))
+    render(<ExplorerApp api={api} />)
+
+    const readme = await screen.findByRole('option', { name: /README\.md/ })
+    const site = screen.getByRole('option', { name: /site/ })
+    fireEvent.contextMenu(readme, { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Duplicate' }))
+    await waitFor(() => expect(api.copy).toHaveBeenCalledTimes(1))
+
+    expect(screen.getByRole('button', { name: 'Up one folder' }).disabled).toBe(true)
+    expect(screen.getByRole('textbox', { name: 'Remote path' }).disabled).toBe(true)
+    await user.dblClick(site)
+    expect(api.listDirectory).not.toHaveBeenCalledWith('/home/deploy/site')
+
+    act(() => finishCopy(['/home/deploy/README copy.md']))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Up one folder' }).disabled).toBe(false))
+  })
+
+  test('refreshes after a failed cut-paste and clears the stale cut clipboard', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    api.move.mockRejectedValueOnce(new Error('Remote move stopped.'))
+    render(<ExplorerApp api={api} />)
+
+    const readme = await screen.findByRole('option', { name: /README\.md/ })
+    fireEvent.contextMenu(readme, { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Cut' }))
+    await user.dblClick(screen.getByRole('option', { name: /site/ }))
+
+    const emptyState = await screen.findByText('This folder is empty')
+    fireEvent.contextMenu(emptyState, { clientX: 60, clientY: 70 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Paste Item' }))
+
+    await waitFor(() => expect(api.listDirectory).toHaveBeenCalledTimes(3))
+    expect((await screen.findByRole('alert')).textContent).toContain('Remote move stopped.')
+    fireEvent.contextMenu(emptyState, { clientX: 60, clientY: 70 })
+    expect((await screen.findByRole('menuitem', { name: 'Paste' })).disabled).toBe(true)
+  })
+
+  test('refreshes and closes confirmation after a failed batch delete', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    api.deleteItems.mockRejectedValueOnce(new Error('Remote delete stopped.'))
+    render(<ExplorerApp api={api} />)
+
+    const readme = await screen.findByRole('option', { name: /README\.md/ })
+    const site = screen.getByRole('option', { name: /site/ })
+    await user.click(readme)
+    fireEvent.click(site, { ctrlKey: true })
+    fireEvent.contextMenu(readme, { clientX: 40, clientY: 50 })
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete 2 Items Permanently…' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete permanently' }))
+
+    await waitFor(() => expect(api.listDirectory).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect((await screen.findByRole('alert')).textContent).toContain('Remote delete stopped.')
   })
 
   test('edits and saves a remote file from Monaco', async () => {

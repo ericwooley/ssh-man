@@ -3921,6 +3921,7 @@ kbd {
 
 .explorer-row {
   position: relative;
+  cursor: default;
   width: 100%;
   min-width: 410px;
   height: 35px;
@@ -3940,6 +3941,15 @@ kbd {
 .explorer-row.is-selected {
   background: rgba(83, 128, 237, 0.32);
   color: #f4f7fd;
+}
+
+.explorer-row.is-cut {
+  opacity: 0.48;
+}
+
+.explorer-row:focus-visible {
+  outline: 1px solid rgba(134, 169, 255, 0.75);
+  outline-offset: -1px;
 }
 
 .explorer-file-icon {
@@ -3969,6 +3979,109 @@ kbd {
   font-weight: 560;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.explorer-rename-input {
+  width: 100%;
+  min-width: 0;
+  height: 25px;
+  padding: 1px 5px;
+  border: 1px solid #7b9ef2;
+  border-radius: 4px;
+  outline: 0;
+  background: #111a27;
+  color: #f4f7fd;
+  font: inherit;
+  user-select: text;
+}
+
+.explorer-context-menu {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  width: 232px;
+  max-height: calc(100vh - 16px);
+  padding: 5px;
+  overflow: auto;
+  border: 1px solid rgba(164, 182, 209, 0.28);
+  border-radius: 10px;
+  background: rgba(24, 33, 46, 0.97);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(24px);
+}
+
+.explorer-context-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #dce5f4;
+  font-size: 11px;
+  text-align: left;
+}
+
+.explorer-context-menu button > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.explorer-context-menu button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: #96a6bc;
+}
+
+.explorer-context-menu button:hover:not(:disabled),
+.explorer-context-menu button:focus-visible {
+  outline: 0;
+  background: #5278d9;
+  color: white;
+}
+
+.explorer-context-menu button:hover:not(:disabled) svg,
+.explorer-context-menu button:focus-visible svg {
+  color: currentColor;
+}
+
+.explorer-context-menu button.is-danger {
+  color: #ffaaa7;
+}
+
+.explorer-context-menu button.is-danger:hover:not(:disabled),
+.explorer-context-menu button.is-danger:focus-visible {
+  background: #b74b50;
+  color: white;
+}
+
+.explorer-context-menu button:disabled {
+  opacity: 0.35;
+}
+
+.explorer-context-menu kbd {
+  flex: 0 0 auto;
+  color: #7f8da1;
+  font-family: inherit;
+  font-size: 9px;
+}
+
+.explorer-context-menu button:hover:not(:disabled) kbd,
+.explorer-context-menu button:focus-visible kbd {
+  color: currentColor;
+}
+
+.explorer-context-menu__separator {
+  height: 1px;
+  margin: 4px 5px;
+  background: rgba(164, 182, 209, 0.16);
 }
 
 .explorer-file-name svg {

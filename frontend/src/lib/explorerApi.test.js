@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  copy,
+  createFolder,
+  deleteItems,
   focusPreview,
+  move,
   openPreview,
   previewWindowState,
+  rename,
   subscribePreviewWindowState,
 } from './explorerApi'
 
@@ -51,5 +56,30 @@ describe('preview window lifecycle', () => {
 
     expect(listener).toHaveBeenCalledWith({ remotePath: '/tmp/report.pdf', open: false })
     expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('remote file operations', () => {
+  test('forwards Finder-style file mutations to the explorer binding', async () => {
+    const ExplorerBindings = {
+      CreateFolder: vi.fn(async () => '/tmp/releases'),
+      Rename: vi.fn(async () => '/tmp/notes.md'),
+      Copy: vi.fn(async () => ['/tmp/archive/report.md']),
+      Move: vi.fn(async () => ['/tmp/archive/report.md']),
+      Delete: vi.fn(async () => undefined),
+    }
+    window.go = { bindings: { ExplorerBindings } }
+
+    await expect(createFolder('/tmp', 'releases')).resolves.toBe('/tmp/releases')
+    await expect(rename('/tmp/report.md', 'notes.md')).resolves.toBe('/tmp/notes.md')
+    await expect(copy(['/tmp/report.md'], '/tmp/archive')).resolves.toEqual(['/tmp/archive/report.md'])
+    await expect(move(['/tmp/report.md'], '/tmp/archive')).resolves.toEqual(['/tmp/archive/report.md'])
+    await expect(deleteItems(['/tmp/report.md'])).resolves.toBeUndefined()
+
+    expect(ExplorerBindings.CreateFolder).toHaveBeenCalledWith('/tmp', 'releases')
+    expect(ExplorerBindings.Rename).toHaveBeenCalledWith('/tmp/report.md', 'notes.md')
+    expect(ExplorerBindings.Copy).toHaveBeenCalledWith(['/tmp/report.md'], '/tmp/archive')
+    expect(ExplorerBindings.Move).toHaveBeenCalledWith(['/tmp/report.md'], '/tmp/archive')
+    expect(ExplorerBindings.Delete).toHaveBeenCalledWith(['/tmp/report.md'])
   })
 })

@@ -8,13 +8,23 @@ export function Close():Promise<void>;
 
 export function Connect(arg1:string):Promise<remote.ConnectResult>;
 
+export function Copy(arg1:Array<string>,arg2:string):Promise<Array<string>>;
+
+export function CreateFolder(arg1:string,arg2:string):Promise<string>;
+
+export function Delete(arg1:Array<string>):Promise<void>;
+
 export function Download(arg1:Array<string>):Promise<Array<string>>;
 
 export function InitialState():Promise<bindings.ExplorerInitialState>;
 
 export function ListDirectory(arg1:string):Promise<remote.Directory>;
 
+export function Move(arg1:Array<string>,arg2:string):Promise<Array<string>>;
+
 export function PreviewFile(arg1:string):Promise<remote.Preview>;
+
+export function Rename(arg1:string,arg2:string):Promise<string>;
 
 export function SaveFile(arg1:string,arg2:string,arg3:string):Promise<remote.Preview>;
 

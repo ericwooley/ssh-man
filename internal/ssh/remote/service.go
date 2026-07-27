@@ -31,7 +31,8 @@ var (
 	ErrRemoteFileChanged  = errors.New("the remote file changed after it was opened")
 	ErrRemoteFileTooLarge = errors.New("remote files larger than 2 MB cannot be edited")
 	ErrUnsupportedEdit    = errors.New("this remote file cannot be edited")
-	ErrUnsupportedSymlink = errors.New("downloading symbolic links is not supported")
+	ErrUnsupportedSymlink = errors.New("symbolic links are not supported for this operation")
+	ErrProtectedPath      = errors.New("this remote path cannot be changed")
 )
 
 type ReadSeekCloser interface {
@@ -47,8 +48,10 @@ type FileSystem interface {
 	Open(string) (ReadSeekCloser, error)
 	OpenFile(string, int, os.FileMode) (io.WriteCloser, error)
 	Chmod(string, os.FileMode) error
+	Mkdir(string) error
 	PosixRename(string, string) error
 	Remove(string) error
+	RemoveDirectory(string) error
 	Close() error
 }
 
@@ -56,7 +59,7 @@ type Dialer func(context.Context, serverdomain.Server, string) (FileSystem, io.C
 
 type Service struct {
 	mu            sync.RWMutex
-	saveMu        sync.Mutex
+	mutationMu    sync.Mutex
 	server        serverdomain.Server
 	dial          Dialer
 	temporaryPath func(string) (string, error)
@@ -220,8 +223,8 @@ func (s *Service) Save(remotePath, content, expectedRevision string) (Preview, e
 		return Preview{}, ErrUnsupportedEdit
 	}
 
-	s.saveMu.Lock()
-	defer s.saveMu.Unlock()
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
 
 	info, currentContent, err := editableRemoteFile(remoteFS, remotePath)
 	if err != nil {
@@ -263,6 +266,176 @@ func (s *Service) Save(remotePath, content, expectedRevision string) (Preview, e
 	}
 	keepTemporary = false
 	return s.Preview(remotePath)
+}
+
+func (s *Service) CreateFolder(directoryPath, name string) (string, error) {
+	remoteFS, home, err := s.connectedFS()
+	if err != nil {
+		return "", err
+	}
+	if err := validateRemoteEntryName(strings.TrimSpace(name)); err != nil {
+		return "", err
+	}
+	directoryPath = resolveRemotePath(home, directoryPath)
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
+	if err := requireRemoteDirectory(remoteFS, directoryPath); err != nil {
+		return "", err
+	}
+	target := path.Join(directoryPath, strings.TrimSpace(name))
+	if _, err := remoteFS.Lstat(target); err == nil {
+		return "", fmt.Errorf("%q already exists", target)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect %q: %w", target, err)
+	}
+	if err := remoteFS.Mkdir(target); err != nil {
+		return "", fmt.Errorf("create folder %q: %w", target, err)
+	}
+	if err := remoteFS.Chmod(target, 0o755); err != nil {
+		_ = remoteFS.RemoveDirectory(target)
+		return "", fmt.Errorf("set permissions on folder %q: %w", target, err)
+	}
+	return target, nil
+}
+
+func (s *Service) Rename(remotePath, name string) (string, error) {
+	remoteFS, home, err := s.connectedFS()
+	if err != nil {
+		return "", err
+	}
+	name = strings.TrimSpace(name)
+	if err := validateRemoteEntryName(name); err != nil {
+		return "", err
+	}
+	remotePath = resolveRemotePath(home, remotePath)
+	if err := protectRemotePath(home, remotePath); err != nil {
+		return "", err
+	}
+	target := path.Join(path.Dir(remotePath), name)
+	if target == remotePath {
+		return remotePath, nil
+	}
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
+	if _, err := remoteFS.Lstat(remotePath); err != nil {
+		return "", fmt.Errorf("inspect %q: %w", remotePath, err)
+	}
+	if _, err := remoteFS.Lstat(target); err == nil {
+		return "", fmt.Errorf("%q already exists", target)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect %q: %w", target, err)
+	}
+	if err := remoteFS.PosixRename(remotePath, target); err != nil {
+		return "", fmt.Errorf("rename %q: %w", remotePath, err)
+	}
+	return target, nil
+}
+
+func (s *Service) Copy(remotePaths []string, destinationDirectory string) ([]string, error) {
+	remoteFS, home, err := s.connectedFS()
+	if err != nil {
+		return nil, err
+	}
+	destinationDirectory = resolveRemotePath(home, destinationDirectory)
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
+	if err := requireRemoteDirectory(remoteFS, destinationDirectory); err != nil {
+		return nil, err
+	}
+	sources := normalizedRemotePaths(home, remotePaths)
+	results := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if err := protectRemotePath(home, source); err != nil {
+			return results, err
+		}
+		info, err := remoteFS.Lstat(source)
+		if err != nil {
+			return results, fmt.Errorf("inspect %q: %w", source, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return results, fmt.Errorf("%q: %w", source, ErrUnsupportedSymlink)
+		}
+		if info.IsDir() && remotePathContains(source, destinationDirectory) {
+			return results, fmt.Errorf("cannot copy %q into itself", source)
+		}
+		target, err := availableRemoteTarget(remoteFS, destinationDirectory, path.Base(source))
+		if err != nil {
+			return results, err
+		}
+		if err := copyRemoteNode(remoteFS, source, target, info); err != nil {
+			return results, err
+		}
+		results = append(results, target)
+	}
+	return results, nil
+}
+
+func (s *Service) Move(remotePaths []string, destinationDirectory string) ([]string, error) {
+	remoteFS, home, err := s.connectedFS()
+	if err != nil {
+		return nil, err
+	}
+	destinationDirectory = resolveRemotePath(home, destinationDirectory)
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
+	if err := requireRemoteDirectory(remoteFS, destinationDirectory); err != nil {
+		return nil, err
+	}
+	sources := normalizedRemotePaths(home, remotePaths)
+	results := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if err := protectRemotePath(home, source); err != nil {
+			return results, err
+		}
+		info, err := remoteFS.Lstat(source)
+		if err != nil {
+			return results, fmt.Errorf("inspect %q: %w", source, err)
+		}
+		if info.IsDir() && remotePathContains(source, destinationDirectory) {
+			return results, fmt.Errorf("cannot move %q into itself", source)
+		}
+		if path.Dir(source) == destinationDirectory {
+			results = append(results, source)
+			continue
+		}
+		target, err := availableRemoteTarget(remoteFS, destinationDirectory, path.Base(source))
+		if err != nil {
+			return results, err
+		}
+		if err := remoteFS.PosixRename(source, target); err != nil {
+			return results, fmt.Errorf("move %q: %w", source, err)
+		}
+		results = append(results, target)
+	}
+	return results, nil
+}
+
+func (s *Service) Delete(remotePaths []string) error {
+	remoteFS, home, err := s.connectedFS()
+	if err != nil {
+		return err
+	}
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
+	for _, remotePath := range normalizedRemotePaths(home, remotePaths) {
+		if err := protectRemotePath(home, remotePath); err != nil {
+			return err
+		}
+		if err := removeRemoteNode(remoteFS, remotePath); err != nil {
+			return fmt.Errorf("delete %q: %w", remotePath, err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) Open(remotePath string) (ReadSeekCloser, os.FileInfo, error) {
@@ -362,6 +535,10 @@ func (s *sftpFileSystem) OpenFile(remotePath string, flags int, _ os.FileMode) (
 	return s.Client.OpenFile(remotePath, flags)
 }
 
+func (s *sftpFileSystem) RemoveDirectory(remotePath string) error {
+	return s.Client.RemoveDirectory(remotePath)
+}
+
 func resolveRemotePath(home, value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" || value == "~" {
@@ -453,6 +630,177 @@ func editableRemoteFile(remoteFS FileSystem, remotePath string) (os.FileInfo, []
 func contentRevision(content []byte) string {
 	sum := sha256.Sum256(content)
 	return hex.EncodeToString(sum[:])
+}
+
+func requireRemoteDirectory(remoteFS FileSystem, remotePath string) error {
+	info, err := remoteFS.Lstat(remotePath)
+	if err != nil {
+		return fmt.Errorf("inspect destination %q: %w", remotePath, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%q is not a folder", remotePath)
+	}
+	return nil
+}
+
+func protectRemotePath(home, remotePath string) error {
+	if remotePath == "/" || remotePath == cleanRemotePath(home) {
+		return fmt.Errorf("%q: %w", remotePath, ErrProtectedPath)
+	}
+	return nil
+}
+
+func normalizedRemotePaths(home string, values []string) []string {
+	paths := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		remotePath := resolveRemotePath(home, value)
+		if _, exists := seen[remotePath]; exists {
+			continue
+		}
+		seen[remotePath] = struct{}{}
+		paths = append(paths, remotePath)
+	}
+	sort.SliceStable(paths, func(left, right int) bool {
+		if len(paths[left]) == len(paths[right]) {
+			return paths[left] < paths[right]
+		}
+		return len(paths[left]) < len(paths[right])
+	})
+	filtered := make([]string, 0, len(paths))
+	for _, candidate := range paths {
+		nested := false
+		for _, parent := range filtered {
+			if remotePathContains(parent, candidate) {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			filtered = append(filtered, candidate)
+		}
+	}
+	return filtered
+}
+
+func remotePathContains(parent, candidate string) bool {
+	parent = cleanRemotePath(parent)
+	candidate = cleanRemotePath(candidate)
+	if parent == "/" {
+		return true
+	}
+	return candidate == parent || strings.HasPrefix(candidate, parent+"/")
+}
+
+func availableRemoteTarget(remoteFS FileSystem, directory, name string) (string, error) {
+	target := path.Join(directory, name)
+	if _, err := remoteFS.Lstat(target); os.IsNotExist(err) {
+		return target, nil
+	} else if err != nil {
+		return "", fmt.Errorf("inspect %q: %w", target, err)
+	}
+
+	extension := path.Ext(name)
+	stem := strings.TrimSuffix(name, extension)
+	if stem == "" {
+		stem = name
+		extension = ""
+	}
+	for suffix := 1; ; suffix++ {
+		copySuffix := " copy"
+		if suffix > 1 {
+			copySuffix = fmt.Sprintf(" copy %d", suffix)
+		}
+		candidate := path.Join(directory, stem+copySuffix+extension)
+		if _, err := remoteFS.Lstat(candidate); os.IsNotExist(err) {
+			return candidate, nil
+		} else if err != nil {
+			return "", fmt.Errorf("inspect %q: %w", candidate, err)
+		}
+	}
+}
+
+func copyRemoteNode(remoteFS FileSystem, source, target string, info os.FileInfo) (returnErr error) {
+	if info.IsDir() {
+		if err := remoteFS.Mkdir(target); err != nil {
+			return fmt.Errorf("create folder %q: %w", target, err)
+		}
+		defer func() {
+			if returnErr != nil {
+				_ = removeRemoteNode(remoteFS, target)
+			}
+		}()
+		if err := remoteFS.Chmod(target, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("preserve permissions on %q: %w", target, err)
+		}
+		items, err := remoteFS.ReadDir(source)
+		if err != nil {
+			return fmt.Errorf("list %q: %w", source, err)
+		}
+		for _, item := range items {
+			if err := validateRemoteEntryName(item.Name()); err != nil {
+				return err
+			}
+			if item.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("%q: %w", path.Join(source, item.Name()), ErrUnsupportedSymlink)
+			}
+			if err := copyRemoteNode(remoteFS, path.Join(source, item.Name()), path.Join(target, item.Name()), item); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	sourceFile, err := remoteFS.Open(source)
+	if err != nil {
+		return fmt.Errorf("open %q: %w", source, err)
+	}
+	defer sourceFile.Close()
+	targetFile, err := remoteFS.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return fmt.Errorf("create %q: %w", target, err)
+	}
+	keepTarget := false
+	defer func() {
+		if !keepTarget {
+			_ = remoteFS.Remove(target)
+		}
+	}()
+	if _, err := io.Copy(targetFile, sourceFile); err != nil {
+		_ = targetFile.Close()
+		return fmt.Errorf("copy %q: %w", source, err)
+	}
+	if err := targetFile.Close(); err != nil {
+		return fmt.Errorf("close %q: %w", target, err)
+	}
+	if err := remoteFS.Chmod(target, info.Mode().Perm()); err != nil {
+		return fmt.Errorf("preserve permissions on %q: %w", target, err)
+	}
+	keepTarget = true
+	return nil
+}
+
+func removeRemoteNode(remoteFS FileSystem, remotePath string) error {
+	info, err := remoteFS.Lstat(remotePath)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return remoteFS.Remove(remotePath)
+	}
+	items, err := remoteFS.ReadDir(remotePath)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if err := validateRemoteEntryName(item.Name()); err != nil {
+			return err
+		}
+		if err := removeRemoteNode(remoteFS, path.Join(remotePath, item.Name())); err != nil {
+			return err
+		}
+	}
+	return remoteFS.RemoveDirectory(remotePath)
 }
 
 func temporarySavePath(remotePath string) (string, error) {

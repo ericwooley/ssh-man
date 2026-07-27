@@ -93,8 +93,23 @@ func (f *memoryFS) Chmod(name string, mode os.FileMode) error {
 	if !exists {
 		return os.ErrNotExist
 	}
-	node.mode = mode
+	node.mode = node.mode.Type() | mode.Perm()
 	f.nodes[name] = node
+	return nil
+}
+func (f *memoryFS) Mkdir(name string) error {
+	name = cleanRemotePath(name)
+	if _, exists := f.nodes[name]; exists {
+		return os.ErrExist
+	}
+	if parent, exists := f.nodes[path.Dir(name)]; !exists || !parent.IsDir() {
+		return os.ErrNotExist
+	}
+	f.nodes[name] = memoryNode{
+		name:    path.Base(name),
+		mode:    os.ModeDir | 0o755,
+		modTime: time.Now(),
+	}
 	return nil
 }
 func (f *memoryFS) PosixRename(oldName, newName string) error {
@@ -104,15 +119,42 @@ func (f *memoryFS) PosixRename(oldName, newName string) error {
 	if !exists {
 		return os.ErrNotExist
 	}
+	descendants := map[string]memoryNode{}
+	for nodePath, child := range f.nodes {
+		if strings.HasPrefix(nodePath, oldName+"/") {
+			descendants[newName+strings.TrimPrefix(nodePath, oldName)] = child
+			delete(f.nodes, nodePath)
+		}
+	}
 	delete(f.nodes, oldName)
 	node.name = path.Base(newName)
 	f.nodes[newName] = node
+	for nodePath, child := range descendants {
+		f.nodes[nodePath] = child
+	}
 	return nil
 }
 func (f *memoryFS) Remove(name string) error {
 	name = cleanRemotePath(name)
 	if _, exists := f.nodes[name]; !exists {
 		return os.ErrNotExist
+	}
+	delete(f.nodes, name)
+	return nil
+}
+func (f *memoryFS) RemoveDirectory(name string) error {
+	name = cleanRemotePath(name)
+	node, exists := f.nodes[name]
+	if !exists {
+		return os.ErrNotExist
+	}
+	if !node.IsDir() {
+		return errors.New("not a directory")
+	}
+	for nodePath := range f.nodes {
+		if strings.HasPrefix(nodePath, name+"/") {
+			return errors.New("directory not empty")
+		}
 	}
 	delete(f.nodes, name)
 	return nil
@@ -271,6 +313,131 @@ func TestSaveRejectsAnExternallyChangedRemoteFile(t *testing.T) {
 	}
 	if got := string(remoteFS.nodes["/home/eric/README.md"].content); got != "# Changed elsewhere" {
 		t.Fatalf("remote content = %q, want external edit preserved", got)
+	}
+}
+
+func TestCreateFolderAndRenameRemoteItems(t *testing.T) {
+	service := connectedTestService(t)
+
+	folderPath, err := service.CreateFolder("~", "Release notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if folderPath != "/home/eric/Release notes" {
+		t.Fatalf("CreateFolder() = %q", folderPath)
+	}
+
+	renamedPath, err := service.Rename("/home/eric/README.md", "README-old.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamedPath != "/home/eric/README-old.md" {
+		t.Fatalf("Rename() = %q", renamedPath)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	if _, exists := remoteFS.nodes["/home/eric/README.md"]; exists {
+		t.Fatal("original file still exists after rename")
+	}
+	if got := string(remoteFS.nodes[renamedPath].content); got != "# Hello" {
+		t.Fatalf("renamed content = %q", got)
+	}
+}
+
+func TestCopyCreatesRecursiveCollisionSafeDuplicates(t *testing.T) {
+	service := connectedTestService(t)
+
+	paths, err := service.Copy([]string{
+		"/home/eric/Projects",
+		"/home/eric/README.md",
+	}, "/home/eric")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/home/eric/Projects copy", "/home/eric/README copy.md"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("Copy() = %#v, want %#v", paths, want)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	if got := string(remoteFS.nodes["/home/eric/Projects copy/a"].content); got != "alpha" {
+		t.Fatalf("copied nested content = %q", got)
+	}
+	if got := remoteFS.nodes["/home/eric/README copy.md"].mode.Perm(); got != 0o644 {
+		t.Fatalf("copied permissions = %o", got)
+	}
+}
+
+func TestCopyRejectsSymbolicLinksWithoutCreatingATarget(t *testing.T) {
+	service := connectedTestService(t)
+	remoteFS := service.fs.(*memoryFS)
+	remoteFS.nodes["/home/eric/latest"] = memoryNode{
+		name:    "latest",
+		mode:    os.ModeSymlink | 0o777,
+		modTime: time.Now(),
+	}
+	if _, err := service.CreateFolder("~", "Archive"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := service.Copy([]string{"/home/eric/latest"}, "/home/eric/Archive")
+
+	if !errors.Is(err, ErrUnsupportedSymlink) {
+		t.Fatalf("Copy() error = %v, want ErrUnsupportedSymlink", err)
+	}
+	if _, exists := remoteFS.nodes["/home/eric/Archive/latest"]; exists {
+		t.Fatal("Copy() created a target for an unsupported symbolic link")
+	}
+}
+
+func TestMoveUsesTheDestinationAndPreservesDirectoryContents(t *testing.T) {
+	service := connectedTestService(t)
+	if _, err := service.CreateFolder("~", "Archive"); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := service.Move([]string{"/home/eric/Projects"}, "/home/eric/Archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/home/eric/Archive/Projects"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("Move() = %#v, want %#v", paths, want)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	if _, exists := remoteFS.nodes["/home/eric/Projects"]; exists {
+		t.Fatal("source folder still exists after move")
+	}
+	if got := string(remoteFS.nodes["/home/eric/Archive/Projects/a"].content); got != "alpha" {
+		t.Fatalf("moved nested content = %q", got)
+	}
+}
+
+func TestDeleteRecursivelyRemovesItemsButProtectsRootAndHome(t *testing.T) {
+	service := connectedTestService(t)
+
+	if err := service.Delete([]string{"/home/eric/Projects"}); err != nil {
+		t.Fatal(err)
+	}
+	remoteFS := service.fs.(*memoryFS)
+	for nodePath := range remoteFS.nodes {
+		if strings.HasPrefix(nodePath, "/home/eric/Projects") {
+			t.Fatalf("deleted tree still contains %q", nodePath)
+		}
+	}
+	for _, protected := range []string{"/", "/home/eric"} {
+		if err := service.Delete([]string{protected}); !errors.Is(err, ErrProtectedPath) {
+			t.Fatalf("Delete(%q) error = %v, want ErrProtectedPath", protected, err)
+		}
+	}
+}
+
+func TestCopyAndMoveRejectDestinationsInsideTheSource(t *testing.T) {
+	service := connectedTestService(t)
+
+	if _, err := service.Copy([]string{"/home/eric/Projects"}, "/home/eric/Projects"); err == nil {
+		t.Fatal("Copy() into the source unexpectedly succeeded")
+	}
+	if _, err := service.Move([]string{"/home/eric/Projects"}, "/home/eric/Projects"); err == nil {
+		t.Fatal("Move() into the source unexpectedly succeeded")
 	}
 }
 
