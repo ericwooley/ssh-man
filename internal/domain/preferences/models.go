@@ -81,6 +81,13 @@ type URLRule struct {
 	Command   string        `json:"command,omitempty"`
 }
 
+type URLPortAssignment struct {
+	ID        string `json:"id"`
+	Port      int    `json:"port"`
+	ServerID  string `json:"serverId"`
+	BrowserID string `json:"browserId"`
+}
+
 type UserPreference struct {
 	Theme                           Theme                        `json:"theme"`
 	LastSelectedServerID            string                       `json:"lastSelectedServerId,omitempty"`
@@ -91,6 +98,7 @@ type UserPreference struct {
 	ProxyBrowserID                  string                       `json:"proxyBrowserId,omitempty"`
 	CustomBrowsers                  []CustomBrowser              `json:"customBrowsers"`
 	URLRules                        []URLRule                    `json:"urlRules"`
+	URLPortAssignments              []URLPortAssignment          `json:"urlPortAssignments"`
 	UpdatedAt                       time.Time                    `json:"updatedAt"`
 }
 
@@ -102,6 +110,7 @@ func Default() UserPreference {
 		BrowserAppearances:              map[string]BrowserAppearance{},
 		CustomBrowsers:                  []CustomBrowser{},
 		URLRules:                        []URLRule{},
+		URLPortAssignments:              []URLPortAssignment{},
 		UpdatedAt:                       time.Now().UTC(),
 	}
 }
@@ -162,6 +171,21 @@ func (p UserPreference) Validate() error {
 			return fmt.Errorf("URL rule id %q is duplicated", rule.ID)
 		}
 		ruleIDs[rule.ID] = struct{}{}
+	}
+	assignmentIDs := make(map[string]struct{}, len(p.URLPortAssignments))
+	assignmentPorts := make(map[int]struct{}, len(p.URLPortAssignments))
+	for index, assignment := range p.URLPortAssignments {
+		if err := assignment.Validate(); err != nil {
+			return fmt.Errorf("URL port assignment %d: %w", index+1, err)
+		}
+		if _, exists := assignmentIDs[assignment.ID]; exists {
+			return fmt.Errorf("URL port assignment id %q is duplicated", assignment.ID)
+		}
+		assignmentIDs[assignment.ID] = struct{}{}
+		if _, exists := assignmentPorts[assignment.Port]; exists {
+			return fmt.Errorf("URL port %d is assigned more than once", assignment.Port)
+		}
+		assignmentPorts[assignment.Port] = struct{}{}
 	}
 	return nil
 }
@@ -243,6 +267,28 @@ func (r URLRule) Validate() error {
 		}
 	default:
 		return fmt.Errorf("action must be browser or command")
+	}
+	return nil
+}
+
+func (a URLPortAssignment) Validate() error {
+	if a.ID == "" {
+		return fmt.Errorf("id is required")
+	}
+	if len(a.ID) > maxURLRuleIDBytes {
+		return fmt.Errorf("id must be at most %d bytes", maxURLRuleIDBytes)
+	}
+	if !browserAppearanceKeyPattern.MatchString(a.ID) {
+		return fmt.Errorf("id contains unsupported characters")
+	}
+	if a.Port < 1 || a.Port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	if err := validateBrowserID("server", a.ServerID, true); err != nil {
+		return err
+	}
+	if err := validateBrowserID("browser", a.BrowserID, true); err != nil {
+		return err
 	}
 	return nil
 }

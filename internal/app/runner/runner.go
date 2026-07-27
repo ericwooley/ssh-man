@@ -42,6 +42,8 @@ const (
 	urlRouteChoiceEventName        = "url-routing:choice"
 	preferencesChangedEventName    = "preferences:changed"
 	urlRoutingStartupWait          = 12 * time.Second
+	urlRouteChooserWidth           = 440
+	urlRouteChooserHeight          = 460
 )
 
 type menuBar interface {
@@ -401,6 +403,10 @@ func Run(assets fs.FS) (runErr error) {
 		return showApplication(bar, window)
 	}
 	application.URLRoutingService.SetPresenter(func(request urlroutingdomain.RouteRequest) {
+		if ctx, contextErr := window.Context(); contextErr == nil {
+			wailsruntime.WindowSetSize(ctx, urlRouteChooserWidth, urlRouteChooserHeight)
+			wailsruntime.WindowCenter(ctx)
+		}
 		if err := show(); err != nil {
 			log.Printf("show URL routing chooser: %v", err)
 		}
@@ -423,13 +429,7 @@ func Run(assets fs.FS) (runErr error) {
 	var urlRoutingReadyOnce sync.Once
 	startConfiguredTunnels := func(ctx context.Context) error {
 		defer urlRoutingReadyOnce.Do(func() { close(urlRoutingReady) })
-		startOnLaunchErr := application.SessionService.StartOnLaunch(ctx)
-		status, statusErr := application.DefaultBrowser.Status()
-		if statusErr != nil || !status.IsDefault {
-			return errors.Join(startOnLaunchErr, statusErr)
-		}
-		_, managedErr := application.SessionService.StartManagedSOCKSProxies(ctx)
-		return errors.Join(startOnLaunchErr, managedErr)
+		return application.SessionService.StartOnLaunch(ctx)
 	}
 	shutdownCompanions := func(ctx context.Context) error {
 		return errors.Join(settingsManager.Shutdown(ctx), explorerManager.Shutdown(ctx), commandManager.Shutdown(ctx))

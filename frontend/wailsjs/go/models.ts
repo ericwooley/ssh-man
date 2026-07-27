@@ -419,6 +419,24 @@ export namespace preferences {
 	        this.engine = source["engine"];
 	    }
 	}
+	export class URLPortAssignment {
+	    id: string;
+	    port: number;
+	    serverId: string;
+	    browserId: string;
+
+	    static createFrom(source: any = {}) {
+	        return new URLPortAssignment(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.port = source["port"];
+	        this.serverId = source["serverId"];
+	        this.browserId = source["browserId"];
+	    }
+	}
 	export class URLRule {
 	    id: string;
 	    pattern: string;
@@ -449,6 +467,7 @@ export namespace preferences {
 	    proxyBrowserId?: string;
 	    customBrowsers: CustomBrowser[];
 	    urlRules: URLRule[];
+	    urlPortAssignments: URLPortAssignment[];
 	    // Go type: time
 	    updatedAt: any;
 
@@ -467,6 +486,7 @@ export namespace preferences {
 	        this.proxyBrowserId = source["proxyBrowserId"];
 	        this.customBrowsers = this.convertValues(source["customBrowsers"], CustomBrowser);
 	        this.urlRules = this.convertValues(source["urlRules"], URLRule);
+	        this.urlPortAssignments = this.convertValues(source["urlPortAssignments"], URLPortAssignment);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
 

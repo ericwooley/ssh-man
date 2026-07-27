@@ -21,7 +21,11 @@ import (
 	sessiondomain "ssh-man/internal/domain/session"
 )
 
-const defaultProbeTimeout = 1200 * time.Millisecond
+const (
+	defaultProbeTimeout       = 1200 * time.Millisecond
+	defaultChooserTimeout     = 5 * time.Second
+	defaultChooserTimeoutUnit = time.Millisecond
+)
 
 type PreferenceLoader interface {
 	Load(context.Context) (preferencesdomain.UserPreference, error)
@@ -39,7 +43,14 @@ type RuntimeLister interface {
 	List() []sessiondomain.RuntimeSession
 }
 
-type BrowserOpener interface {
+type BrowserDestination struct {
+	ID            string
+	Name          string
+	SupportsProxy bool
+}
+
+type BrowserRouter interface {
+	ListDestinations(context.Context) ([]BrowserDestination, error)
 	OpenURL(context.Context, string, string) error
 	LaunchThroughSOCKSURL(context.Context, string, string, string) error
 }
@@ -47,23 +58,36 @@ type BrowserOpener interface {
 type ResultKind string
 
 const (
-	ResultOpened          ResultKind = "opened"
-	ResultCommandExecuted ResultKind = "command_executed"
-	ResultNeedsChoice     ResultKind = "needs_choice"
+	ResultNeedsChoice ResultKind = "needs_choice"
+)
+
+type RouteChoiceKind string
+
+const (
+	RouteChoiceBrowser RouteChoiceKind = "browser"
+	RouteChoiceProxy   RouteChoiceKind = "proxy"
+	RouteChoiceCommand RouteChoiceKind = "command"
 )
 
 type RouteChoice struct {
-	ID              string `json:"id"`
-	ServerID        string `json:"serverId"`
-	ServerName      string `json:"serverName"`
-	ConfigurationID string `json:"configurationId"`
-	BrowserID       string `json:"browserId"`
+	ID              string          `json:"id"`
+	Kind            RouteChoiceKind `json:"kind"`
+	Label           string          `json:"label"`
+	Detail          string          `json:"detail"`
+	ServerID        string          `json:"serverId,omitempty"`
+	ServerName      string          `json:"serverName,omitempty"`
+	ConfigurationID string          `json:"configurationId,omitempty"`
+	BrowserID       string          `json:"browserId,omitempty"`
+	BrowserName     string          `json:"browserName,omitempty"`
+	Command         string          `json:"-"`
 }
 
 type RouteRequest struct {
-	ID      string        `json:"id"`
-	URL     string        `json:"url"`
-	Choices []RouteChoice `json:"choices"`
+	ID                  string        `json:"id"`
+	URL                 string        `json:"url"`
+	DefaultChoiceID     string        `json:"defaultChoiceId"`
+	TimeoutMilliseconds int           `json:"timeoutMilliseconds"`
+	Choices             []RouteChoice `json:"choices"`
 }
 
 type Result struct {
@@ -71,12 +95,18 @@ type Result struct {
 	Request *RouteRequest `json:"request,omitempty"`
 }
 
+type reachableServer struct {
+	ServerID        string
+	ServerName      string
+	ConfigurationID string
+}
+
 type Service struct {
 	preferences    PreferenceLoader
 	configurations ConfigurationLister
 	servers        ServerLister
 	runtimes       RuntimeLister
-	browsers       BrowserOpener
+	browsers       BrowserRouter
 	probe          func(context.Context, int, string, int) error
 	runCommand     func(string, string) error
 
@@ -90,7 +120,7 @@ func NewService(
 	configurations ConfigurationLister,
 	servers ServerLister,
 	runtimes RuntimeLister,
-	browsers BrowserOpener,
+	browsers BrowserRouter,
 ) *Service {
 	return &Service{
 		preferences:    preferences,
@@ -118,64 +148,75 @@ func (s *Service) Handle(ctx context.Context, rawURL string) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("load URL routing preferences: %w", err)
 	}
-
-	for _, rule := range preferences.URLRules {
-		matcher, compileErr := regexp.Compile(rule.Pattern)
-		if compileErr != nil {
-			return Result{}, fmt.Errorf("compile URL rule %q: %w", rule.ID, compileErr)
-		}
-		if !matcher.MatchString(rawURL) {
-			continue
-		}
-		switch rule.Action {
-		case preferencesdomain.URLRuleActionBrowser:
-			if err := s.browsers.OpenURL(ctx, rule.BrowserID, rawURL); err != nil {
-				return Result{}, err
-			}
-			return Result{Kind: ResultOpened}, nil
-		case preferencesdomain.URLRuleActionCommand:
-			if err := s.runCommand(rule.Command, rawURL); err != nil {
-				return Result{}, err
-			}
-			return Result{Kind: ResultCommandExecuted}, nil
-		}
+	destinations, err := s.browsers.ListDestinations(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("list URL routing browsers: %w", err)
 	}
 
-	if isLoopbackHost(parsed.Hostname()) {
-		port, portErr := webPort(parsed)
-		if portErr != nil {
-			return Result{}, portErr
-		}
-		choices, choiceErr := s.reachableServers(ctx, port, preferences.ProxyBrowserID)
-		if choiceErr != nil {
-			return Result{}, choiceErr
-		}
-		switch len(choices) {
-		case 1:
-			choice := choices[0]
-			if err := s.browsers.LaunchThroughSOCKSURL(ctx, choice.ConfigurationID, choice.BrowserID, rawURL); err != nil {
-				return Result{}, err
-			}
-			return Result{Kind: ResultOpened}, nil
-		default:
-			if len(choices) > 1 {
-				request := RouteRequest{ID: routeID(), URL: rawURL, Choices: choices}
-				s.mu.Lock()
-				s.pending = &request
-				presenter := s.presenter
-				s.mu.Unlock()
-				if presenter != nil {
-					presenter(request)
-				}
-				return Result{Kind: ResultNeedsChoice, Request: &request}, nil
-			}
-		}
-	}
-
-	if err := s.browsers.OpenURL(ctx, preferences.DefaultBrowserID, rawURL); err != nil {
+	choices := regularBrowserChoices(destinations)
+	defaultChoiceID, commandChoice, err := matchingRuleDefault(preferences.URLRules, rawURL)
+	if err != nil {
 		return Result{}, err
 	}
-	return Result{Kind: ResultOpened}, nil
+	if commandChoice != nil {
+		choices = append([]RouteChoice{*commandChoice}, choices...)
+	}
+
+	port, hasExplicitPort, err := explicitWebPort(parsed)
+	if err != nil {
+		return Result{}, err
+	}
+	var reachable []reachableServer
+	if hasExplicitPort {
+		targetHost := parsed.Hostname()
+		if isLoopbackHost(targetHost) {
+			targetHost = "127.0.0.1"
+		}
+		reachable, err = s.reachableServers(ctx, targetHost, port)
+		if err != nil {
+			return Result{}, err
+		}
+		choices = append(choices, proxyBrowserChoices(reachable, destinations)...)
+	}
+
+	if defaultChoiceID == "" && hasExplicitPort {
+		defaultChoiceID = assignedPortChoice(preferences.URLPortAssignments, port, choices)
+	}
+	if defaultChoiceID == "" && len(reachable) == 1 {
+		browserID := preferences.ProxyBrowserID
+		if browserID == "" {
+			browserID = firstProxyBrowserID(destinations)
+		}
+		candidate := proxyChoiceID(reachable[0].ConfigurationID, browserID)
+		if choiceExists(choices, candidate) {
+			defaultChoiceID = candidate
+		}
+	}
+	if defaultChoiceID == "" {
+		defaultChoiceID = regularChoiceID(preferences.DefaultBrowserID)
+	}
+	if !choiceExists(choices, defaultChoiceID) && len(choices) > 0 {
+		defaultChoiceID = choices[0].ID
+	}
+	if len(choices) == 0 {
+		return Result{}, fmt.Errorf("no browser is available to open the URL")
+	}
+
+	request := RouteRequest{
+		ID:                  routeID(),
+		URL:                 rawURL,
+		DefaultChoiceID:     defaultChoiceID,
+		TimeoutMilliseconds: int(defaultChooserTimeout / defaultChooserTimeoutUnit),
+		Choices:             choices,
+	}
+	s.mu.Lock()
+	s.pending = &request
+	presenter := s.presenter
+	s.mu.Unlock()
+	if presenter != nil {
+		presenter(request)
+	}
+	return Result{Kind: ResultNeedsChoice, Request: &request}, nil
 }
 
 func (s *Service) Pending() (RouteRequest, bool) {
@@ -201,19 +242,37 @@ func (s *Service) ResolveChoice(ctx context.Context, requestID, choiceID string)
 			break
 		}
 	}
+	s.mu.Unlock()
 	if selected == nil {
-		s.mu.Unlock()
 		return fmt.Errorf("the selected URL route is not available")
 	}
-	s.pending = nil
-	s.mu.Unlock()
 
-	return s.browsers.LaunchThroughSOCKSURL(
-		ctx,
-		selected.ConfigurationID,
-		selected.BrowserID,
-		request.URL,
-	)
+	var err error
+	switch selected.Kind {
+	case RouteChoiceBrowser:
+		err = s.browsers.OpenURL(ctx, selected.BrowserID, request.URL)
+	case RouteChoiceProxy:
+		err = s.browsers.LaunchThroughSOCKSURL(
+			ctx,
+			selected.ConfigurationID,
+			selected.BrowserID,
+			request.URL,
+		)
+	case RouteChoiceCommand:
+		err = s.runCommand(selected.Command, request.URL)
+	default:
+		err = fmt.Errorf("the selected URL route is invalid")
+	}
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	if s.pending != nil && s.pending.ID == requestID {
+		s.pending = nil
+	}
+	s.mu.Unlock()
+	return nil
 }
 
 func (s *Service) DismissChoice(requestID string) {
@@ -224,7 +283,137 @@ func (s *Service) DismissChoice(requestID string) {
 	}
 }
 
-func (s *Service) reachableServers(ctx context.Context, targetPort int, browserID string) ([]RouteChoice, error) {
+func regularBrowserChoices(destinations []BrowserDestination) []RouteChoice {
+	choices := make([]RouteChoice, 0, len(destinations))
+	for _, destination := range destinations {
+		if destination.ID == "" {
+			continue
+		}
+		name := destination.Name
+		if name == "" {
+			name = destination.ID
+		}
+		choices = append(choices, RouteChoice{
+			ID:          regularChoiceID(destination.ID),
+			Kind:        RouteChoiceBrowser,
+			Label:       name,
+			Detail:      "Regular browser",
+			BrowserID:   destination.ID,
+			BrowserName: name,
+		})
+	}
+	return choices
+}
+
+func proxyBrowserChoices(reachable []reachableServer, destinations []BrowserDestination) []RouteChoice {
+	choices := make([]RouteChoice, 0, len(reachable)*len(destinations))
+	for _, server := range reachable {
+		for _, destination := range destinations {
+			if !destination.SupportsProxy || destination.ID == "" {
+				continue
+			}
+			browserName := destination.Name
+			if browserName == "" {
+				browserName = destination.ID
+			}
+			choices = append(choices, RouteChoice{
+				ID:              proxyChoiceID(server.ConfigurationID, destination.ID),
+				Kind:            RouteChoiceProxy,
+				Label:           fmt.Sprintf("%s through %s", browserName, server.ServerName),
+				Detail:          "SOCKS5 proxy",
+				ServerID:        server.ServerID,
+				ServerName:      server.ServerName,
+				ConfigurationID: server.ConfigurationID,
+				BrowserID:       destination.ID,
+				BrowserName:     browserName,
+			})
+		}
+	}
+	return choices
+}
+
+func matchingRuleDefault(rules []preferencesdomain.URLRule, rawURL string) (string, *RouteChoice, error) {
+	for _, rule := range rules {
+		matcher, err := regexp.Compile(rule.Pattern)
+		if err != nil {
+			return "", nil, fmt.Errorf("compile URL rule %q: %w", rule.ID, err)
+		}
+		if !matcher.MatchString(rawURL) {
+			continue
+		}
+		switch rule.Action {
+		case preferencesdomain.URLRuleActionBrowser:
+			return regularChoiceID(rule.BrowserID), nil, nil
+		case preferencesdomain.URLRuleActionCommand:
+			choice := RouteChoice{
+				ID:      commandChoiceID(rule.ID),
+				Kind:    RouteChoiceCommand,
+				Label:   "Matching URL rule",
+				Detail:  fmt.Sprintf("Run rule %s", rule.ID),
+				Command: rule.Command,
+			}
+			return choice.ID, &choice, nil
+		default:
+			return "", nil, fmt.Errorf("URL rule %q has an unsupported action", rule.ID)
+		}
+	}
+	return "", nil, nil
+}
+
+func assignedPortChoice(assignments []preferencesdomain.URLPortAssignment, port int, choices []RouteChoice) string {
+	for _, assignment := range assignments {
+		if assignment.Port != port {
+			continue
+		}
+		candidate := proxyChoiceID(configdomain.ManagedSOCKSConfigurationID(assignment.ServerID), assignment.BrowserID)
+		if choiceExists(choices, candidate) {
+			return candidate
+		}
+		return ""
+	}
+	return ""
+}
+
+func firstProxyBrowserID(destinations []BrowserDestination) string {
+	for _, destination := range destinations {
+		if destination.SupportsProxy {
+			return destination.ID
+		}
+	}
+	return ""
+}
+
+func choiceExists(choices []RouteChoice, id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, choice := range choices {
+		if choice.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func regularChoiceID(browserID string) string {
+	if browserID == "" {
+		return ""
+	}
+	return "browser:" + browserID
+}
+
+func proxyChoiceID(configurationID, browserID string) string {
+	if configurationID == "" || browserID == "" {
+		return ""
+	}
+	return "proxy:" + configurationID + ":" + browserID
+}
+
+func commandChoiceID(ruleID string) string {
+	return "command:" + ruleID
+}
+
+func (s *Service) reachableServers(ctx context.Context, targetHost string, targetPort int) ([]reachableServer, error) {
 	configurations, err := s.configurations.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list browser proxies: %w", err)
@@ -243,8 +432,8 @@ func (s *Service) reachableServers(ctx context.Context, targetPort int, browserI
 	}
 
 	type probeCandidate struct {
-		choice    RouteChoice
-		socksPort int
+		destination reachableServer
+		socksPort   int
 	}
 	candidates := make([]probeCandidate, 0)
 	for _, configuration := range configurations {
@@ -260,12 +449,10 @@ func (s *Service) reachableServers(ctx context.Context, targetPort int, browserI
 			name = configuration.ServerID
 		}
 		candidates = append(candidates, probeCandidate{
-			choice: RouteChoice{
-				ID:              configuration.ID,
+			destination: reachableServer{
 				ServerID:        configuration.ServerID,
 				ServerName:      name,
 				ConfigurationID: configuration.ID,
-				BrowserID:       browserID,
 			},
 			socksPort: runtimeState.BoundPort,
 		})
@@ -273,7 +460,7 @@ func (s *Service) reachableServers(ctx context.Context, targetPort int, browserI
 
 	var wait sync.WaitGroup
 	var resultMu sync.Mutex
-	reachable := make([]RouteChoice, 0, len(candidates))
+	reachable := make([]reachableServer, 0, len(candidates))
 	for _, candidate := range candidates {
 		candidate := candidate
 		wait.Add(1)
@@ -281,11 +468,11 @@ func (s *Service) reachableServers(ctx context.Context, targetPort int, browserI
 			defer wait.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, defaultProbeTimeout)
 			defer cancel()
-			if err := s.probe(probeCtx, candidate.socksPort, "127.0.0.1", targetPort); err != nil {
+			if err := s.probe(probeCtx, candidate.socksPort, targetHost, targetPort); err != nil {
 				return
 			}
 			resultMu.Lock()
-			reachable = append(reachable, candidate.choice)
+			reachable = append(reachable, candidate.destination)
 			resultMu.Unlock()
 		}()
 	}
@@ -322,18 +509,15 @@ func isLoopbackHost(host string) bool {
 	}
 }
 
-func webPort(parsed *url.URL) (int, error) {
+func explicitWebPort(parsed *url.URL) (int, bool, error) {
 	if parsed.Port() == "" {
-		if parsed.Scheme == "https" {
-			return 443, nil
-		}
-		return 80, nil
+		return 0, false, nil
 	}
 	port, err := strconv.Atoi(parsed.Port())
 	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("URL port must be between 1 and 65535")
+		return 0, false, fmt.Errorf("URL port must be between 1 and 65535")
 	}
-	return port, nil
+	return port, true, nil
 }
 
 func cloneRequest(request RouteRequest) RouteRequest {

@@ -527,19 +527,25 @@ func TestConfigurationsStartingOnLaunchSelectsOnlyEnabledConfigurations(t *testi
 		{ID: "config-1", StartOnLaunch: true},
 		{ID: "config-2", StartOnLaunch: false},
 		{ID: "config-3", StartOnLaunch: true},
+		{ID: configdomain.ManagedSOCKSConfigurationID("server-1"), StartOnLaunch: false},
 	}
 
 	selected := configurationsStartingOnLaunch(configurations)
-	if len(selected) != 2 || selected[0].ID != "config-1" || selected[1].ID != "config-3" {
-		t.Fatalf("configurationsStartingOnLaunch() = %+v, want config-1 and config-3", selected)
+	if len(selected) != 3 ||
+		selected[0].ID != "config-1" ||
+		selected[1].ID != "config-3" ||
+		selected[2].ID != configdomain.ManagedSOCKSConfigurationID("server-1") {
+		t.Fatalf("configurationsStartingOnLaunch() = %+v, want enabled configurations and the managed browser proxy", selected)
 	}
 }
 
-func TestStartOnLaunchStartsOnlyEnabledConfigurations(t *testing.T) {
+func TestStartOnLaunchStartsEnabledConfigurationsAndManagedBrowserProxies(t *testing.T) {
+	managedID := configdomain.ManagedSOCKSConfigurationID("server-1")
 	configurations := []configdomain.ConnectionConfiguration{
 		{ID: "config-1", ServerID: "server-1", Label: "SOCKS", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 1080, StartOnLaunch: true},
 		{ID: "config-2", ServerID: "server-1", Label: "Manual", ConnectionType: configdomain.ConnectionTypeLocalForward, LocalPort: 9000, RemoteHost: "127.0.0.1", RemotePort: 3000},
 		{ID: "config-3", ServerID: "server-1", Label: "Docs", ConnectionType: configdomain.ConnectionTypeLocalForward, LocalPort: 9001, RemoteHost: "127.0.0.1", RemotePort: 3001, StartOnLaunch: true},
+		{ID: managedID, ServerID: "server-1", Label: "Browser proxy", ConnectionType: configdomain.ConnectionTypeSOCKSProxy, SocksPort: 41001},
 	}
 	runtimes := NewRuntimeStore()
 	service := NewService(
@@ -548,7 +554,7 @@ func TestStartOnLaunchStartsOnlyEnabledConfigurations(t *testing.T) {
 		nil,
 		runtimes,
 	)
-	service.factory = &stubFactory{runners: []*stubRunner{{}, {}}}
+	service.factory = &stubFactory{runners: []*stubRunner{{}, {}, {}}}
 
 	if err := service.StartOnLaunch(context.Background()); err != nil {
 		t.Fatalf("start on launch: %v", err)
@@ -561,6 +567,9 @@ func TestStartOnLaunchStartsOnlyEnabledConfigurations(t *testing.T) {
 	}
 	if state, ok := runtimes.Get("config-3"); !ok || state.Status != StatusConnected {
 		t.Fatalf("expected config-3 to connect, got %+v, exists %v", state, ok)
+	}
+	if state, ok := runtimes.Get(managedID); !ok || state.Status != StatusConnected {
+		t.Fatalf("expected managed browser proxy to connect, got %+v, exists %v", state, ok)
 	}
 }
 

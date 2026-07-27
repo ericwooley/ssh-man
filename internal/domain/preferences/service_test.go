@@ -452,3 +452,49 @@ func TestURLRoutingRuleValidationRejectsDuplicateIDs(t *testing.T) {
 		t.Fatal("expected duplicate rule id validation error")
 	}
 }
+
+func TestServiceNormalizesURLPortAssignments(t *testing.T) {
+	store := &memoryStore{}
+	input := Default()
+	input.URLPortAssignments = []URLPortAssignment{{
+		ID:        " docs ",
+		Port:      3000,
+		ServerID:  " staging ",
+		BrowserID: " firefox ",
+	}}
+
+	saved, err := NewService(store).Save(context.Background(), input)
+	if err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	want := URLPortAssignment{ID: "docs", Port: 3000, ServerID: "staging", BrowserID: "firefox"}
+	if len(saved.URLPortAssignments) != 1 || saved.URLPortAssignments[0] != want {
+		t.Fatalf("assignments = %#v, want %#v", saved.URLPortAssignments, want)
+	}
+}
+
+func TestURLPortAssignmentValidationRejectsInvalidAndDuplicatePorts(t *testing.T) {
+	tests := []struct {
+		name        string
+		assignments []URLPortAssignment
+	}{
+		{name: "missing id", assignments: []URLPortAssignment{{Port: 3000, ServerID: "host", BrowserID: "firefox"}}},
+		{name: "invalid port", assignments: []URLPortAssignment{{ID: "docs", Port: 70000, ServerID: "host", BrowserID: "firefox"}}},
+		{name: "missing host", assignments: []URLPortAssignment{{ID: "docs", Port: 3000, BrowserID: "firefox"}}},
+		{name: "missing browser", assignments: []URLPortAssignment{{ID: "docs", Port: 3000, ServerID: "host"}}},
+		{name: "duplicate port", assignments: []URLPortAssignment{
+			{ID: "docs", Port: 3000, ServerID: "host", BrowserID: "firefox"},
+			{ID: "api", Port: 3000, ServerID: "other", BrowserID: "google-chrome"},
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := Default()
+			input.URLPortAssignments = tt.assignments
+			if err := input.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}

@@ -14,12 +14,7 @@ func launchLinux(appDataDir string, serverID string, option BrowserOption, socks
 		return launchLinuxFirefox(appDataDir, serverID, option, socksPort, rawURL)
 	}
 	profileDir := filepath.Join(profileScope(appDataDir, serverID, option), "chromium")
-	arguments := []string{
-		fmt.Sprintf("--proxy-server=socks5://127.0.0.1:%d", socksPort),
-		fmt.Sprintf("--user-data-dir=%s", profileDir),
-		"--proxy-bypass-list=<-loopback>",
-		"--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1",
-	}
+	arguments := chromiumProxyArguments("127.0.0.1", profileDir, socksPort)
 	if rawURL != "" {
 		arguments = append(arguments, rawURL)
 	}

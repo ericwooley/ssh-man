@@ -50,6 +50,26 @@ export async function uploadFiles(uploadID, remoteDirectory, localPaths) {
   return requireBindings().Upload(uploadID, remoteDirectory, localPaths)
 }
 
+export async function createFolder(directoryPath, name) {
+  return requireBindings().CreateFolder(directoryPath, name)
+}
+
+export async function rename(path, name) {
+  return requireBindings().Rename(path, name)
+}
+
+export async function copy(paths, destinationDirectory) {
+  return requireBindings().Copy(paths, destinationDirectory)
+}
+
+export async function move(paths, destinationDirectory) {
+  return requireBindings().Move(paths, destinationDirectory)
+}
+
+export async function deleteItems(paths) {
+  return requireBindings().Delete(paths)
+}
+
 export async function download(paths) {
   return requireBindings().Download(paths)
 }

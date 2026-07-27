@@ -43,6 +43,10 @@ func (s *Service) Load(ctx context.Context) (UserPreference, error) {
 	if err != nil {
 		return UserPreference{}, err
 	}
+	pref.URLPortAssignments, err = normalizeURLPortAssignments(pref.URLPortAssignments)
+	if err != nil {
+		return UserPreference{}, err
+	}
 	if err := pref.Validate(); err != nil {
 		return UserPreference{}, err
 	}
@@ -80,6 +84,10 @@ func (s *Service) Save(ctx context.Context, pref UserPreference) (UserPreference
 		return UserPreference{}, err
 	}
 	pref.URLRules, err = normalizeURLRules(pref.URLRules)
+	if err != nil {
+		return UserPreference{}, err
+	}
+	pref.URLPortAssignments, err = normalizeURLPortAssignments(pref.URLPortAssignments)
 	if err != nil {
 		return UserPreference{}, err
 	}
@@ -140,6 +148,23 @@ func normalizeURLRules(input []URLRule) ([]URLRule, error) {
 	}
 	if normalized == nil {
 		return []URLRule{}, nil
+	}
+	return normalized, nil
+}
+
+func normalizeURLPortAssignments(input []URLPortAssignment) ([]URLPortAssignment, error) {
+	normalized := make([]URLPortAssignment, 0, len(input))
+	for _, assignment := range input {
+		assignment.ID = strings.TrimSpace(assignment.ID)
+		assignment.ServerID = strings.TrimSpace(assignment.ServerID)
+		assignment.BrowserID = strings.TrimSpace(assignment.BrowserID)
+		if err := assignment.Validate(); err != nil {
+			return nil, err
+		}
+		normalized = append(normalized, assignment)
+	}
+	if normalized == nil {
+		return []URLPortAssignment{}, nil
 	}
 	return normalized, nil
 }

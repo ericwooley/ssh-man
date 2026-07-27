@@ -75,6 +75,26 @@ func (b *ExplorerBindings) Upload(uploadID int, remoteDirectory string, localPat
 	})
 }
 
+func (b *ExplorerBindings) CreateFolder(directoryPath, name string) (string, error) {
+	return b.remote.CreateFolder(directoryPath, name)
+}
+
+func (b *ExplorerBindings) Rename(remotePath, name string) (string, error) {
+	return b.remote.Rename(remotePath, name)
+}
+
+func (b *ExplorerBindings) Copy(remotePaths []string, destinationDirectory string) ([]string, error) {
+	return b.remote.Copy(remotePaths, destinationDirectory)
+}
+
+func (b *ExplorerBindings) Move(remotePaths []string, destinationDirectory string) ([]string, error) {
+	return b.remote.Move(remotePaths, destinationDirectory)
+}
+
+func (b *ExplorerBindings) Delete(remotePaths []string) error {
+	return b.remote.Delete(remotePaths)
+}
+
 func (b *ExplorerBindings) Download(paths []string) ([]string, error) {
 	if len(paths) == 0 {
 		return []string{}, nil
