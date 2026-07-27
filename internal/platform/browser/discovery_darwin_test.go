@@ -62,6 +62,29 @@ func TestZenProxyPreviewUsesFirefoxProfileArguments(t *testing.T) {
 	}
 }
 
+func TestChromiumProxyPreviewIncludesQuietProfileAndTunnelIsolationFlags(t *testing.T) {
+	option := BrowserOption{
+		ID:              "google-chrome",
+		DisplayName:     "Google Chrome",
+		LaunchReference: "/Applications/Google Chrome.app",
+		Engine:          BrowserEngineChromium,
+	}
+	preview := previewLaunchCommand("/tmp/ssh-man", "bts", option, 41001)
+
+	for _, expected := range []string{
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-search-engine-choice-screen",
+		"--disable-sync",
+		"--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1",
+		"--webrtc-ip-handling-policy=disable_non_proxied_udp",
+	} {
+		if !strings.Contains(preview, expected) {
+			t.Errorf("Chromium preview = %q, want %q", preview, expected)
+		}
+	}
+}
+
 func TestDiscoverDarwinBrowsersIncludesInstalledZen(t *testing.T) {
 	if _, err := os.Stat("/Applications/Zen.app"); err != nil {
 		t.Skip("Zen is not installed at /Applications/Zen.app")

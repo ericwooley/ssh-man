@@ -3,7 +3,6 @@
 package browser
 
 import (
-	"fmt"
 	"path/filepath"
 )
 
@@ -11,13 +10,16 @@ func previewLaunchCommand(appDataDir string, serverID string, option BrowserOpti
 	if browserEngine(option) == BrowserEngineFirefox {
 		return formatCommand("open", "-na", option.LaunchReference, "--args", "-new-instance", "-profile", filepath.Join(profileScope(appDataDir, serverID, option), "firefox"))
 	}
-	return formatCommand(
+	parts := []string{
 		"open",
 		"-na",
 		option.LaunchReference,
 		"--args",
-		fmt.Sprintf("--proxy-server=socks5://localhost:%d", socksPort),
-		fmt.Sprintf("--user-data-dir=%s", filepath.Join(profileScope(appDataDir, serverID, option), "chromium")),
-		"--proxy-bypass-list=<-loopback>",
-	)
+	}
+	parts = append(parts, chromiumProxyArguments(
+		"127.0.0.1",
+		filepath.Join(profileScope(appDataDir, serverID, option), "chromium"),
+		socksPort,
+	)...)
+	return formatCommand(parts...)
 }
