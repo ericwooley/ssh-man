@@ -4,26 +4,37 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  CheckSquare2,
   ChevronRight,
   CircleAlert,
+  ClipboardPaste,
+  Copy,
   Eye,
   ExternalLink,
   File,
   FileCode2,
   FileText,
+  Files,
   Folder,
+  FolderPlus,
   FolderOpen,
   Home,
+  Link2,
   LoaderCircle,
   Monitor,
+  Pencil,
   RefreshCw,
   Save,
+  Scissors,
   Server,
   Star,
+  Trash2,
   X,
 } from 'lucide-react'
 import { MoonPixelsButton } from '../components/AppChrome'
+import { ConfirmDialog } from '../components/Dialogs'
 import * as defaultApi from '../lib/explorerApi'
+import ExplorerContextMenu from './ExplorerContextMenu'
 import PreviewContent from './PreviewContent'
 import {
   addFavorite,
@@ -65,6 +76,20 @@ function favoriteName(remotePath) {
   return remotePath.split('/').filter(Boolean).at(-1) || '/'
 }
 
+function remoteName(remotePath) {
+  return remotePath.split('/').filter(Boolean).at(-1) || remotePath
+}
+
+function validRemoteName(value) {
+  const name = String(value || '').trim()
+  return Boolean(name && name !== '.' && name !== '..' && !name.includes('/'))
+}
+
+function remotePathContains(parent, candidate) {
+  const prefix = parent === '/' ? '/' : `${parent}/`
+  return candidate === parent || candidate.startsWith(prefix)
+}
+
 export default function ExplorerApp({ api = defaultApi }) {
   const storage = window.localStorage
   const [server, setServer] = useState(null)
@@ -84,7 +109,13 @@ export default function ExplorerApp({ api = defaultApi }) {
   const [error, setError] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [operation, setOperation] = useState('')
   const [notice, setNotice] = useState('')
+  const [clipboard, setClipboard] = useState({ mode: '', paths: [] })
+  const [contextMenu, setContextMenu] = useState(null)
+  const [renaming, setRenaming] = useState(null)
+  const [newFolderName, setNewFolderName] = useState(null)
+  const [deleteRequest, setDeleteRequest] = useState(null)
   const [previewWindowPaths, setPreviewWindowPaths] = useState(() => new Set())
   const [previewWindowPendingPath, setPreviewWindowPendingPath] = useState('')
   const [historyVersion, setHistoryVersion] = useState(0)
@@ -135,9 +166,13 @@ export default function ExplorerApp({ api = defaultApi }) {
   }, [])
 
   const openDirectory = useCallback(async (remotePath, mode = 'push') => {
+    if (operation) return null
     if (!confirmDiscard()) return null
     setError('')
     setNotice('')
+    setContextMenu(null)
+    setRenaming(null)
+    setNewFolderName(null)
     setPhase('loading')
     try {
       const next = await api.listDirectory(remotePath)
@@ -156,7 +191,7 @@ export default function ExplorerApp({ api = defaultApi }) {
       setPhase('error')
       return null
     }
-  }, [api, commitHistory, confirmDiscard, server?.id, storage])
+  }, [api, commitHistory, confirmDiscard, operation, server?.id, storage])
 
   const connect = useCallback(async (secret = '') => {
     setError('')
@@ -224,6 +259,29 @@ export default function ExplorerApp({ api = defaultApi }) {
   const selectedEntries = useMemo(() => directory.entries.filter((entry) => selectedPaths.includes(entry.path)), [directory.entries, selectedPaths])
   const selectedEntry = selectedEntries.length === 1 ? selectedEntries[0] : null
   const editablePreview = Boolean(preview?.revision && preview?.content != null && !preview.truncated)
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  const refreshDirectory = useCallback(async (preferredSelection = []) => {
+    const next = await api.listDirectory(directory.path)
+    const visiblePaths = new Set(next.entries.map((entry) => entry.path))
+    setDirectory(next)
+    setSelectedPaths(preferredSelection.filter((remotePath) => visiblePaths.has(remotePath)))
+    return next
+  }, [api, directory.path])
+
+  async function reconcileDirectory(preferredSelection = []) {
+    try {
+      await refreshDirectory(preferredSelection)
+    } catch {
+      // Keep the original operation error visible if the follow-up refresh also fails.
+    }
+  }
+
+  function clearClipboardForPaths(paths) {
+    setClipboard((current) => current.paths.some((clipboardPath) => (
+      paths.some((remotePath) => remotePathContains(remotePath, clipboardPath))
+    )) ? { mode: '', paths: [] } : current)
+  }
 
   const saveCurrentFile = useCallback(async (contentOverride) => {
     if (!editablePreview || saving) return
@@ -303,7 +361,10 @@ export default function ExplorerApp({ api = defaultApi }) {
   }, [api, preview?.path, setPreviewWindowOpen])
 
   function selectEntry(event, entry) {
+    if (operation) return
     if (!selectedPaths.includes(entry.path) && !confirmDiscard()) return
+    closeContextMenu()
+    setRenaming(null)
     if (event.metaKey || event.ctrlKey) {
       setSelectedPaths((current) => current.includes(entry.path)
         ? current.filter((item) => item !== entry.path)
@@ -313,7 +374,36 @@ export default function ExplorerApp({ api = defaultApi }) {
     }
   }
 
+  function selectedPathsForEntry(entry) {
+    return selectedPaths.includes(entry.path) ? selectedPaths : [entry.path]
+  }
+
+  function openEntryContextMenu(event, entry) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!selectedPaths.includes(entry.path)) {
+      if (!confirmDiscard()) return
+      setSelectedPaths([entry.path])
+    }
+    setContextMenu({
+      entry,
+      paths: selectedPathsForEntry(entry),
+      position: { x: event.clientX, y: event.clientY },
+    })
+  }
+
+  function openBackgroundContextMenu(event) {
+    if (event.target.closest('.explorer-row')) return
+    event.preventDefault()
+    setContextMenu({
+      entry: null,
+      paths: [],
+      position: { x: event.clientX, y: event.clientY },
+    })
+  }
+
   async function navigateHistory(direction) {
+    if (operation) return
     const nextIndex = historyIndexRef.current + direction
     const remotePath = historyRef.current[nextIndex]
     if (!remotePath) return
@@ -322,17 +412,206 @@ export default function ExplorerApp({ api = defaultApi }) {
     await openDirectory(remotePath, 'history')
   }
 
-  async function downloadSelection() {
-    if (!selectedPaths.length) return
+  async function downloadPaths(paths = selectedPaths) {
+    if (!paths.length) return
     setDownloading(true)
     setError('')
     try {
-      const paths = await api.download(selectedPaths)
-      if (paths?.length) setNotice(`Downloaded ${paths.length} item${paths.length === 1 ? '' : 's'} to ${parentRemotePath(paths[0])}.`)
+      const downloadedPaths = await api.download(paths)
+      if (downloadedPaths?.length) {
+        setNotice(`Downloaded ${downloadedPaths.length} item${downloadedPaths.length === 1 ? '' : 's'} to ${parentRemotePath(downloadedPaths[0])}.`)
+      }
     } catch (nextError) {
       setError(nextError.message || 'The selected items could not be downloaded.')
     } finally {
       setDownloading(false)
+    }
+  }
+
+  function rememberSelection(mode, paths = selectedPaths) {
+    if (!paths.length) return
+    setClipboard({ mode, paths: [...paths] })
+    setNotice(`${mode === 'move' ? 'Cut' : 'Copied'} ${paths.length} item${paths.length === 1 ? '' : 's'}. Open a folder and paste to place ${paths.length === 1 ? 'it' : 'them'}.`)
+    setError('')
+  }
+
+  async function pasteClipboard(destinationDirectory = directory.path) {
+    if (!clipboard.paths.length || operation || !confirmDiscard()) return
+    const clipboardMode = clipboard.mode
+    setOperation('paste')
+    setError('')
+    setNotice('')
+    try {
+      const pastedPaths = clipboardMode === 'move'
+        ? await api.move(clipboard.paths, destinationDirectory)
+        : await api.copy(clipboard.paths, destinationDirectory)
+      if (clipboardMode === 'move') setClipboard({ mode: '', paths: [] })
+      const selection = destinationDirectory === directory.path ? pastedPaths : []
+      await refreshDirectory(selection)
+      setNotice(`${clipboardMode === 'move' ? 'Moved' : 'Pasted'} ${pastedPaths.length} item${pastedPaths.length === 1 ? '' : 's'} into ${remoteName(destinationDirectory)}.`)
+    } catch (nextError) {
+      if (clipboardMode === 'move') setClipboard({ mode: '', paths: [] })
+      await reconcileDirectory([])
+      setError(nextError.message || 'The items could not be pasted here.')
+    } finally {
+      setOperation('')
+    }
+  }
+
+  async function duplicatePaths(paths = selectedPaths) {
+    if (!paths.length || operation || !confirmDiscard()) return
+    setOperation('duplicate')
+    setError('')
+    setNotice('')
+    try {
+      const duplicatedPaths = await api.copy(paths, directory.path)
+      await refreshDirectory(duplicatedPaths)
+      setNotice(`Duplicated ${duplicatedPaths.length} item${duplicatedPaths.length === 1 ? '' : 's'}.`)
+    } catch (nextError) {
+      await reconcileDirectory([])
+      setError(nextError.message || 'The selected items could not be duplicated.')
+    } finally {
+      setOperation('')
+    }
+  }
+
+  function beginRename(entry = selectedEntry) {
+    if (!entry || operation || !confirmDiscard()) return
+    closeContextMenu()
+    setNewFolderName(null)
+    setSelectedPaths([entry.path])
+    setRenaming({ path: entry.path, name: entry.name })
+  }
+
+  async function commitRename() {
+    if (!renaming || operation) return
+    const name = renaming.name.trim()
+    if (name === remoteName(renaming.path)) {
+      setRenaming(null)
+      return
+    }
+    if (!validRemoteName(name)) {
+      setError('Use a file name without slashes.')
+      return
+    }
+    setOperation('rename')
+    setError('')
+    setNotice('')
+    try {
+      const renamedPath = await api.rename(renaming.path, name)
+      const originalPath = renaming.path
+      setRenaming(null)
+      setClipboard((current) => ({
+        ...current,
+        paths: current.paths.map((clipboardPath) => remotePathContains(originalPath, clipboardPath)
+          ? `${renamedPath}${clipboardPath.slice(originalPath.length)}`
+          : clipboardPath),
+      }))
+      await refreshDirectory([renamedPath])
+      setNotice(`Renamed to ${name}.`)
+    } catch (nextError) {
+      setError(nextError.message || 'The item could not be renamed.')
+    } finally {
+      setOperation('')
+    }
+  }
+
+  function beginCreateFolder() {
+    if (operation || !confirmDiscard()) return
+    closeContextMenu()
+    setRenaming(null)
+    setSelectedPaths([])
+    setNewFolderName('untitled folder')
+  }
+
+  async function commitCreateFolder() {
+    if (newFolderName == null || operation) return
+    const name = newFolderName.trim()
+    if (!validRemoteName(name)) {
+      setError('Use a folder name without slashes.')
+      return
+    }
+    setOperation('create-folder')
+    setError('')
+    setNotice('')
+    try {
+      const folderPath = await api.createFolder(directory.path, name)
+      setNewFolderName(null)
+      await refreshDirectory([folderPath])
+      setNotice(`Created ${name}.`)
+    } catch (nextError) {
+      setError(nextError.message || 'The folder could not be created.')
+    } finally {
+      setOperation('')
+    }
+  }
+
+  function requestDelete(paths = selectedPaths) {
+    if (!paths.length || operation || !confirmDiscard()) return
+    const names = paths.map(remoteName)
+    const oneItem = paths.length === 1
+    setDeleteRequest({
+      paths: [...paths],
+      title: oneItem ? `Delete ${names[0]} permanently?` : `Delete ${paths.length} items permanently?`,
+      description: oneItem
+        ? `This permanently removes ${names[0]} from ${server?.name || 'the server'}. You can’t undo this action.`
+        : `This permanently removes the selected items from ${server?.name || 'the server'}. You can’t undo this action.`,
+      confirmLabel: 'Delete permanently',
+    })
+  }
+
+  async function confirmDelete() {
+    if (!deleteRequest || operation) return
+    setOperation('delete')
+    setError('')
+    setNotice('')
+    try {
+      await api.deleteItems(deleteRequest.paths)
+      const deletedCount = deleteRequest.paths.length
+      clearClipboardForPaths(deleteRequest.paths)
+      setDeleteRequest(null)
+      await refreshDirectory([])
+      setNotice(`Deleted ${deletedCount} item${deletedCount === 1 ? '' : 's'} permanently.`)
+    } catch (nextError) {
+      clearClipboardForPaths(deleteRequest.paths)
+      setDeleteRequest(null)
+      await reconcileDirectory([])
+      setError(nextError.message || 'The selected items could not be deleted.')
+    } finally {
+      setOperation('')
+    }
+  }
+
+  async function copyPathsToSystemClipboard(paths) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.')
+      await navigator.clipboard.writeText(paths.join('\n'))
+      setNotice(`Copied ${paths.length === 1 ? 'path' : `${paths.length} paths`} to the clipboard.`)
+      setError('')
+    } catch (nextError) {
+      setError(nextError.message || 'The paths could not be copied.')
+    }
+  }
+
+  async function openRemoteItem(entry = selectedEntry) {
+    if (!entry || operation) return
+    if (entry.kind === 'directory') {
+      await openDirectory(entry.path)
+      return
+    }
+    if (dirty && preview?.path === entry.path) {
+      setError('Save this file before opening its preview in a new window.')
+      return
+    }
+    setError('')
+    setPreviewWindowPendingPath(entry.path)
+    try {
+      const state = await api.openPreview(entry.path)
+      setPreviewWindowOpen(state?.remotePath || entry.path, state?.open !== false)
+    } catch (nextError) {
+      setError(nextError.message || 'The preview window could not be opened.')
+    } finally {
+      setPreviewWindowPendingPath((current) => current === entry.path ? '' : current)
     }
   }
 
@@ -385,6 +664,117 @@ export default function ExplorerApp({ api = defaultApi }) {
     setFavoritePaths(writeFavoritePaths(storage, server.id, removeFavorite(favoritePaths, remotePath)))
   }
 
+  function selectAllEntries() {
+    if (!confirmDiscard()) return
+    setSelectedPaths(directory.entries.map((entry) => entry.path))
+  }
+
+  function contextMenuItems() {
+    if (!contextMenu) return []
+    const busy = Boolean(operation || downloading)
+    const count = contextMenu.paths.length
+    const oneEntry = count === 1 ? contextMenu.entry : null
+    const command = /Mac|iPhone|iPad/i.test(navigator.userAgentData?.platform || navigator.platform || '') ? '⌘' : 'Ctrl+'
+
+    if (!count) {
+      return [
+        { label: 'New Folder', icon: FolderPlus, shortcut: `${command}⇧N`, disabled: busy, action: beginCreateFolder },
+        {
+          label: `Paste${clipboard.paths.length > 1 ? ` ${clipboard.paths.length} Items` : clipboard.paths.length ? ' Item' : ''}`,
+          icon: ClipboardPaste,
+          shortcut: `${command}V`,
+          disabled: busy || !clipboard.paths.length,
+          action: () => pasteClipboard(directory.path),
+        },
+        { separator: true },
+        { label: 'Select All', icon: CheckSquare2, shortcut: `${command}A`, disabled: busy || !directory.entries.length, action: selectAllEntries },
+        { label: 'Refresh', icon: RefreshCw, shortcut: `${command}R`, disabled: busy, action: () => openDirectory(directory.path, 'history') },
+      ]
+    }
+
+    const items = []
+    if (oneEntry) {
+      items.push({
+        label: oneEntry.kind === 'directory' ? 'Open' : 'Open in New Window',
+        icon: oneEntry.kind === 'directory' ? FolderOpen : ExternalLink,
+        shortcut: `${command}O`,
+        disabled: busy,
+        action: () => openRemoteItem(oneEntry),
+      })
+    }
+    items.push(
+      { label: count === 1 ? 'Download' : `Download ${count} Items`, icon: ArrowDownToLine, disabled: busy, action: () => downloadPaths(contextMenu.paths) },
+      { separator: true },
+      { label: count === 1 ? 'Copy' : `Copy ${count} Items`, icon: Copy, shortcut: `${command}C`, disabled: busy, action: () => rememberSelection('copy', contextMenu.paths) },
+      { label: count === 1 ? 'Cut' : `Cut ${count} Items`, icon: Scissors, shortcut: `${command}X`, disabled: busy, action: () => rememberSelection('move', contextMenu.paths) },
+    )
+    if (oneEntry?.kind === 'directory') {
+      items.push({
+        label: `Paste${clipboard.paths.length > 1 ? ` ${clipboard.paths.length} Items` : clipboard.paths.length ? ' Item' : ''} Into Folder`,
+        icon: ClipboardPaste,
+        disabled: busy || !clipboard.paths.length,
+        action: () => pasteClipboard(oneEntry.path),
+      })
+    }
+    items.push(
+      { label: count === 1 ? 'Duplicate' : `Duplicate ${count} Items`, icon: Files, shortcut: `${command}D`, disabled: busy, action: () => duplicatePaths(contextMenu.paths) },
+    )
+    if (oneEntry) {
+      items.push({ label: 'Rename', icon: Pencil, shortcut: 'Enter', disabled: busy, action: () => beginRename(oneEntry) })
+    }
+    items.push(
+      { label: count === 1 ? 'Delete Permanently…' : `Delete ${count} Items Permanently…`, icon: Trash2, shortcut: `${command}⌫`, danger: true, disabled: busy, action: () => requestDelete(contextMenu.paths) },
+      { separator: true },
+      { label: count === 1 ? 'Copy Path' : 'Copy Paths', icon: Link2, disabled: busy, action: () => copyPathsToSystemClipboard(contextMenu.paths) },
+    )
+    return items
+  }
+
+  useEffect(() => {
+    function handleExplorerShortcut(event) {
+      if (phase !== 'ready' || operation || deleteRequest || contextMenu || event.defaultPrevented) return
+      const target = event.target
+      if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"], dialog, .explorer-monaco')) return
+
+      const command = event.metaKey || event.ctrlKey
+      const key = event.key.toLowerCase()
+      if (command && key === 'c' && selectedPaths.length) {
+        event.preventDefault()
+        rememberSelection('copy')
+      } else if (command && key === 'x' && selectedPaths.length) {
+        event.preventDefault()
+        rememberSelection('move')
+      } else if (command && key === 'v' && clipboard.paths.length) {
+        event.preventDefault()
+        pasteClipboard()
+      } else if (command && key === 'a') {
+        event.preventDefault()
+        selectAllEntries()
+      } else if (command && key === 'd' && selectedPaths.length) {
+        event.preventDefault()
+        duplicatePaths()
+      } else if (command && event.shiftKey && key === 'n') {
+        event.preventDefault()
+        beginCreateFolder()
+      } else if (command && key === 'o' && selectedEntry) {
+        event.preventDefault()
+        openRemoteItem()
+      } else if (command && key === 'r') {
+        event.preventDefault()
+        if (confirmDiscard()) refreshDirectory(selectedPaths)
+      } else if ((event.key === 'Enter' || event.key === 'F2') && selectedEntry) {
+        event.preventDefault()
+        beginRename()
+      } else if ((event.key === 'Delete' || (command && event.key === 'Backspace')) && selectedPaths.length) {
+        event.preventDefault()
+        requestDelete()
+      }
+    }
+
+    window.addEventListener('keydown', handleExplorerShortcut)
+    return () => window.removeEventListener('keydown', handleExplorerShortcut)
+  })
+
   const canGoBack = historyVersion >= 0 && historyIndexRef.current > 0
   const canGoForward = historyIndexRef.current >= 0 && historyIndexRef.current < historyRef.current.length - 1
   const currentFolderIsFavorite = favoritePaths.includes(directory.path)
@@ -404,16 +794,16 @@ export default function ExplorerApp({ api = defaultApi }) {
     <div className="explorer-shell">
       <header className="explorer-toolbar">
         <div className="explorer-toolbar__nav" aria-label="Folder navigation">
-          <button type="button" aria-label="Back" disabled={!canGoBack} onClick={() => navigateHistory(-1)}><ArrowLeft /></button>
-          <button type="button" aria-label="Forward" disabled={!canGoForward} onClick={() => navigateHistory(1)}><ArrowRight /></button>
-          <button type="button" aria-label="Up one folder" disabled={!directory.path || directory.path === '/'} onClick={() => openDirectory(parentRemotePath(directory.path))}><ArrowUp /></button>
-          <button type="button" aria-label="Refresh folder" disabled={phase !== 'ready'} onClick={() => openDirectory(directory.path, 'history')}><RefreshCw /></button>
+          <button type="button" aria-label="Back" disabled={!canGoBack || Boolean(operation)} onClick={() => navigateHistory(-1)}><ArrowLeft /></button>
+          <button type="button" aria-label="Forward" disabled={!canGoForward || Boolean(operation)} onClick={() => navigateHistory(1)}><ArrowRight /></button>
+          <button type="button" aria-label="Up one folder" disabled={!directory.path || directory.path === '/' || Boolean(operation)} onClick={() => openDirectory(parentRemotePath(directory.path))}><ArrowUp /></button>
+          <button type="button" aria-label="Refresh folder" disabled={phase !== 'ready' || Boolean(operation)} onClick={() => openDirectory(directory.path, 'history')}><RefreshCw /></button>
         </div>
         <form className="explorer-path" onSubmit={(event) => { event.preventDefault(); openDirectory(pathInput) }}>
           <Server aria-hidden="true" />
-          <input aria-label="Remote path" value={pathInput} onChange={(event) => setPathInput(event.target.value)} spellCheck="false" />
+          <input aria-label="Remote path" value={pathInput} disabled={Boolean(operation)} onChange={(event) => setPathInput(event.target.value)} spellCheck="false" />
         </form>
-        <button className="explorer-download" type="button" disabled={!selectedPaths.length || downloading} onClick={downloadSelection}>
+        <button className="explorer-download" type="button" disabled={!selectedPaths.length || downloading || Boolean(operation)} onClick={() => downloadPaths()}>
           {downloading ? <LoaderCircle className="spin" /> : <ArrowDownToLine />}
           Download{selectedPaths.length > 1 ? ` (${selectedPaths.length})` : ''}
         </button>
@@ -427,15 +817,15 @@ export default function ExplorerApp({ api = defaultApi }) {
           </div>
           <nav aria-label="Remote locations">
             <span>Locations</span>
-            <button type="button" className={directory.path === homePath ? 'is-current' : ''} disabled={!homePath} onClick={() => openDirectory(homePath)}><Home /> Home</button>
-            <button type="button" className={directory.path === '/' ? 'is-current' : ''} onClick={() => openDirectory('/')}><Monitor /> File system</button>
+            <button type="button" className={directory.path === homePath ? 'is-current' : ''} disabled={!homePath || Boolean(operation)} onClick={() => openDirectory(homePath)}><Home /> Home</button>
+            <button type="button" className={directory.path === '/' ? 'is-current' : ''} disabled={Boolean(operation)} onClick={() => openDirectory('/')}><Monitor /> File system</button>
           </nav>
           {favoritePaths.length ? (
             <nav className="explorer-favorites" aria-label="Favorite folders">
               <span>Favorites</span>
               {favoritePaths.map((remotePath) => (
                 <div className="explorer-favorite" key={remotePath}>
-                  <button type="button" className={directory.path === remotePath ? 'is-current' : ''} aria-label={`Open favorite ${favoriteName(remotePath)}`} title={remotePath} onClick={() => openDirectory(remotePath)}><Star /> <span>{favoriteName(remotePath)}</span></button>
+                  <button type="button" className={directory.path === remotePath ? 'is-current' : ''} aria-label={`Open favorite ${favoriteName(remotePath)}`} title={remotePath} disabled={Boolean(operation)} onClick={() => openDirectory(remotePath)}><Star /> <span>{favoriteName(remotePath)}</span></button>
                   <button type="button" className="explorer-favorite__remove" aria-label={`Remove favorite ${favoriteName(remotePath)}`} onClick={() => removeFavoritePath(remotePath)}><X /></button>
                 </div>
               ))}
@@ -451,7 +841,15 @@ export default function ExplorerApp({ api = defaultApi }) {
           </div>
         </aside>
 
-        <main className="explorer-browser" aria-busy={phase === 'loading' || phase === 'connecting'}>
+        <main
+          className="explorer-browser"
+          aria-busy={phase === 'loading' || phase === 'connecting' || Boolean(operation)}
+          onContextMenu={openBackgroundContextMenu}
+          onClick={(event) => {
+            if (event.target.closest('.explorer-row') || !selectedPaths.length) return
+            if (confirmDiscard()) setSelectedPaths([])
+          }}
+        >
           <div className="explorer-location-title">
             <FolderOpen />
             <strong>{directory.path ? directory.path.split('/').filter(Boolean).at(-1) || '/' : 'Files'}</strong>
@@ -470,27 +868,82 @@ export default function ExplorerApp({ api = defaultApi }) {
           {phase === 'error' ? (
             <div className="explorer-state is-error"><CircleAlert /><strong>Couldn’t open this location</strong><span>{error}</span><button type="button" onClick={() => connect('')}>Reconnect</button></div>
           ) : null}
-          {phase === 'ready' && !directory.entries.length ? <div className="explorer-state"><Folder /><strong>This folder is empty</strong></div> : null}
-          {phase === 'ready' && directory.entries.length ? (
+          {phase === 'ready' && !directory.entries.length && newFolderName == null ? <div className="explorer-state"><Folder /><strong>This folder is empty</strong><span>Right-click to create a folder or paste items.</span></div> : null}
+          {phase === 'ready' && (directory.entries.length || newFolderName != null) ? (
             <div className="explorer-list" role="listbox" aria-label={`Files in ${directory.path}`} aria-multiselectable="true">
+              {newFolderName != null ? (
+                <div className="explorer-row is-selected" role="option" aria-selected="true">
+                  <span className="explorer-file-icon is-directory"><Folder /></span>
+                  <span className="explorer-file-name">
+                    <input
+                      autoFocus
+                      className="explorer-rename-input"
+                      aria-label="New folder name"
+                      value={newFolderName}
+                      onChange={(event) => setNewFolderName(event.target.value)}
+                      onFocus={(event) => event.target.select()}
+                      onBlur={() => commitCreateFolder()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          commitCreateFolder()
+                        } else if (event.key === 'Escape') {
+                          event.preventDefault()
+                          setNewFolderName(null)
+                        }
+                      }}
+                    />
+                  </span>
+                  <span>—</span>
+                  <span>—</span>
+                </div>
+              ) : null}
               {directory.entries.map((entry) => {
                 const Icon = itemIcon(entry)
                 const selected = selectedPaths.includes(entry.path)
+                const isRenaming = renaming?.path === entry.path
+                const cut = clipboard.mode === 'move' && clipboard.paths.includes(entry.path)
                 return (
-                  <button
-                    type="button"
+                  <div
                     role="option"
+                    tabIndex="0"
+                    aria-disabled={Boolean(operation)}
                     aria-selected={selected}
-                    className={`explorer-row${selected ? ' is-selected' : ''}`}
+                    className={`explorer-row${selected ? ' is-selected' : ''}${cut ? ' is-cut' : ''}`}
                     key={entry.path}
                     onClick={(event) => selectEntry(event, entry)}
-                    onDoubleClick={() => entry.kind === 'directory' && openDirectory(entry.path)}
+                    onDoubleClick={() => openRemoteItem(entry)}
+                    onContextMenu={(event) => openEntryContextMenu(event, entry)}
                   >
                     <span className={`explorer-file-icon is-${entry.kind}`}><Icon /></span>
-                    <span className="explorer-file-name">{entry.name}{entry.kind === 'directory' ? <ChevronRight /> : null}</span>
+                    <span className="explorer-file-name">
+                      {isRenaming ? (
+                        <input
+                          autoFocus
+                          className="explorer-rename-input"
+                          aria-label={`Rename ${entry.name}`}
+                          value={renaming.name}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setRenaming((current) => ({ ...current, name: event.target.value }))}
+                          onFocus={(event) => event.target.select()}
+                          onBlur={() => commitRename()}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              commitRename()
+                            } else if (event.key === 'Escape') {
+                              event.preventDefault()
+                              setRenaming(null)
+                            }
+                          }}
+                        />
+                      ) : (
+                        <>{entry.name}{entry.kind === 'directory' ? <ChevronRight /> : null}</>
+                      )}
+                    </span>
                     <span>{entry.kind === 'directory' ? '—' : formatFileSize(entry.size)}</span>
                     <span>{formatDate(entry.modifiedAt)}</span>
-                  </button>
+                  </div>
                 )
               })}
             </div>
@@ -575,6 +1028,21 @@ export default function ExplorerApp({ api = defaultApi }) {
 
       {error && phase !== 'error' ? <div className="explorer-toast is-error" role="alert">{error}</div> : null}
       {notice ? <div className="explorer-toast" role="status">{notice}</div> : null}
+      {contextMenu ? (
+        <ExplorerContextMenu
+          items={contextMenuItems()}
+          position={contextMenu.position}
+          onClose={closeContextMenu}
+        />
+      ) : null}
+      <ConfirmDialog
+        request={deleteRequest}
+        pending={operation === 'delete'}
+        onClose={() => {
+          if (operation !== 'delete') setDeleteRequest(null)
+        }}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

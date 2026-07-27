@@ -10,6 +10,18 @@ export function Connect(arg1) {
   return window['go']['bindings']['ExplorerBindings']['Connect'](arg1);
 }
 
+export function Copy(arg1, arg2) {
+  return window['go']['bindings']['ExplorerBindings']['Copy'](arg1, arg2);
+}
+
+export function CreateFolder(arg1, arg2) {
+  return window['go']['bindings']['ExplorerBindings']['CreateFolder'](arg1, arg2);
+}
+
+export function Delete(arg1) {
+  return window['go']['bindings']['ExplorerBindings']['Delete'](arg1);
+}
+
 export function Download(arg1) {
   return window['go']['bindings']['ExplorerBindings']['Download'](arg1);
 }
@@ -22,8 +34,16 @@ export function ListDirectory(arg1) {
   return window['go']['bindings']['ExplorerBindings']['ListDirectory'](arg1);
 }
 
+export function Move(arg1, arg2) {
+  return window['go']['bindings']['ExplorerBindings']['Move'](arg1, arg2);
+}
+
 export function PreviewFile(arg1) {
   return window['go']['bindings']['ExplorerBindings']['PreviewFile'](arg1);
+}
+
+export function Rename(arg1, arg2) {
+  return window['go']['bindings']['ExplorerBindings']['Rename'](arg1, arg2);
 }
 
 export function SaveFile(arg1, arg2, arg3) {
