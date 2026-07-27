@@ -48,6 +48,22 @@ describe('URLRouteChooser', () => {
     expect(onChoose).toHaveBeenCalledWith('browser:safari')
   })
 
+  test('keeps counting down when the pointer only moves over the chooser', async () => {
+    vi.useFakeTimers()
+    const onChoose = vi.fn(async () => {})
+    render(<URLRouteChooser request={request} onChoose={onChoose} onDismiss={() => {}} />)
+    const dialog = screen.getByRole('dialog', { name: 'Choose where to open this link' })
+
+    fireEvent.pointerMove(dialog)
+    expect(screen.getByText('Opening Safari in 5s')).toBeTruthy()
+    await act(async () => {
+      vi.advanceTimersByTime(5000)
+      await Promise.resolve()
+    })
+
+    expect(onChoose).toHaveBeenCalledWith('browser:safari')
+  })
+
   test('pauses the timer on interaction and lets the keyboard select another destination', async () => {
     vi.useFakeTimers()
     const onChoose = vi.fn(async () => {})
@@ -66,5 +82,23 @@ describe('URLRouteChooser', () => {
       await Promise.resolve()
     })
     expect(onChoose).toHaveBeenCalledWith('proxy:server-socks:staging:firefox')
+  })
+
+  test('uses the saved appearance for a proxy browser destination', () => {
+    render(
+      <URLRouteChooser
+        request={request}
+        appearances={{
+          'proxy:staging:firefox': { icon: '🚀', primaryColor: '#22C55E' },
+        }}
+        onChoose={async () => {}}
+        onDismiss={() => {}}
+      />,
+    )
+
+    const proxyChoice = screen.getByRole('option', { name: 'Open in Firefox through Staging' })
+    const icon = proxyChoice.querySelector('.url-route-choice-list__icon')
+    expect(icon?.textContent).toBe('🚀')
+    expect(proxyChoice.style.getPropertyValue('--browser-primary')).toBe('#22C55E')
   })
 })

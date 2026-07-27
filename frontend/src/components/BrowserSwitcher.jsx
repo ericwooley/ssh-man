@@ -1,46 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
-  Briefcase,
   Check,
-  Code2,
   Globe2,
   LoaderCircle,
-  Network,
   Palette,
   RefreshCw,
   RotateCcw,
   Save,
-  Shield,
-  Star,
-  Terminal,
   X,
 } from 'lucide-react'
 import {
   browserAppearanceForTarget,
-  browserAppearanceForeground,
   browserAppearanceKey,
   moveBrowserSelectionIndex,
   normalizeBrowserAppearance,
   validateBrowserAppearance,
 } from '../model/appModel'
 import { IconButton } from './AppChrome'
-
-const ICON_OPTIONS = [
-  { value: '', label: 'Default' },
-  { value: 'icon:x', label: 'X', Icon: X },
-  { value: 'icon:shield', label: 'Shield', Icon: Shield },
-  { value: 'icon:terminal', label: 'Terminal', Icon: Terminal },
-  { value: 'icon:globe', label: 'Globe', Icon: Globe2 },
-  { value: 'icon:network', label: 'Network', Icon: Network },
-  { value: 'icon:star', label: 'Star', Icon: Star },
-  { value: 'icon:briefcase', label: 'Briefcase', Icon: Briefcase },
-  { value: 'icon:code', label: 'Code', Icon: Code2 },
-]
-
-const ICON_COMPONENTS = Object.fromEntries(
-  ICON_OPTIONS.filter(({ Icon }) => Icon).map(({ value, Icon }) => [value, Icon]),
-)
+import {
+  BROWSER_APPEARANCE_ICON_OPTIONS,
+  BrowserAppearanceMark,
+  browserAppearanceStyle,
+} from './BrowserAppearance'
 
 const COLOR_OPTIONS = [
   { value: '#22C55E', label: 'Green' },
@@ -51,21 +33,6 @@ const COLOR_OPTIONS = [
   { value: '#14B8A6', label: 'Teal' },
   { value: '#EC4899', label: 'Pink' },
 ]
-
-function BrowserMark({ item, appearance }) {
-  const Icon = ICON_COMPONENTS[appearance.icon]
-  if (Icon) return <Icon />
-  if (appearance.icon) return <span className="browser-target__mark">{appearance.icon}</span>
-  return item.kind === 'proxy' ? <Network /> : <Globe2 />
-}
-
-function appearanceStyle(appearance) {
-  if (!appearance.primaryColor) return undefined
-  return {
-    '--browser-primary': appearance.primaryColor,
-    '--browser-on-primary': browserAppearanceForeground(appearance.primaryColor),
-  }
-}
 
 function BrowserAppearanceEditor({ item, draft, errors, onChange }) {
   const appearance = normalizeBrowserAppearance(draft)
@@ -78,10 +45,10 @@ function BrowserAppearanceEditor({ item, draft, errors, onChange }) {
       <div className="browser-appearance-preview">
         <span
           className={`browser-target__icon ${item.kind === 'proxy' ? 'is-proxy' : ''} ${previewClass}`}
-          style={appearanceStyle(appearance)}
+          style={browserAppearanceStyle(appearance)}
           aria-hidden="true"
         >
-          <BrowserMark item={item} appearance={appearance} />
+          <BrowserAppearanceMark target={item} appearance={appearance} />
         </span>
         <strong>{item.browserName}</strong>
         <span>{proxyLabel}</span>
@@ -90,7 +57,7 @@ function BrowserAppearanceEditor({ item, draft, errors, onChange }) {
       <fieldset className="browser-appearance-group">
         <legend>Icon</legend>
         <div className="browser-appearance-icons" role="radiogroup" aria-label="Built-in browser icon">
-          {ICON_OPTIONS.map(({ value, label, Icon }) => (
+          {BROWSER_APPEARANCE_ICON_OPTIONS.map(({ value, label, Icon }) => (
             <button
               key={label}
               type="button"
@@ -326,7 +293,7 @@ export function BrowserSwitcher({
                   key={item.id}
                   ref={(node) => { itemRefs.current[index] = node }}
                   className={`browser-target ${selected ? 'is-selected' : ''} ${customized ? 'has-custom-appearance' : ''}`}
-                  style={appearanceStyle(appearance)}
+                  style={browserAppearanceStyle(appearance)}
                   type="button"
                   role="option"
                   aria-selected={selected}
@@ -336,7 +303,7 @@ export function BrowserSwitcher({
                   onClick={() => onActivate(item)}
                 >
                   <span className={`browser-target__icon ${proxy ? 'is-proxy' : ''}`} aria-hidden="true">
-                    <BrowserMark item={item} appearance={appearance} />
+                    <BrowserAppearanceMark target={item} appearance={appearance} />
                   </span>
                   {selected ? <span className="browser-target__selection" aria-hidden="true"><Check /></span> : null}
                   <span className="browser-target__copy">

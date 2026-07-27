@@ -307,7 +307,7 @@ export async function dismissURLRoute(requestId) {
 
 export function setURLRouteWindowMode(compact) {
   if (typeof window === 'undefined' || !window.runtime?.WindowSetSize) return
-  const [width, height] = compact ? [440, 460] : [420, 720]
+  const [width, height] = compact ? [520, 600] : [420, 720]
   window.runtime.WindowSetSize(width, height)
   window.runtime.WindowCenter?.()
 }

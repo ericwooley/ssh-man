@@ -827,7 +827,10 @@ describe('React application flows', () => {
 
   test('shows a timed destination chooser for opened URLs', async () => {
     const user = userEvent.setup()
-    const { api } = createFakeApi()
+    const { api, state } = createFakeApi()
+    state.preferences.browserAppearances = {
+      'proxy:staging:google-chrome': { icon: '🚀', primaryColor: '#22C55E' },
+    }
     renderApp(api)
     await waitFor(() => expect(api.urlRouteChoiceListener).toBeTypeOf('function'))
 
@@ -847,7 +850,10 @@ describe('React application flows', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Choose where to open this link' })
     expect(within(dialog).getByText('http://localhost:3000/dashboard')).toBeTruthy()
     expect(within(dialog).getByText('Opening Safari in 5s')).toBeTruthy()
-    await user.click(within(dialog).getByRole('option', { name: 'Open in Google Chrome through Staging' }))
+    const proxyChoice = within(dialog).getByRole('option', { name: 'Open in Google Chrome through Staging' })
+    expect(proxyChoice.textContent).toContain('🚀')
+    expect(proxyChoice.style.getPropertyValue('--browser-primary')).toBe('#22C55E')
+    await user.click(proxyChoice)
 
     await waitFor(() => expect(api.resolveURLRoute).toHaveBeenCalledWith('route-1', 'proxy:server-socks:staging:google-chrome'))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose where to open this link' })).toBeNull())

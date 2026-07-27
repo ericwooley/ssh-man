@@ -6,6 +6,7 @@ import {
   onBrowserSwitcherRequested,
   openServerCommand,
   saveBrowserAppearance,
+  setURLRouteWindowMode,
 } from './api'
 
 function installRuntime() {
@@ -43,6 +44,22 @@ describe('browser appearance persistence', () => {
       'proxy:server-1:google-chrome',
       { icon: 'icon:x', primaryColor: '#22C55E' },
     )
+  })
+})
+
+describe('URL route window sizing', () => {
+  test('uses the expanded chooser size and restores the main window size', () => {
+    window.runtime = {
+      WindowSetSize: vi.fn(),
+      WindowCenter: vi.fn(),
+    }
+
+    setURLRouteWindowMode(true)
+    setURLRouteWindowMode(false)
+
+    expect(window.runtime.WindowSetSize).toHaveBeenNthCalledWith(1, 520, 600)
+    expect(window.runtime.WindowSetSize).toHaveBeenNthCalledWith(2, 420, 720)
+    expect(window.runtime.WindowCenter).toHaveBeenCalledTimes(2)
   })
 })
 
