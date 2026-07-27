@@ -23,10 +23,8 @@ func launchDarwin(appDataDir string, serverID string, option BrowserOption, sock
 		"-na",
 		option.LaunchReference,
 		"--args",
-		fmt.Sprintf("--proxy-server=socks5://localhost:%d", socksPort),
-		fmt.Sprintf("--user-data-dir=%s", profileDir),
-		"--proxy-bypass-list=<-loopback>",
 	}
+	arguments = append(arguments, chromiumProxyArguments("127.0.0.1", profileDir, socksPort)...)
 	if rawURL != "" {
 		arguments = append(arguments, rawURL)
 	}
