@@ -1,0 +1,156 @@
+name: Promote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release to make the default Homebrew install (for example, 1.7.0)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: homebrew-publish
+  cancel-in-progress: false
+
+jobs:
+  promote-release:
+    name: Promote release to stable
+    if: github.repository == 'ericwooley/ssh-man'
+    runs-on: macos-26
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            printf 'Version must be a plain semantic version such as 1.7.0: %s\n' "$VERSION" >&2
+            exit 2
+          fi
+
+          if ! git cat-file -e "${VERSION}^{commit}" 2>/dev/null; then
+            printf 'Release tag does not exist: %s\n' "$VERSION" >&2
+            exit 2
+          fi
+
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "${VERSION}^{commit}" origin/main; then
+            printf 'Release tag is not on main: %s\n' "$VERSION" >&2
+            exit 2
+          fi
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$VERSION" \
+            --jq '.assets | any(.name == "ssh-man.dmg")' |
+            grep -Fxq true
+
+      - name: Download release artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern ssh-man.dmg \
+            --dir dist
+          test -s dist/ssh-man.dmg
+
+      - name: Checkout tap repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ericwooley/homebrew-apps
+          ref: main
+          path: homebrew-apps
+          persist-credentials: false
+
+      - name: Update stable Homebrew cask
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(shasum -a 256 dist/ssh-man.dmg | awk '{print $1}')"
+          ruby ./scripts/update-homebrew-cask.rb \
+            stable \
+            "$VERSION" \
+            "$SHA" \
+            homebrew-apps/Casks/ssh-man.rb \
+            homebrew-apps/Casks/ssh-man.rb
+
+      - name: Validate stable Homebrew cask
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -c homebrew-apps/Casks/ssh-man.rb
+          grep -F 'binary "#{appdir}/ssh-man.app/Contents/MacOS/ssh-man"' homebrew-apps/Casks/ssh-man.rb
+
+          TAP_ROOT="$(brew --repository)/Library/Taps/ericwooley"
+          TAP_PATH="$TAP_ROOT/homebrew-apps"
+          if [ -e "$TAP_PATH" ]; then
+            printf 'Unexpected pre-existing Homebrew tap path: %s\n' "$TAP_PATH" >&2
+            exit 1
+          fi
+          mkdir -p "$TAP_ROOT"
+          ln -s "$GITHUB_WORKSPACE/homebrew-apps" "$TAP_PATH"
+          trap 'rm -f "$TAP_PATH"' EXIT
+          HOMEBREW_NO_AUTO_UPDATE=1 brew style --cask ericwooley/apps/ssh-man
+          rm -f "$TAP_PATH"
+          trap - EXIT
+
+      - name: Commit stable cask
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homebrew-apps
+
+          if git diff --quiet -- Casks/ssh-man.rb; then
+            printf 'Stable Homebrew cask already points to %s.\n' "$VERSION"
+            exit 0
+          fi
+
+          git add Casks/ssh-man.rb
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Promote ssh-man ${VERSION} to stable"
+
+      - name: Push stable cask
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd homebrew-apps
+
+          if git diff --quiet HEAD origin/main; then
+            printf 'No stable Homebrew cask commit to push.\n'
+            exit 0
+          fi
+
+          gh auth setup-git
+          git push origin HEAD:main
+
+      - name: Mark GitHub release official
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ssh-man $VERSION" \
+            --prerelease=false \
+            --latest

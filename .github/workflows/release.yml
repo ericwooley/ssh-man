@@ -1,4 +1,4 @@
-name: Release
+name: Experimental Release
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: release-main
+  group: homebrew-publish
   cancel-in-progress: false
 
 jobs:
@@ -38,7 +38,7 @@ jobs:
         run: bash ./scripts/plan-release.sh >> "$GITHUB_OUTPUT"
 
   build-macos:
-    name: Build and test macOS release
+    name: Build and test experimental macOS release
     needs: plan-release
     if: needs.plan-release.outputs.release_required == 'true'
     runs-on: macos-26
@@ -103,7 +103,7 @@ jobs:
           retention-days: 7
 
   publish-release:
-    name: Sign, notarize, publish, and update Homebrew
+    name: Sign, notarize, and publish experimental release
     needs:
       - plan-release
       - build-macos
@@ -212,13 +212,15 @@ jobs:
             build/bin/ssh-man.app \
             dist/ssh-man.dmg
 
-      - name: Publish GitHub release
+      - name: Publish experimental GitHub release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ needs.plan-release.outputs.next_version }}
-          name: ssh-man ${{ needs.plan-release.outputs.next_version }}
+          name: ssh-man ${{ needs.plan-release.outputs.next_version }} (experimental)
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          prerelease: true
+          make_latest: false
           fail_on_unmatched_files: true
           files: dist/ssh-man.dmg
 
@@ -237,51 +239,23 @@ jobs:
           SHA="$(shasum -a 256 dist/ssh-man.dmg | awk '{print $1}')"
           printf 'SHA=%s\n' "$SHA" >> "$GITHUB_ENV"
 
-      - name: Update Homebrew cask
+      - name: Update experimental Homebrew cask
         shell: bash
         run: |
           set -euo pipefail
-          ruby <<'RUBY'
-          path = "homebrew-apps/Casks/ssh-man.rb"
-          content = File.read(path)
+          ruby ./scripts/update-homebrew-cask.rb \
+            experimental \
+            "$VERSION" \
+            "$SHA" \
+            homebrew-apps/Casks/ssh-man.rb \
+            homebrew-apps/Casks/ssh-man@experimental.rb
 
-          replacements = {
-            /version ".*"/ => %(version "#{ENV.fetch("VERSION")}"),
-            /sha256 ".*"/ => %(sha256 "#{ENV.fetch("SHA")}"),
-            %r{url ".*"} => %(url "https://github.com/ericwooley/ssh-man/releases/download/#{ENV.fetch("VERSION")}/ssh-man.dmg"),
-          }
-          replacements.each do |pattern, replacement|
-            raise "Missing expected cask field matching #{pattern.inspect}" unless content.sub!(pattern, replacement)
-          end
-
-          app_stanza = %(  app "ssh-man.app")
-          binary_stanza = %(  binary "\#{appdir}/ssh-man.app/Contents/MacOS/ssh-man")
-          macos_dependency = %(  depends_on :macos)
-
-          content.sub!(
-            %(  desc "Manage your SSH tunnels and SOCKS5 proxies."),
-            %(  desc "Manage your SSH tunnels and SOCKS5 proxies"),
-          )
-          unless content.include?(macos_dependency)
-            raise "Missing expected app stanza" unless content.include?(app_stanza)
-
-            content.sub!(app_stanza, "#{macos_dependency}\n\n#{app_stanza}")
-          end
-          unless content.include?(binary_stanza)
-            raise "Missing expected app stanza" unless content.include?(app_stanza)
-
-            content.sub!(app_stanza, "#{app_stanza}\n#{binary_stanza}")
-          end
-
-          File.write(path, content)
-          RUBY
-
-      - name: Validate Homebrew cask
+      - name: Validate experimental Homebrew cask
         shell: bash
         run: |
           set -euo pipefail
-          ruby -c homebrew-apps/Casks/ssh-man.rb
-          grep -F 'binary "#{appdir}/ssh-man.app/Contents/MacOS/ssh-man"' homebrew-apps/Casks/ssh-man.rb
+          ruby -c homebrew-apps/Casks/ssh-man@experimental.rb
+          grep -F 'binary "#{appdir}/ssh-man.app/Contents/MacOS/ssh-man"' homebrew-apps/Casks/ssh-man@experimental.rb
 
           TAP_ROOT="$(brew --repository)/Library/Taps/ericwooley"
           TAP_PATH="$TAP_ROOT/homebrew-apps"
@@ -292,7 +266,7 @@ jobs:
           mkdir -p "$TAP_ROOT"
           ln -s "$GITHUB_WORKSPACE/homebrew-apps" "$TAP_PATH"
           trap 'rm -f "$TAP_PATH"' EXIT
-          HOMEBREW_NO_AUTO_UPDATE=1 brew style --cask ericwooley/apps/ssh-man
+          HOMEBREW_NO_AUTO_UPDATE=1 brew style --cask ericwooley/apps/ssh-man@experimental
           rm -f "$TAP_PATH"
           trap - EXIT
 
@@ -302,13 +276,14 @@ jobs:
           set -euo pipefail
           cd homebrew-apps
 
-          if git diff --quiet -- Casks/ssh-man.rb; then
-            printf 'Homebrew cask already up to date.\n'
+          if git diff --quiet -- Casks/ssh-man@experimental.rb &&
+            git ls-files --error-unmatch Casks/ssh-man@experimental.rb >/dev/null 2>&1; then
+            printf 'Experimental Homebrew cask already up to date.\n'
             exit 0
           fi
 
-          git add Casks/ssh-man.rb
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Update ssh-man to ${VERSION}"
+          git add Casks/ssh-man@experimental.rb
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Update experimental ssh-man to ${VERSION}"
 
       - name: Push tap update
         shell: bash
