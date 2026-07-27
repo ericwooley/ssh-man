@@ -203,6 +203,24 @@ ssh-man version
 
 Homebrew installs the menu-bar app and links its full CLI into your `PATH` as `ssh-man`. Official macOS releases are signed with an Apple Developer ID, notarized by Apple, and distributed with a stapled notarization ticket under the bundle identifier `tech.moonpixels.ssh-man`.
 
+### Experimental releases
+
+The experimental channel follows qualifying releases from `main`. To switch from the stable cask:
+
+```bash
+brew uninstall --cask ssh-man
+brew install --cask ssh-man@experimental
+```
+
+Upgrade that channel with `brew upgrade --cask ssh-man@experimental`. To return to the official release:
+
+```bash
+brew uninstall --cask ssh-man@experimental
+brew install --cask ssh-man
+```
+
+Both channels contain signed and notarized builds. The stable `ssh-man` cask changes only when an experimental release is explicitly promoted.
+
 ### Upgrade
 
 ```bash
@@ -370,7 +388,17 @@ Install the repository's Git hooks once after cloning:
 
 The `commit-msg` hook and CI require [Conventional Commits](https://www.conventionalcommits.org/). Use `fix:` or `perf:` for a patch release, `feat:` for a minor release, and add `!` after the type or a `BREAKING CHANGE:` footer for a major release. Scoped forms such as `feat(browser): ...` are supported. Other allowed types (`build`, `chore`, `ci`, `docs`, `refactor`, `revert`, `style`, and `test`) do not create a release by themselves.
 
-Every push to `main` checks the non-merge commits since the latest plain semantic-version tag. When at least one commit requires a release, GitHub Actions calculates the next version, builds and tests the macOS app, creates the corresponding `x.y.z` tag and GitHub release, attaches the DMG, and updates the Homebrew cask. Documentation- or maintenance-only merges complete without publishing a new version.
+Every push to `main` checks the non-merge commits since the latest plain semantic-version tag. When at least one commit requires a release, GitHub Actions calculates the next version, builds and tests the macOS app, creates the corresponding `x.y.z` experimental GitHub release, attaches the DMG, and updates `ssh-man@experimental`. Documentation- or maintenance-only merges complete without publishing a new version.
+
+To make a tested release the default Homebrew install, run **Actions → Promote Release → Run workflow** from `main` and enter its plain version, such as `1.7.0`. The equivalent command is:
+
+```bash
+gh workflow run promote-release.yml \
+  --repo ericwooley/ssh-man \
+  -f version=1.7.0
+```
+
+Promotion verifies that the tag belongs to `main` and that its signed DMG exists, reuses that artifact for the stable `ssh-man` cask, and marks the GitHub release as the latest official release.
 
 ### Release credentials
 
@@ -391,7 +419,7 @@ In the `ssh-man` repository, create an environment named `release`, allow deploy
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated for the Apple notary service |
 | `APPLE_TEAM_ID` | Team ID that issued the Developer ID Application certificate |
 
-The build and test job runs without credentials. Only the final protected job imports the certificate into a temporary keychain, validates the notarization credentials, signs the app and DMG, submits the DMG to Apple, staples and verifies the ticket, publishes the GitHub release, and updates Homebrew. The temporary certificate and keychain are removed at the end of the job.
+The build and test job runs without credentials. Only the final protected experimental-release job imports the certificate into a temporary keychain, validates the notarization credentials, signs the app and DMG, submits the DMG to Apple, staples and verifies the ticket, publishes the GitHub release, and updates Homebrew. The promotion job reuses that signed artifact and the protected Homebrew token. The temporary certificate and keychain are removed at the end of the experimental-release job.
 
 Rotate credentials before they expire or are revoked: install replacements first, update the environment secrets, verify a release, and then revoke the old credentials. Prefer a GitHub App installed only on `homebrew-apps` with **Contents: Read and write** if the workflow is updated to mint a short-lived installation token at runtime; do not store an installation token as a long-lived secret.
 
