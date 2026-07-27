@@ -238,3 +238,51 @@ func TestPreferencesStoreRejectsMalformedBrowserAppearancesJSON(t *testing.T) {
 		t.Fatalf("load error = %v, want malformed browser appearances error", err)
 	}
 }
+
+func TestPreferencesStorePersistsURLPortAssignments(t *testing.T) {
+	db := openTestDatabase(t)
+	store := NewPreferencesStore(db)
+	pref := preferencesdomain.Default()
+	pref.URLPortAssignments = []preferencesdomain.URLPortAssignment{{
+		ID:        "docs",
+		Port:      3000,
+		ServerID:  "staging",
+		BrowserID: "firefox",
+	}}
+
+	if err := store.Save(context.Background(), pref); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	loaded, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("load preferences: %v", err)
+	}
+	if !reflect.DeepEqual(loaded.URLPortAssignments, pref.URLPortAssignments) {
+		t.Fatalf("assignments = %#v, want %#v", loaded.URLPortAssignments, pref.URLPortAssignments)
+	}
+}
+
+func TestPreferencesStorePersistsNilURLPortAssignmentsAsEmptyArray(t *testing.T) {
+	db := openTestDatabase(t)
+	store := NewPreferencesStore(db)
+	pref := preferencesdomain.Default()
+	pref.URLPortAssignments = nil
+
+	if err := store.Save(context.Background(), pref); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	var stored string
+	if err := db.QueryRow(`SELECT url_port_assignments_json FROM user_preferences WHERE id = 1`).Scan(&stored); err != nil {
+		t.Fatalf("load stored URL port assignments JSON: %v", err)
+	}
+	if stored != "[]" {
+		t.Fatalf("stored URL port assignments = %q, want []", stored)
+	}
+	loaded, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("load preferences: %v", err)
+	}
+	if loaded.URLPortAssignments == nil || len(loaded.URLPortAssignments) != 0 {
+		t.Fatalf("loaded assignments = %#v, want non-nil empty slice", loaded.URLPortAssignments)
+	}
+}

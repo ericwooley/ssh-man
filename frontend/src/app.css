@@ -1443,7 +1443,8 @@ svg {
 
 .url-routing-browser-grid label,
 .url-rule-card > label,
-.custom-browser-card > label {
+.custom-browser-card > label,
+.url-port-assignment-card > label {
   display: grid;
   gap: 5px;
   color: var(--text-muted);
@@ -1456,7 +1457,9 @@ svg {
 .url-rule-card select,
 .url-rule-card textarea,
 .custom-browser-card input,
-.custom-browser-card select {
+.custom-browser-card select,
+.url-port-assignment-card input,
+.url-port-assignment-card select {
   width: 100%;
   min-height: 42px;
   padding: 9px 10px;
@@ -1515,7 +1518,8 @@ svg {
 }
 
 .custom-browsers-heading,
-.url-rules-heading {
+.url-rules-heading,
+.url-port-assignments-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1523,38 +1527,44 @@ svg {
 }
 
 .custom-browsers-heading > div,
-.url-rules-heading > div {
+.url-rules-heading > div,
+.url-port-assignments-heading > div {
   display: grid;
   gap: 2px;
 }
 
 .custom-browsers-heading strong,
-.url-rules-heading strong {
+.url-rules-heading strong,
+.url-port-assignments-heading strong {
   font-size: 12px;
 }
 
 .custom-browsers-heading span,
 .custom-browsers-empty,
 .url-rules-heading span,
-.url-rules-empty {
+.url-rules-empty,
+.url-port-assignments-heading span {
   color: var(--text-subtle);
   font-size: 10px;
 }
 
 .custom-browsers-heading .text-button,
-.url-rules-heading .text-button {
+.url-rules-heading .text-button,
+.url-port-assignments-heading .text-button {
   display: flex;
   align-items: center;
   gap: 5px;
 }
 
 .custom-browsers-heading svg,
-.url-rules-heading svg {
+.url-rules-heading svg,
+.url-port-assignments-heading svg {
   width: 14px;
 }
 
 .custom-browser-list,
-.url-rule-list {
+.url-rule-list,
+.url-port-assignment-list {
   display: grid;
   gap: 10px;
   margin: 0;
@@ -1563,7 +1573,8 @@ svg {
 }
 
 .custom-browser-card,
-.url-rule-card {
+.url-rule-card,
+.url-port-assignment-card {
   display: grid;
   gap: 10px;
   padding: 11px;
@@ -1622,6 +1633,15 @@ svg {
   line-height: 1.35;
 }
 
+.url-port-assignment-card {
+  grid-template-columns: minmax(88px, 0.55fr) minmax(130px, 1fr) minmax(140px, 1fr) auto;
+  align-items: end;
+}
+
+.url-port-assignment-card .icon-button {
+  margin-bottom: 1px;
+}
+
 .url-routing-save {
   width: 100%;
 }
@@ -1634,7 +1654,7 @@ svg {
 
 .url-route-chooser {
   display: grid;
-  align-content: start;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: 14px;
   width: 100%;
   height: 100%;
@@ -1675,9 +1695,41 @@ svg {
   font-size: 12px;
 }
 
+.url-route-countdown {
+  display: grid;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.url-route-countdown.is-paused {
+  color: var(--warning);
+}
+
+.url-route-countdown__track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+
+.url-route-countdown__track > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 100ms linear;
+}
+
 .url-route-choice-list {
   display: grid;
+  align-content: start;
   gap: 9px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .url-route-choice-list > button {
@@ -1697,6 +1749,12 @@ svg {
 .url-route-choice-list > button:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.url-route-choice-list > button.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .url-route-choice-list__icon {
@@ -1739,13 +1797,22 @@ svg {
   }
 
   .custom-browsers-heading,
-  .url-rules-heading {
+  .url-rules-heading,
+  .url-port-assignments-heading {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .custom-browser-path {
     grid-template-columns: 1fr;
+  }
+
+  .url-port-assignment-card {
+    grid-template-columns: 1fr;
+  }
+
+  .url-port-assignment-card .icon-button {
+    justify-self: end;
   }
 }
 

@@ -222,6 +222,26 @@ func TestRunMigrationsAddsServerSOCKSPortToLegacySchema(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsAddsURLPortAssignments(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	var assignments string
+	if err := db.QueryRow(`
+		SELECT url_port_assignments_json
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&assignments); err != nil {
+		t.Fatalf("load migrated URL port assignments: %v", err)
+	}
+	if assignments != "[]" {
+		t.Fatalf("migrated assignments = %q, want []", assignments)
+	}
+}
+
 func openUnmigratedDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "migration.db"))

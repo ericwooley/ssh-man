@@ -160,6 +160,7 @@ function ShortcutRecorder({ id, label, description, ariaLabel, value, fallback, 
 
 function URLRoutingSettings({
   preferences,
+  servers = [],
   state,
   onLoad,
   onSave,
@@ -171,6 +172,7 @@ function URLRoutingSettings({
     proxyBrowserId: preferences.proxyBrowserId || '',
     customBrowsers: preferences.customBrowsers || [],
     urlRules: preferences.urlRules || [],
+    urlPortAssignments: preferences.urlPortAssignments || [],
   })
   const [saving, setSaving] = useState(false)
   const [settingDefault, setSettingDefault] = useState(false)
@@ -187,8 +189,9 @@ function URLRoutingSettings({
       proxyBrowserId: preferences.proxyBrowserId || firstProxyBrowser,
       customBrowsers: preferences.customBrowsers || [],
       urlRules: preferences.urlRules || [],
+      urlPortAssignments: preferences.urlPortAssignments || [],
     })
-  }, [preferences.customBrowsers, preferences.defaultBrowserId, preferences.proxyBrowserId, preferences.urlRules, state.browsers])
+  }, [preferences.customBrowsers, preferences.defaultBrowserId, preferences.proxyBrowserId, preferences.urlPortAssignments, preferences.urlRules, state.browsers])
 
   const browserChoices = [...state.browsers]
   for (const customBrowser of draft.customBrowsers) {
@@ -244,6 +247,11 @@ function URLRoutingSettings({
             ? { ...rule, browserId: fallbackID }
             : rule
         )),
+        urlPortAssignments: current.urlPortAssignments.map((assignment) => (
+          assignment.browserId === removedID
+            ? { ...assignment, browserId: proxyID }
+            : assignment
+        )),
       }
     })
   }
@@ -292,6 +300,36 @@ function URLRoutingSettings({
     }))
   }
 
+  function addPortAssignment() {
+    const serverId = servers[0]?.server?.id || ''
+    const browserId = draft.proxyBrowserId || browserChoices.find((browser) => browser.supportsProxyLaunch)?.id || ''
+    setDraft((current) => ({
+      ...current,
+      urlPortAssignments: current.urlPortAssignments.concat({
+        id: `port-${Date.now().toString(36)}-${current.urlPortAssignments.length + 1}`,
+        port: '',
+        serverId,
+        browserId,
+      }),
+    }))
+  }
+
+  function updatePortAssignment(index, update) {
+    setDraft((current) => ({
+      ...current,
+      urlPortAssignments: current.urlPortAssignments.map((assignment, assignmentIndex) => (
+        assignmentIndex === index ? { ...assignment, ...update } : assignment
+      )),
+    }))
+  }
+
+  function removePortAssignment(index) {
+    setDraft((current) => ({
+      ...current,
+      urlPortAssignments: current.urlPortAssignments.filter((_, assignmentIndex) => assignmentIndex !== index),
+    }))
+  }
+
   async function save() {
     setSaving(true)
     try {
@@ -301,6 +339,10 @@ function URLRoutingSettings({
           ...rule,
           browserId: rule.action === 'browser' ? rule.browserId : '',
           command: rule.action === 'command' ? rule.command : '',
+        })),
+        urlPortAssignments: draft.urlPortAssignments.map((assignment) => ({
+          ...assignment,
+          port: Number(assignment.port || 0),
         })),
       })
     } finally {
@@ -331,7 +373,7 @@ function URLRoutingSettings({
         </span>
       </div>
       <p className="section-description">
-        Route matching URLs by rule. Unmatched localhost ports are checked against connected server proxies before using your fallback browser.
+        Every link opens a timed chooser. Explicit ports are checked through each connected server proxy before the selected default is used.
       </p>
 
       <div className="custom-browsers-heading">
@@ -427,6 +469,69 @@ function URLRoutingSettings({
         </label>
       </div>
 
+      <div className="url-port-assignments-heading">
+        <div>
+          <strong>Port defaults</strong>
+          <span>Choose the browser and saved host preselected for a specific URL port.</span>
+        </div>
+        <button className="text-button" type="button" disabled={!servers.length || !browserChoices.some((browser) => browser.supportsProxyLaunch)} onClick={addPortAssignment}>
+          <Plus aria-hidden="true" /> Assign port
+        </button>
+      </div>
+
+      {draft.urlPortAssignments.length ? (
+        <ol className="url-port-assignment-list">
+          {draft.urlPortAssignments.map((assignment, index) => {
+            const hostExists = servers.some((item) => item.server.id === assignment.serverId)
+            const browserExists = browserChoices.some((browser) => browser.id === assignment.browserId && browser.supportsProxyLaunch)
+            return (
+              <li className="url-port-assignment-card" key={assignment.id}>
+                <label>
+                  <span>Port</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max="65535"
+                    aria-label={`Port assignment ${index + 1} port`}
+                    value={assignment.port}
+                    placeholder="3000"
+                    onChange={(event) => updatePortAssignment(index, { port: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Host</span>
+                  <select
+                    aria-label={`Port assignment ${index + 1} host`}
+                    value={assignment.serverId}
+                    onChange={(event) => updatePortAssignment(index, { serverId: event.target.value })}
+                  >
+                    {!hostExists && assignment.serverId ? <option value={assignment.serverId}>Unavailable host</option> : null}
+                    {servers.map((item) => <option key={item.server.id} value={item.server.id}>{item.server.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Browser</span>
+                  <select
+                    aria-label={`Port assignment ${index + 1} browser`}
+                    value={assignment.browserId}
+                    onChange={(event) => updatePortAssignment(index, { browserId: event.target.value })}
+                  >
+                    {!browserExists && assignment.browserId ? <option value={assignment.browserId}>Unavailable browser</option> : null}
+                    {browserChoices.filter((browser) => browser.supportsProxyLaunch).map((browser) => (
+                      <option key={browser.id} value={browser.id}>{browser.displayName}</option>
+                    ))}
+                  </select>
+                </label>
+                <IconButton label={`Remove port assignment ${index + 1}`} onClick={() => removePortAssignment(index)}>
+                  <Trash2 aria-hidden="true" />
+                </IconButton>
+              </li>
+            )
+          })}
+        </ol>
+      ) : <p className="url-rules-empty">No port defaults. A single reachable host is selected automatically; otherwise the fallback browser is selected.</p>}
+
       <div className="default-browser-control">
         <Route aria-hidden="true" />
         <div>
@@ -521,7 +626,7 @@ function URLRoutingSettings({
             </li>
           ))}
         </ol>
-      ) : <p className="url-rules-empty">No URL rules. Unmatched links use automatic localhost routing and the fallback browser.</p>}
+      ) : <p className="url-rules-empty">No URL rules. Port defaults and reachability choose the timed default before the fallback browser.</p>}
 
       <button className="primary-button url-routing-save" type="button" disabled={saving || state.loading} onClick={save}>
         {saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
@@ -533,6 +638,7 @@ function URLRoutingSettings({
 
 export function SettingsScreen({
   preferences,
+  servers = [],
   diagnostics,
   storageIssue,
   runtimeFresh,
@@ -602,6 +708,7 @@ export function SettingsScreen({
 
       <URLRoutingSettings
         preferences={preferences}
+        servers={servers}
         state={urlRoutingState}
         onLoad={onLoadURLRouting}
         onSave={onSaveURLRouting}
