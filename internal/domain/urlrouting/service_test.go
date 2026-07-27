@@ -184,6 +184,42 @@ func TestHandleProbesEveryConnectedHostForAnyExplicitURLPort(t *testing.T) {
 	}
 }
 
+func TestHandleKeepsUnmatchedProxyBrowsersAfterMatchingChoices(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "safari"
+	pref.ProxyBrowserID = "google-chrome"
+	configs, servers, runtimes := routingFixtures()
+	service := NewService(
+		fakePreferences{value: pref},
+		fakeConfigurations{items: configs},
+		fakeServers{items: servers},
+		fakeRuntimes{items: runtimes},
+		routingBrowsers(),
+	)
+	service.probe = func(_ context.Context, socksPort int, _ string, _ int) error {
+		if socksPort == 41001 {
+			return nil
+		}
+		return errors.New("closed")
+	}
+
+	result, err := service.Handle(context.Background(), "http://localhost:3000/")
+	if err != nil {
+		t.Fatalf("handle url: %v", err)
+	}
+	if result.Request.DefaultChoiceID != "proxy:server-socks:bts:google-chrome" {
+		t.Fatalf("default choice = %q", result.Request.DefaultChoiceID)
+	}
+	matchingIndex := choiceIndex(result.Request.Choices, "proxy:server-socks:bts:google-chrome")
+	unmatchedIndex := choiceIndex(result.Request.Choices, "proxy:server-socks:staging:google-chrome")
+	if matchingIndex < 0 || unmatchedIndex < 0 {
+		t.Fatalf("choices = %#v, want matching and unmatched proxy browsers", result.Request.Choices)
+	}
+	if matchingIndex >= unmatchedIndex {
+		t.Fatalf("matching choice index = %d, unmatched choice index = %d", matchingIndex, unmatchedIndex)
+	}
+}
+
 func TestHandleUsesPortAssignmentForDefaultBrowserHostCombination(t *testing.T) {
 	pref := preferencesdomain.Default()
 	pref.DefaultBrowserID = "safari"
@@ -225,6 +261,43 @@ func TestHandleUsesPortAssignmentForDefaultBrowserHostCombination(t *testing.T) 
 	}
 }
 
+func TestHandleDoesNotDefaultToUnreachablePortAssignment(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "safari"
+	pref.ProxyBrowserID = "google-chrome"
+	pref.URLPortAssignments = []preferencesdomain.URLPortAssignment{{
+		ID:        "docs",
+		Port:      3000,
+		ServerID:  "staging",
+		BrowserID: "firefox",
+	}}
+	configs, servers, runtimes := routingFixtures()
+	service := NewService(
+		fakePreferences{value: pref},
+		fakeConfigurations{items: configs},
+		fakeServers{items: servers},
+		fakeRuntimes{items: runtimes},
+		routingBrowsers(),
+	)
+	service.probe = func(_ context.Context, socksPort int, _ string, _ int) error {
+		if socksPort == 41001 {
+			return nil
+		}
+		return errors.New("closed")
+	}
+
+	result, err := service.Handle(context.Background(), "http://localhost:3000/")
+	if err != nil {
+		t.Fatalf("handle url: %v", err)
+	}
+	if result.Request.DefaultChoiceID != "proxy:server-socks:bts:google-chrome" {
+		t.Fatalf("default choice = %q, want reachable proxy", result.Request.DefaultChoiceID)
+	}
+	if !hasChoice(result.Request.Choices, "proxy:server-socks:staging:firefox") {
+		t.Fatalf("choices = %#v, want unmatched assigned proxy to remain selectable", result.Request.Choices)
+	}
+}
+
 func TestHandleUsesFallbackWhenSeveralHostsReachUnassignedPort(t *testing.T) {
 	pref := preferencesdomain.Default()
 	pref.DefaultBrowserID = "safari"
@@ -251,7 +324,7 @@ func TestHandleUsesFallbackWhenSeveralHostsReachUnassignedPort(t *testing.T) {
 	}
 }
 
-func TestHandleDoesNotProbeURLWithoutExplicitPort(t *testing.T) {
+func TestHandleKeepsProxyBrowsersWithoutProbingURLWithoutExplicitPort(t *testing.T) {
 	pref := preferencesdomain.Default()
 	pref.DefaultBrowserID = "safari"
 	configs, servers, runtimes := routingFixtures()
@@ -274,10 +347,13 @@ func TestHandleDoesNotProbeURLWithoutExplicitPort(t *testing.T) {
 	if result.Request.DefaultChoiceID != "browser:safari" {
 		t.Fatalf("default choice = %q", result.Request.DefaultChoiceID)
 	}
-	for _, choice := range result.Request.Choices {
-		if choice.Kind == RouteChoiceProxy {
-			t.Fatalf("unexpected proxy choice: %#v", choice)
-		}
+	regularIndex := choiceIndex(result.Request.Choices, "browser:safari")
+	proxyIndex := choiceIndex(result.Request.Choices, "proxy:server-socks:bts:google-chrome")
+	if regularIndex < 0 || proxyIndex < 0 {
+		t.Fatalf("choices = %#v, want regular and proxy browsers", result.Request.Choices)
+	}
+	if regularIndex >= proxyIndex {
+		t.Fatalf("regular choice index = %d, proxy choice index = %d", regularIndex, proxyIndex)
 	}
 }
 
@@ -339,6 +415,15 @@ func hasChoice(choices []RouteChoice, id string) bool {
 		}
 	}
 	return false
+}
+
+func choiceIndex(choices []RouteChoice, id string) int {
+	for index, choice := range choices {
+		if choice.ID == id {
+			return index
+		}
+	}
+	return -1
 }
 
 func routingFixtures() ([]configdomain.ConnectionConfiguration, []serverdomain.Server, []sessiondomain.RuntimeSession) {

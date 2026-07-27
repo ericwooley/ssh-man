@@ -95,10 +95,11 @@ type Result struct {
 	Request *RouteRequest `json:"request,omitempty"`
 }
 
-type reachableServer struct {
+type proxyServer struct {
 	ServerID        string
 	ServerName      string
 	ConfigurationID string
+	SOCKSPort       int
 }
 
 type Service struct {
@@ -166,21 +167,26 @@ func (s *Service) Handle(ctx context.Context, rawURL string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	var reachable []reachableServer
+	connected, err := s.connectedProxyServers(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	var reachable []proxyServer
 	if hasExplicitPort {
 		targetHost := parsed.Hostname()
 		if isLoopbackHost(targetHost) {
 			targetHost = "127.0.0.1"
 		}
-		reachable, err = s.reachableServers(ctx, targetHost, port)
-		if err != nil {
-			return Result{}, err
-		}
-		choices = append(choices, proxyBrowserChoices(reachable, destinations)...)
+		reachable = s.reachableServers(ctx, connected, targetHost, port)
 	}
+	choices = append(choices, proxyBrowserChoices(prioritizeProxyServers(connected, reachable), destinations)...)
 
 	if defaultChoiceID == "" && hasExplicitPort {
-		defaultChoiceID = assignedPortChoice(preferences.URLPortAssignments, port, choices)
+		defaultChoiceID = assignedPortChoice(
+			preferences.URLPortAssignments,
+			port,
+			proxyBrowserChoices(reachable, destinations),
+		)
 	}
 	if defaultChoiceID == "" && len(reachable) == 1 {
 		browserID := preferences.ProxyBrowserID
@@ -305,9 +311,9 @@ func regularBrowserChoices(destinations []BrowserDestination) []RouteChoice {
 	return choices
 }
 
-func proxyBrowserChoices(reachable []reachableServer, destinations []BrowserDestination) []RouteChoice {
-	choices := make([]RouteChoice, 0, len(reachable)*len(destinations))
-	for _, server := range reachable {
+func proxyBrowserChoices(servers []proxyServer, destinations []BrowserDestination) []RouteChoice {
+	choices := make([]RouteChoice, 0, len(servers)*len(destinations))
+	for _, server := range servers {
 		for _, destination := range destinations {
 			if !destination.SupportsProxy || destination.ID == "" {
 				continue
@@ -413,7 +419,7 @@ func commandChoiceID(ruleID string) string {
 	return "command:" + ruleID
 }
 
-func (s *Service) reachableServers(ctx context.Context, targetHost string, targetPort int) ([]reachableServer, error) {
+func (s *Service) connectedProxyServers(ctx context.Context) ([]proxyServer, error) {
 	configurations, err := s.configurations.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list browser proxies: %w", err)
@@ -431,11 +437,7 @@ func (s *Service) reachableServers(ctx context.Context, targetHost string, targe
 		runtimeByConfiguration[runtimeState.ConfigurationID] = runtimeState
 	}
 
-	type probeCandidate struct {
-		destination reachableServer
-		socksPort   int
-	}
-	candidates := make([]probeCandidate, 0)
+	connected := make([]proxyServer, 0)
 	for _, configuration := range configurations {
 		if !configdomain.IsManagedSOCKSConfigurationID(configuration.ID) {
 			continue
@@ -448,19 +450,31 @@ func (s *Service) reachableServers(ctx context.Context, targetHost string, targe
 		if name == "" {
 			name = configuration.ServerID
 		}
-		candidates = append(candidates, probeCandidate{
-			destination: reachableServer{
-				ServerID:        configuration.ServerID,
-				ServerName:      name,
-				ConfigurationID: configuration.ID,
-			},
-			socksPort: runtimeState.BoundPort,
+		connected = append(connected, proxyServer{
+			ServerID:        configuration.ServerID,
+			ServerName:      name,
+			ConfigurationID: configuration.ID,
+			SOCKSPort:       runtimeState.BoundPort,
 		})
 	}
+	sort.Slice(connected, func(i, j int) bool {
+		if connected[i].ServerName == connected[j].ServerName {
+			return connected[i].ServerID < connected[j].ServerID
+		}
+		return connected[i].ServerName < connected[j].ServerName
+	})
+	return connected, nil
+}
 
+func (s *Service) reachableServers(
+	ctx context.Context,
+	candidates []proxyServer,
+	targetHost string,
+	targetPort int,
+) []proxyServer {
 	var wait sync.WaitGroup
 	var resultMu sync.Mutex
-	reachable := make([]reachableServer, 0, len(candidates))
+	reachable := make([]proxyServer, 0, len(candidates))
 	for _, candidate := range candidates {
 		candidate := candidate
 		wait.Add(1)
@@ -468,11 +482,11 @@ func (s *Service) reachableServers(ctx context.Context, targetHost string, targe
 			defer wait.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, defaultProbeTimeout)
 			defer cancel()
-			if err := s.probe(probeCtx, candidate.socksPort, targetHost, targetPort); err != nil {
+			if err := s.probe(probeCtx, candidate.SOCKSPort, targetHost, targetPort); err != nil {
 				return
 			}
 			resultMu.Lock()
-			reachable = append(reachable, candidate.destination)
+			reachable = append(reachable, candidate)
 			resultMu.Unlock()
 		}()
 	}
@@ -483,7 +497,23 @@ func (s *Service) reachableServers(ctx context.Context, targetHost string, targe
 		}
 		return reachable[i].ServerName < reachable[j].ServerName
 	})
-	return reachable, nil
+	return reachable
+}
+
+func prioritizeProxyServers(connected, reachable []proxyServer) []proxyServer {
+	prioritized := make([]proxyServer, 0, len(connected))
+	included := make(map[string]struct{}, len(connected))
+	for _, server := range reachable {
+		prioritized = append(prioritized, server)
+		included[server.ConfigurationID] = struct{}{}
+	}
+	for _, server := range connected {
+		if _, exists := included[server.ConfigurationID]; exists {
+			continue
+		}
+		prioritized = append(prioritized, server)
+	}
+	return prioritized
 }
 
 func parseWebURL(rawURL string) (*url.URL, error) {
