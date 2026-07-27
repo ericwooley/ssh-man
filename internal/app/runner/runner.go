@@ -42,8 +42,8 @@ const (
 	urlRouteChoiceEventName        = "url-routing:choice"
 	preferencesChangedEventName    = "preferences:changed"
 	urlRoutingStartupWait          = 12 * time.Second
-	urlRouteChooserWidth           = 440
-	urlRouteChooserHeight          = 460
+	urlRouteChooserWidth           = 520
+	urlRouteChooserHeight          = 600
 )
 
 type menuBar interface {

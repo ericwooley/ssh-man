@@ -431,6 +431,7 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
         <div className="app-frame url-route-frame">
           <URLRouteChooser
             request={urlRouteRequest}
+            appearances={app.preferences.browserAppearances}
             onChoose={async (choiceID) => {
               await api.resolveURLRoute(urlRouteRequest.id, choiceID)
               setURLRouteRequest(null)

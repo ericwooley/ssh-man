@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Globe2, LoaderCircle, Network, TerminalSquare, X } from 'lucide-react'
+import { browserAppearanceForTarget } from '../model/appModel'
 import { IconButton } from './AppChrome'
+import { BrowserAppearanceMark, browserAppearanceStyle } from './BrowserAppearance'
 
 const fallbackTimeoutMilliseconds = 5000
 const timerTickMilliseconds = 100
@@ -11,7 +13,7 @@ function choiceIcon(choice) {
   return Globe2
 }
 
-export function URLRouteChooser({ request, onChoose, onDismiss }) {
+export function URLRouteChooser({ request, appearances = {}, onChoose, onDismiss }) {
   const dialogRef = useRef(null)
   const autoOpenedRequestRef = useRef('')
   const timeoutMilliseconds = Math.max(Number(request.timeoutMilliseconds) || fallbackTimeoutMilliseconds, 0)
@@ -109,7 +111,6 @@ export function URLRouteChooser({ request, onChoose, onDismiss }) {
       tabIndex={-1}
       onKeyDown={handleKeyDown}
       onPointerDown={() => setPaused(true)}
-      onPointerMove={() => setPaused(true)}
       onWheel={() => setPaused(true)}
       onTouchStart={() => setPaused(true)}
     >
@@ -122,7 +123,7 @@ export function URLRouteChooser({ request, onChoose, onDismiss }) {
           <X aria-hidden="true" />
         </IconButton>
       </div>
-      <code className="url-route-chooser__url">{request.url}</code>
+      <code className="url-route-chooser__url" title={request.url}>{request.url}</code>
 
       <div className={`url-route-countdown ${paused ? 'is-paused' : ''}`} role="status" aria-live="polite">
         <span>
@@ -142,11 +143,14 @@ export function URLRouteChooser({ request, onChoose, onDismiss }) {
       <div className="url-route-choice-list" role="listbox" aria-label="Link destination">
         {request.choices.map((choice) => {
           const ChoiceIcon = choiceIcon(choice)
+          const appearance = browserAppearanceForTarget(choice, appearances)
+          const customized = Boolean(appearance.icon || appearance.primaryColor)
           const selected = choice.id === selectedID
           return (
             <button
               key={choice.id}
-              className={selected ? 'is-selected' : ''}
+              className={`${selected ? 'is-selected' : ''} ${customized ? 'has-custom-appearance' : ''}`}
+              style={browserAppearanceStyle(appearance)}
               type="button"
               role="option"
               aria-selected={selected}
@@ -155,7 +159,13 @@ export function URLRouteChooser({ request, onChoose, onDismiss }) {
               onFocus={() => setSelectedID(choice.id)}
               onClick={() => choose(choice.id)}
             >
-              <span className="url-route-choice-list__icon"><ChoiceIcon aria-hidden="true" /></span>
+              <span className="url-route-choice-list__icon" aria-hidden="true">
+                <BrowserAppearanceMark
+                  target={choice}
+                  appearance={appearance}
+                  fallbackIcon={ChoiceIcon}
+                />
+              </span>
               <span>
                 <strong>{choice.label}</strong>
                 <small>{choice.id === request.defaultChoiceId ? `${choice.detail} · Default` : choice.detail}</small>
