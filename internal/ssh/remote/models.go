@@ -35,3 +35,37 @@ type ConnectResult struct {
 	NeedsPassphrase bool   `json:"needsPassphrase,omitempty"`
 	HomePath        string `json:"homePath,omitempty"`
 }
+
+type UploadFailure struct {
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+type UploadResult struct {
+	Uploaded []string        `json:"uploaded"`
+	Failures []UploadFailure `json:"failures"`
+}
+
+type UploadStatus string
+
+const (
+	UploadStatusTransferring UploadStatus = "transferring"
+	UploadStatusCompleted    UploadStatus = "completed"
+	UploadStatusFailed       UploadStatus = "failed"
+)
+
+type UploadProgress struct {
+	UploadID              int          `json:"uploadId"`
+	FileIndex             int          `json:"fileIndex"`
+	Name                  string       `json:"name"`
+	Status                UploadStatus `json:"status"`
+	BytesTransferred      int64        `json:"bytesTransferred"`
+	TotalBytes            int64        `json:"totalBytes"`
+	OverallBytesProcessed int64        `json:"overallBytesProcessed"`
+	OverallBytesTotal     int64        `json:"overallBytesTotal"`
+	FilesProcessed        int          `json:"filesProcessed"`
+	FilesTotal            int          `json:"filesTotal"`
+	FailureCode           string       `json:"failureCode,omitempty"`
+}
+
+type UploadProgressReporter func(UploadProgress)

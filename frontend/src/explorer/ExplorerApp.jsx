@@ -7,6 +7,7 @@ import {
   CheckSquare2,
   ChevronRight,
   CircleAlert,
+  CloudUpload,
   ClipboardPaste,
   Copy,
   Eye,
@@ -48,6 +49,14 @@ import {
   formatFileSize,
   parentRemotePath,
 } from './pathUtils'
+import UploadTransfers from './UploadTransfers'
+import {
+  applyUploadProgress,
+  completeUploadQueue,
+  createUploadQueue,
+  failUploadQueue,
+  summarizeUploadQueue,
+} from './uploadQueue'
 
 function itemIcon(entry) {
   if (entry.kind === 'directory') return Folder
@@ -76,6 +85,73 @@ function favoriteName(remotePath) {
   return remotePath.split('/').filter(Boolean).at(-1) || '/'
 }
 
+function uploadedFilesMessage(uploadedPaths, remoteDirectory) {
+  if (uploadedPaths.length === 1) {
+    const name = uploadedPaths[0].split('/').filter(Boolean).at(-1) || 'file'
+    return `Uploaded ${name} to ${remoteDirectory}.`
+  }
+  return `Uploaded ${uploadedPaths.length} files to ${remoteDirectory}.`
+}
+
+function itemNames(failures) {
+  const names = [...new Set(failures.map((failure) => failure?.name || 'this item'))]
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return `${names[0]} and ${names[1]}`
+  if (names.length === 3) return `${names[0]}, ${names[1]}, and ${names[2]}`
+  const remaining = names.length - 3
+  return `${names.slice(0, 3).join(', ')}, and ${remaining} ${remaining === 1 ? 'other' : 'others'}`
+}
+
+function uploadFailureGuidance(failures, remoteDirectory) {
+  const names = itemNames(failures)
+  const uniqueNameCount = new Set(failures.map((failure) => failure?.name || 'this item')).size
+  const plural = uniqueNameCount > 1
+  if (failures[0]?.code === 'exists') {
+    return plural
+      ? `Rename ${names} locally and drop them again; those names are already in ${remoteDirectory}.`
+      : `Rename ${names} locally and drop it again; that name is already in ${remoteDirectory}.`
+  }
+  if (failures[0]?.code === 'directory') {
+    return `Open ${names}, then drop the individual files you want to add.`
+  }
+  if (failures[0]?.code === 'permission') {
+    return `${remoteDirectory} isn’t writable. Open a writable folder, then drop ${names} there.`
+  }
+  if (failures[0]?.code === 'local-permission') {
+    return `Give SSH Man access to ${names}, or check ${plural ? 'their' : 'its'} file permissions, then drop ${plural ? 'them' : 'it'} again.`
+  }
+  if (failures[0]?.code === 'missing') {
+    return `${names} ${plural ? 'aren’t' : 'isn’t'} on this Mac anymore. Save ${plural ? 'them' : 'it'} to a folder, then drop ${plural ? 'them' : 'it'} again.`
+  }
+  if (failures[0]?.code === 'permissions') {
+    return `${names} couldn’t be uploaded safely, so nothing was added to ${remoteDirectory}. Uploads to this server aren’t supported yet.`
+  }
+  if (failures[0]?.code === 'incomplete') {
+    return `${names} may be incomplete in ${remoteDirectory}. Delete ${plural ? 'them' : 'it'} there before trying again.`
+  }
+  if (failures[0]?.code === 'unsupported') {
+    return `${names} can’t be uploaded. Drop a document, image, or other file instead.`
+  }
+  return `Try uploading ${names} to ${remoteDirectory} again.`
+}
+
+function uploadFeedback(result, remoteDirectory) {
+  const uploaded = Array.isArray(result?.uploaded) ? result.uploaded : []
+  const failures = Array.isArray(result?.failures) ? result.failures : []
+  if (!failures.length) {
+    return { notice: uploaded.length ? uploadedFilesMessage(uploaded, remoteDirectory) : '' }
+  }
+  const failureGroups = new Map()
+  failures.forEach((failure) => {
+    const code = failure?.code || 'failed'
+    failureGroups.set(code, [...(failureGroups.get(code) || []), failure])
+  })
+  const prefix = uploaded.length ? `${uploadedFilesMessage(uploaded, remoteDirectory)} ` : ''
+  const attention = failures.length > 1 ? `${failures.length} dropped items need attention. ` : ''
+  const guidance = [...failureGroups.values()].map((group) => uploadFailureGuidance(group, remoteDirectory)).join(' ')
+  return { error: `${prefix}${attention}${guidance}` }
+}
+
 function remoteName(remotePath) {
   return remotePath.split('/').filter(Boolean).at(-1) || remotePath
 }
@@ -88,6 +164,14 @@ function validRemoteName(value) {
 function remotePathContains(parent, candidate) {
   const prefix = parent === '/' ? '/' : `${parent}/`
   return candidate === parent || candidate.startsWith(prefix)
+}
+
+function uploadDestinationOverlapsPaths(uploading, uploadDestination, remotePaths) {
+  if (!uploading || !uploadDestination) return false
+  return remotePaths.some((remotePath) => (
+    remotePathContains(remotePath, uploadDestination)
+    || remotePathContains(uploadDestination, remotePath)
+  ))
 }
 
 export default function ExplorerApp({ api = defaultApi }) {
@@ -109,6 +193,8 @@ export default function ExplorerApp({ api = defaultApi }) {
   const [error, setError] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [uploadQueue, setUploadQueue] = useState(null)
+  const [detailTab, setDetailTab] = useState('preview')
   const [operation, setOperation] = useState('')
   const [notice, setNotice] = useState('')
   const [clipboard, setClipboard] = useState({ mode: '', paths: [] })
@@ -122,10 +208,20 @@ export default function ExplorerApp({ api = defaultApi }) {
   const historyRef = useRef([])
   const historyIndexRef = useRef(-1)
   const startedRef = useRef(false)
+  const directoryPathRef = useRef('')
+  const uploadingRef = useRef(false)
+  const uploadDestinationRef = useRef('')
+  const uploadIDRef = useRef(0)
   const previewWindowStateRequestsRef = useRef(new Map())
   const previewWindowOpenRef = useRef(false)
   const previewPopoutButtonRef = useRef(null)
   const previewFocusButtonRef = useRef(null)
+  const previewTabRef = useRef(null)
+  const transfersTabRef = useRef(null)
+
+  useEffect(() => {
+    directoryPathRef.current = directory.path
+  }, [directory.path])
 
   const setPreviewWindowOpen = useCallback((remotePath, open) => {
     if (!remotePath) return
@@ -283,6 +379,15 @@ export default function ExplorerApp({ api = defaultApi }) {
     )) ? { mode: '', paths: [] } : current)
   }
 
+  function blockUploadDestinationChange(paths) {
+    const uploadDestination = uploadDestinationRef.current
+    if (!uploadDestinationOverlapsPaths(uploadingRef.current, uploadDestination, paths)) return false
+    closeContextMenu()
+    setError('')
+    setNotice(`Finish the upload to ${uploadDestination} before renaming or deleting items there.`)
+    return true
+  }
+
   const saveCurrentFile = useCallback(async (contentOverride) => {
     if (!editablePreview || saving) return
     const nextContent = typeof contentOverride === 'string' ? contentOverride : draftContent
@@ -305,6 +410,77 @@ export default function ExplorerApp({ api = defaultApi }) {
       setSaving(false)
     }
   }, [api, draftContent, editablePreview, preview, saving])
+
+  const uploadDroppedFiles = useCallback(async (_x, _y, localPaths) => {
+    const files = (localPaths || []).filter((localPath) => (
+      typeof localPath === 'string' && localPath.trim() !== ''
+    ))
+    if (phase !== 'ready' || !directory.path || !files.length) return
+    if (uploadingRef.current) {
+      setError('')
+      setNotice(`Still uploading to ${uploadDestinationRef.current || directory.path}. These files weren’t added — drop them again when it finishes.`)
+      return
+    }
+    const remoteDirectory = directory.path
+    const uploadID = uploadIDRef.current + 1
+    uploadIDRef.current = uploadID
+    uploadingRef.current = true
+    uploadDestinationRef.current = remoteDirectory
+    setUploadQueue(createUploadQueue(files, remoteDirectory, uploadID))
+    setDetailTab('transfers')
+    setError('')
+    setNotice('')
+    let uploadError = null
+    let uploadedCount = 0
+    try {
+      const result = await api.uploadFiles(uploadID, remoteDirectory, files)
+      uploadedCount = Array.isArray(result?.uploaded) ? result.uploaded.length : 0
+      setUploadQueue((current) => current?.id === uploadID ? completeUploadQueue(current, result) : current)
+      const feedback = uploadFeedback(result, remoteDirectory)
+      if (feedback.error) {
+        uploadError = new Error(feedback.error)
+        setError(feedback.error)
+      } else if (feedback.notice) {
+        setNotice(feedback.notice)
+      }
+    } catch (nextError) {
+      uploadError = nextError
+      setUploadQueue((current) => current?.id === uploadID ? failUploadQueue(current) : current)
+      setError('The files could not be uploaded. Check the connection and try again.')
+    } finally {
+      uploadingRef.current = false
+      uploadDestinationRef.current = ''
+    }
+    if (directoryPathRef.current === remoteDirectory) {
+      setUploadQueue((current) => current?.id === uploadID ? { ...current, refreshStatus: 'refreshing' } : current)
+      try {
+        const refreshed = await api.listDirectory(remoteDirectory)
+        setDirectory((current) => current.path === remoteDirectory ? refreshed : current)
+        setUploadQueue((current) => current?.id === uploadID ? { ...current, refreshStatus: 'completed' } : current)
+      } catch (nextError) {
+        setUploadQueue((current) => current?.id === uploadID ? { ...current, refreshStatus: 'failed' } : current)
+        if (uploadedCount > 0 && uploadError) {
+          setNotice('')
+          setError(`${uploadError.message} Reopen ${remoteDirectory} to see the files that were added.`)
+        } else if (!uploadError) {
+          setNotice('')
+          setError(`Your files uploaded to ${remoteDirectory}, but it could not be refreshed. Reopen it to see them.`)
+        }
+      }
+    }
+  }, [api, directory.path, phase])
+
+  useEffect(() => {
+    if (!api.subscribeFileDrop) return undefined
+    return api.subscribeFileDrop(uploadDroppedFiles)
+  }, [api, uploadDroppedFiles])
+
+  useEffect(() => {
+    if (!api.subscribeUploadProgress) return undefined
+    return api.subscribeUploadProgress((progress) => {
+      setUploadQueue((current) => applyUploadProgress(current, progress))
+    })
+  }, [api])
 
   useEffect(() => {
     if (!dirty) return undefined
@@ -476,7 +652,7 @@ export default function ExplorerApp({ api = defaultApi }) {
   }
 
   function beginRename(entry = selectedEntry) {
-    if (!entry || operation || !confirmDiscard()) return
+    if (!entry || operation || blockUploadDestinationChange([entry.path]) || !confirmDiscard()) return
     closeContextMenu()
     setNewFolderName(null)
     setSelectedPaths([entry.path])
@@ -484,7 +660,7 @@ export default function ExplorerApp({ api = defaultApi }) {
   }
 
   async function commitRename() {
-    if (!renaming || operation) return
+    if (!renaming || operation || blockUploadDestinationChange([renaming.path])) return
     const name = renaming.name.trim()
     if (name === remoteName(renaming.path)) {
       setRenaming(null)
@@ -547,7 +723,7 @@ export default function ExplorerApp({ api = defaultApi }) {
   }
 
   function requestDelete(paths = selectedPaths) {
-    if (!paths.length || operation || !confirmDiscard()) return
+    if (!paths.length || operation || blockUploadDestinationChange(paths) || !confirmDiscard()) return
     const names = paths.map(remoteName)
     const oneItem = paths.length === 1
     setDeleteRequest({
@@ -562,6 +738,10 @@ export default function ExplorerApp({ api = defaultApi }) {
 
   async function confirmDelete() {
     if (!deleteRequest || operation) return
+    if (blockUploadDestinationChange(deleteRequest.paths)) {
+      setDeleteRequest(null)
+      return
+    }
     setOperation('delete')
     setError('')
     setNotice('')
@@ -781,6 +961,7 @@ export default function ExplorerApp({ api = defaultApi }) {
   const previewOpenInWindow = Boolean(preview?.path && previewWindowPaths.has(preview.path))
   const previewWindowPending = previewWindowPendingPath === preview?.path
   const sourceEditorVisible = !previewOpenInWindow && (preview?.kind === 'text' || (previewMode === 'source' && ['markdown', 'browser'].includes(preview?.kind)))
+  const uploadSummary = useMemo(() => summarizeUploadQueue(uploadQueue), [uploadQueue])
 
   useEffect(() => {
     const wasOpen = previewWindowOpenRef.current
@@ -843,6 +1024,7 @@ export default function ExplorerApp({ api = defaultApi }) {
 
         <main
           className="explorer-browser"
+          style={{ '--wails-drop-target': phase === 'ready' ? 'drop' : undefined }}
           aria-busy={phase === 'loading' || phase === 'connecting' || Boolean(operation)}
           onContextMenu={openBackgroundContextMenu}
           onClick={(event) => {
@@ -948,12 +1130,59 @@ export default function ExplorerApp({ api = defaultApi }) {
               })}
             </div>
           ) : null}
+          <div className="explorer-drop-overlay" aria-hidden="true">
+            <CloudUpload />
+            <strong>Drop files to upload</strong>
+            <span>Add files to {directory.path || 'this folder'}</span>
+          </div>
         </main>
 
         <aside className="explorer-preview">
           <div className="explorer-preview__header">
-            <div><Eye /><strong>{previewTitle(preview)}</strong>{dirty ? <span className="explorer-edited">Edited</span> : null}</div>
-            <div className="explorer-preview-actions">
+            <div className="explorer-preview-tabs" role="tablist" aria-label="Preview and transfers">
+              <button
+                type="button"
+                role="tab"
+                ref={previewTabRef}
+                id="explorer-preview-tab"
+                aria-controls="explorer-preview-panel"
+                aria-selected={detailTab === 'preview'}
+                tabIndex={detailTab === 'preview' ? 0 : -1}
+                className={detailTab === 'preview' ? 'is-current' : ''}
+                title={previewTitle(preview)}
+                onClick={() => setDetailTab('preview')}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowRight' || !uploadQueue) return
+                  event.preventDefault()
+                  setDetailTab('transfers')
+                  transfersTabRef.current?.focus()
+                }}
+              ><Eye /><span>Preview</span><small>{previewTitle(preview)}</small>{dirty ? <i>Edited</i> : null}</button>
+              {uploadQueue ? (
+                <button
+                  type="button"
+                  role="tab"
+                  ref={transfersTabRef}
+                  id="explorer-transfers-tab"
+                  aria-controls="explorer-transfers-panel"
+                  aria-selected={detailTab === 'transfers'}
+                  tabIndex={detailTab === 'transfers' ? 0 : -1}
+                  className={detailTab === 'transfers' ? 'is-current' : ''}
+                  onClick={() => setDetailTab('transfers')}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'ArrowLeft') return
+                    event.preventDefault()
+                    setDetailTab('preview')
+                    previewTabRef.current?.focus()
+                  }}
+                >
+                  <CloudUpload />
+                  <span>Transfers</span>
+                  {uploadSummary.remainingCount > 0 ? <b>{uploadSummary.remainingCount}</b> : null}
+                </button>
+              ) : null}
+            </div>
+            {detailTab === 'preview' ? <div className="explorer-preview-actions">
               {previewOpenInWindow ? <span className="explorer-preview-window-badge"><ExternalLink />In window</span> : null}
               {!previewOpenInWindow && preview?.kind === 'browser' && previewMode === 'rendered' ? <span className="explorer-preview-safety">Scripts disabled</span> : null}
               {sourceEditorVisible && editablePreview ? <label className="explorer-vim-toggle"><input type="checkbox" checked={vimMode} onChange={toggleVimMode} />Vim controls</label> : null}
@@ -975,40 +1204,49 @@ export default function ExplorerApp({ api = defaultApi }) {
                 ><ExternalLink /></button>
               ) : null}
               {!previewOpenInWindow && editablePreview ? <button type="button" className="explorer-save" aria-label="Save" title="Save (Command/Ctrl+S or :w in Vim mode)" disabled={!dirty || saving} onClick={() => saveCurrentFile()}>{saving ? <LoaderCircle className="spin" /> : <Save />}<span>{saving ? 'Saving' : 'Save'}</span></button> : null}
-            </div>
+            </div> : null}
           </div>
-          {previewLoading ? <div className="explorer-preview-empty"><LoaderCircle className="spin" /> Loading preview…</div> : null}
-          {!previewLoading && !selectedEntry ? <div className="explorer-preview-empty"><File /><span>Select one file to preview it.</span></div> : null}
-          {!previewLoading && selectedEntry?.kind === 'directory' ? <div className="explorer-preview-empty"><Folder /><strong>{selectedEntry.name}</strong><span>Double-click to open this folder.</span></div> : null}
-          {!previewLoading && previewOpenInWindow ? (
-            <div className="explorer-preview-detached">
-              <div className="explorer-preview-detached__status" role="status" aria-live="polite">
-                <ExternalLink aria-hidden="true" />
-                <strong>Preview open in window</strong>
-                <span>{preview.name} is showing in its own window. Close that window to bring the preview back here.</span>
-              </div>
-              <button
-                type="button"
-                ref={previewFocusButtonRef}
-                aria-label={`Focus preview window for ${preview.name}`}
-                title="Bring the preview window to the front"
-                disabled={previewWindowPending}
-                onClick={focusPreviewWindow}
-              >
-                {previewWindowPending ? <LoaderCircle className="spin" aria-hidden="true" /> : <ExternalLink aria-hidden="true" />}
-                {previewWindowPending ? 'Focusing…' : 'Focus preview window'}
-              </button>
+          {detailTab === 'preview' ? (
+            <div className="explorer-preview-panel" id="explorer-preview-panel" role="tabpanel" aria-labelledby="explorer-preview-tab">
+              {previewLoading ? <div className="explorer-preview-empty"><LoaderCircle className="spin" /> Loading preview…</div> : null}
+              {!previewLoading && !selectedEntry ? <div className="explorer-preview-empty"><File /><span>Select one file to preview it.</span></div> : null}
+              {!previewLoading && selectedEntry?.kind === 'directory' ? <div className="explorer-preview-empty"><Folder /><strong>{selectedEntry.name}</strong><span>Double-click to open this folder.</span></div> : null}
+              {!previewLoading && previewOpenInWindow ? (
+                <div className="explorer-preview-detached">
+                  <div className="explorer-preview-detached__status" role="status" aria-live="polite">
+                    <ExternalLink aria-hidden="true" />
+                    <strong>Preview open in window</strong>
+                    <span>{preview.name} is showing in its own window. Close that window to bring the preview back here.</span>
+                  </div>
+                  <button
+                    type="button"
+                    ref={previewFocusButtonRef}
+                    aria-label={`Focus preview window for ${preview.name}`}
+                    title="Bring the preview window to the front"
+                    disabled={previewWindowPending}
+                    onClick={focusPreviewWindow}
+                  >
+                    {previewWindowPending ? <LoaderCircle className="spin" aria-hidden="true" /> : <ExternalLink aria-hidden="true" />}
+                    {previewWindowPending ? 'Focusing…' : 'Focus preview window'}
+                  </button>
+                </div>
+              ) : null}
+              {!previewLoading && preview && !previewOpenInWindow ? (
+                <PreviewContent
+                  content={draftContent}
+                  mode={previewMode}
+                  preview={preview}
+                  vimMode={vimMode}
+                  onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }}
+                  onSave={saveCurrentFile}
+                />
+              ) : null}
             </div>
           ) : null}
-          {!previewLoading && preview && !previewOpenInWindow ? (
-            <PreviewContent
-              content={draftContent}
-              mode={previewMode}
-              preview={preview}
-              vimMode={vimMode}
-              onChange={(content) => { setDraftContent(content); setDirty(content !== preview.content) }}
-              onSave={saveCurrentFile}
-            />
+          {detailTab === 'transfers' && uploadQueue ? (
+            <div className="explorer-preview-panel" id="explorer-transfers-panel" role="tabpanel" aria-labelledby="explorer-transfers-tab">
+              <UploadTransfers queue={uploadQueue} />
+            </div>
           ) : null}
         </aside>
       </div>

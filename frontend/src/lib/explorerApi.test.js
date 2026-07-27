@@ -7,8 +7,11 @@ import {
   move,
   openPreview,
   previewWindowState,
+  subscribeFileDrop,
   rename,
   subscribePreviewWindowState,
+  subscribeUploadProgress,
+  uploadFiles,
 } from './explorerApi'
 
 afterEach(() => {
@@ -56,6 +59,51 @@ describe('preview window lifecycle', () => {
 
     expect(listener).toHaveBeenCalledWith({ remotePath: '/tmp/report.pdf', open: false })
     expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  test('uploads local paths through the explorer binding', async () => {
+    const Upload = vi.fn(async (_uploadID, remoteDirectory, localPaths) => (
+      {
+        uploaded: localPaths.map((localPath) => `${remoteDirectory}/${localPath.split('/').at(-1)}`),
+        failures: [],
+      }
+    ))
+    window.go = { bindings: { ExplorerBindings: { Upload } } }
+
+    await expect(uploadFiles(7, '/srv/site', ['/Users/eric/report.txt']))
+      .resolves.toEqual({ uploaded: ['/srv/site/report.txt'], failures: [] })
+    expect(Upload).toHaveBeenCalledWith(7, '/srv/site', ['/Users/eric/report.txt'])
+  })
+
+  test('subscribes to native file drops on explorer drop targets', () => {
+    const OnFileDrop = vi.fn()
+    const OnFileDropOff = vi.fn()
+    window.runtime = { OnFileDrop, OnFileDropOff }
+    const listener = vi.fn()
+
+    const unsubscribe = subscribeFileDrop(listener)
+    expect(OnFileDrop).toHaveBeenCalledWith(listener, true)
+
+    unsubscribe()
+    expect(OnFileDropOff).toHaveBeenCalledTimes(1)
+  })
+
+  test('subscribes to upload progress events', () => {
+    const callback = vi.fn()
+    const unsubscribe = vi.fn()
+    let listener
+    window.runtime = {
+      EventsOn: vi.fn((eventName, nextListener) => {
+        listener = nextListener
+        return unsubscribe
+      }),
+    }
+
+    expect(subscribeUploadProgress(callback)).toBe(unsubscribe)
+    expect(window.runtime.EventsOn).toHaveBeenCalledWith('explorer:upload-progress', expect.any(Function))
+
+    listener({ fileIndex: 0, status: 'transferring', bytesTransferred: 12 })
+    expect(callback).toHaveBeenCalledWith({ fileIndex: 0, status: 'transferring', bytesTransferred: 12 })
   })
 })
 
