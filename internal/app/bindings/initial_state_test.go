@@ -57,6 +57,9 @@ func TestLoadInitialStateIncludesInjectedBuildVersion(t *testing.T) {
 	if state.Diagnostics.Version != "1.2.3" {
 		t.Fatalf("diagnostics version = %q, want %q", state.Diagnostics.Version, "1.2.3")
 	}
+	if !state.Preferences.AutomaticUpdates {
+		t.Fatal("automatic updates should be enabled in default initial state")
+	}
 
 	encoded, err := json.Marshal(state.Diagnostics)
 	if err != nil {

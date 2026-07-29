@@ -225,6 +225,7 @@ function SaveBar({ saving, disabled, hasErrors, message, onSave, onRetryValidati
 function GeneralSettings({
   preferences,
   onToggleTheme,
+  onSetAutomaticUpdates,
   onSetBrowserSwitcherShortcut,
   onSetBrowserSwitcherBackwardShortcut,
   onOpenBrowserSwitcher,
@@ -245,6 +246,25 @@ function GeneralSettings({
             <Moon aria-hidden="true" /> Dark {preferences.theme === 'dark' ? <Check aria-hidden="true" /> : null}
           </button>
         </div>
+      </section>
+
+      <section className="section-block" aria-labelledby="updates-heading">
+        <div className="section-heading">
+          <div><h3 id="updates-heading">Software updates</h3></div>
+        </div>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            aria-label="Install updates automatically"
+            checked={Boolean(preferences.automaticUpdates)}
+            onChange={(event) => onSetAutomaticUpdates(event.target.checked)}
+          />
+          <span className="toggle" aria-hidden="true"><span /></span>
+          <span>
+            <strong>Install updates automatically</strong>
+            <small>Checks for official releases at launch, verifies the download, and installs it after you quit SSH Man.</small>
+          </span>
+        </label>
       </section>
 
       <section className="section-block" aria-labelledby="shortcuts-heading">
@@ -1114,6 +1134,7 @@ export function SettingsScreen({
   storageIssue,
   runtimeFresh,
   onToggleTheme,
+  onSetAutomaticUpdates,
   onSetBrowserSwitcherShortcut,
   onSetBrowserSwitcherBackwardShortcut,
   onOpenBrowserSwitcher,
@@ -1422,6 +1443,7 @@ export function SettingsScreen({
           <GeneralSettings
             preferences={preferences}
             onToggleTheme={onToggleTheme}
+            onSetAutomaticUpdates={onSetAutomaticUpdates}
             onSetBrowserSwitcherShortcut={onSetBrowserSwitcherShortcut}
             onSetBrowserSwitcherBackwardShortcut={onSetBrowserSwitcherBackwardShortcut}
             onOpenBrowserSwitcher={onOpenBrowserSwitcher}

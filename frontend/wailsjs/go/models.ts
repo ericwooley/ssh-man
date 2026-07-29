@@ -482,6 +482,7 @@ export namespace preferences {
 	export class UserPreference {
 	    theme: string;
 	    lastSelectedServerId?: string;
+	    automaticUpdates: boolean;
 	    browserSwitcherShortcut: string;
 	    browserSwitcherBackwardShortcut: string;
 	    browserAppearances: Record<string, BrowserAppearance>;
@@ -502,6 +503,7 @@ export namespace preferences {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.theme = source["theme"];
 	        this.lastSelectedServerId = source["lastSelectedServerId"];
+	        this.automaticUpdates = source["automaticUpdates"];
 	        this.browserSwitcherShortcut = source["browserSwitcherShortcut"];
 	        this.browserSwitcherBackwardShortcut = source["browserSwitcherBackwardShortcut"];
 	        this.browserAppearances = this.convertValues(source["browserAppearances"], BrowserAppearance, true);

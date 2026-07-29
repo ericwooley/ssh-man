@@ -11,6 +11,7 @@ import (
 	"ssh-man/internal/app/previewwindow"
 	"ssh-man/internal/app/runner"
 	"ssh-man/internal/app/settingswindow"
+	"ssh-man/internal/appupdate"
 	"ssh-man/internal/cli"
 )
 
@@ -18,6 +19,12 @@ import (
 var assets embed.FS
 
 func main() {
+	if handled, err := appupdate.RunHelper(os.Args[1:]); handled {
+		if err != nil {
+			log.Fatalf("apply automatic update: %v", err)
+		}
+		return
+	}
 	if settingswindow.FromArgs(os.Args[1:]) {
 		if err := runner.RunSettings(assets); err != nil {
 			log.Fatalf("run settings: %v", err)

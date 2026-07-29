@@ -678,6 +678,25 @@ func TestSaveBrowserAppearanceUsesOwnerSaverAfterNormalization(t *testing.T) {
 	}
 }
 
+func TestSavePreferencesNotifiesObserverAfterSuccessfulSave(t *testing.T) {
+	store := &preferenceMemoryStore{pref: preferencesdomain.Default()}
+	app := &bootstrap.Application{PreferencesService: preferencesdomain.NewService(store)}
+	bindings := NewAppBindingsWithApplication(app, nil)
+	var observed []bool
+	bindings.SetPreferencesSavedObserver(func(pref preferencesdomain.UserPreference) {
+		observed = append(observed, pref.AutomaticUpdates)
+	})
+
+	input := store.pref
+	input.AutomaticUpdates = false
+	if _, err := bindings.SavePreferences(input); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	if len(observed) != 1 || observed[0] {
+		t.Fatalf("observed automatic update preferences = %#v", observed)
+	}
+}
+
 func TestSaveBrowserAppearancePersistsAndResetsWithoutReregisteringShortcuts(t *testing.T) {
 	store := &preferenceMemoryStore{pref: preferencesdomain.Default()}
 	app := &bootstrap.Application{PreferencesService: preferencesdomain.NewService(store)}

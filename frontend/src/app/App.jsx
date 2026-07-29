@@ -548,6 +548,7 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
                 storageIssue={app.storageIssue}
                 runtimeFresh={app.runtimeFresh}
                 onToggleTheme={app.toggleTheme}
+                onSetAutomaticUpdates={app.setAutomaticUpdates}
                 onSetBrowserSwitcherShortcut={app.setBrowserSwitcherShortcut}
                 onSetBrowserSwitcherBackwardShortcut={app.setBrowserSwitcherBackwardShortcut}
                 onOpenBrowserSwitcher={openBrowserSwitcher}

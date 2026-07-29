@@ -25,6 +25,7 @@ type AppBindings struct {
 	showBrowserSwitcher   func() bool
 	savePreferences       func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
 	saveBrowserAppearance func(string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)
+	preferencesSaved      func(preferencesdomain.UserPreference)
 	setDefaultBrowser     func() (defaultbrowser.Status, error)
 }
 
@@ -42,6 +43,10 @@ func (a *AppBindings) SetPreferencesSaver(saver func(preferencesdomain.UserPrefe
 
 func (a *AppBindings) SetBrowserAppearanceSaver(saver func(string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)) {
 	a.saveBrowserAppearance = saver
+}
+
+func (a *AppBindings) SetPreferencesSavedObserver(observer func(preferencesdomain.UserPreference)) {
+	a.preferencesSaved = observer
 }
 
 func (a *AppBindings) SetDefaultBrowserSetter(setter func() (defaultbrowser.Status, error)) {

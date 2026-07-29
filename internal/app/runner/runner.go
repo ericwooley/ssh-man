@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,8 @@ import (
 	appmenu "ssh-man/internal/app/menu"
 	"ssh-man/internal/app/settingswindow"
 	appwindow "ssh-man/internal/app/window"
+	"ssh-man/internal/appupdate"
+	"ssh-man/internal/buildinfo"
 	"ssh-man/internal/control"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	urlroutingdomain "ssh-man/internal/domain/urlrouting"
@@ -340,9 +343,18 @@ func Run(assets fs.FS) (runErr error) {
 	if err != nil || handled {
 		return err
 	}
+	updateManager := appupdate.NewManager(buildinfo.Version, application.ConfigDir)
+	if preferences, preferencesErr := application.PreferencesService.Load(context.Background()); preferencesErr != nil {
+		log.Printf("load automatic update preference: %v", preferencesErr)
+	} else {
+		updateManager.Start(preferences.AutomaticUpdates)
+	}
 
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
+	app.SetPreferencesSavedObserver(func(preferences preferencesdomain.UserPreference) {
+		updateManager.SetEnabled(preferences.AutomaticUpdates)
+	})
 	explorerManager := explorerwindow.NewManager()
 	explorerLauncher := bindings.NewExplorerLauncherBindingsWithDependencies(application.ServerService, explorerManager.Launch)
 	settingsManager := settingswindow.NewManager()
@@ -447,8 +459,17 @@ func Run(assets fs.FS) (runErr error) {
 	defer func() {
 		bar.Stop()
 		browserSwitchEvents.Close()
+		automaticUpdates := false
+		if preferences, preferencesErr := application.PreferencesService.Load(context.Background()); preferencesErr != nil {
+			log.Printf("reload automatic update preference during shutdown: %v", preferencesErr)
+		} else {
+			automaticUpdates = preferences.AutomaticUpdates
+		}
 		cleanupErr := lifecycle.Shutdown(context.Background())
 		releaseErr := lease.Release()
+		if updateErr := updateManager.StopAndPrepare(automaticUpdates, os.Getpid()); updateErr != nil {
+			log.Printf("automatic update shutdown: %v", updateErr)
+		}
 		runErr = errors.Join(runErr, cleanupErr, releaseErr)
 	}()
 	if err := lifecycle.Start(); err != nil {

@@ -32,6 +32,7 @@ const memoryState = {
   preferences: {
     theme: 'dark',
     lastSelectedServerId: '',
+    automaticUpdates: true,
     browserSwitcherShortcut: 'Alt+X',
     browserSwitcherBackwardShortcut: 'Alt+Z',
     browserAppearances: {},
