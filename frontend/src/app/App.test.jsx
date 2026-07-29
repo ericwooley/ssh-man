@@ -763,7 +763,9 @@ describe('React application flows', () => {
     renderSettingsApp(api)
 
     await screen.findByRole('heading', { name: 'URL routing' })
-    await user.click(screen.getByRole('button', { name: 'Assign port' }))
+    const assignPortButton = screen.getByRole('button', { name: 'Assign port' })
+    await waitFor(() => expect(assignPortButton.disabled).toBe(false))
+    await user.click(assignPortButton)
     await user.type(screen.getByRole('spinbutton', { name: 'Port assignment 1 port' }), '3000')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Port assignment 1 host' }), savedServer.id)
     await user.selectOptions(screen.getByRole('combobox', { name: 'Port assignment 1 browser' }), 'firefox')
