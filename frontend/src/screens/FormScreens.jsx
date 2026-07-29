@@ -48,6 +48,10 @@ export function ServerFormScreen({ initialValue, currentUsername, sshKeys = [], 
   const [errors, setErrors] = useState({})
   const refs = useRef({})
   const isEditing = Boolean(draft.id)
+  const platform = globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || ''
+  const keyPathPlaceholder = /^Win/i.test(platform)
+    ? 'C:\\Users\\you\\.ssh\\id_ed25519'
+    : '/Users/you/.ssh/id_ed25519'
 
   useEffect(() => {
     refs.current.name?.focus()
@@ -124,7 +128,7 @@ export function ServerFormScreen({ initialValue, currentUsername, sshKeys = [], 
             id="server-socks-port"
             label="Browser SOCKS port"
             error={errors.socksPort}
-            hint={isEditing ? 'Used automatically when opening Chrome for this server.' : 'Leave blank and SSH Man will choose an available high port.'}
+            hint={isEditing ? 'Used automatically when opening a browser for this server.' : 'Leave blank and SSH Man will choose an available high port.'}
           >
             {({ describedBy }) => (
               <input id="server-socks-port" ref={(node) => { refs.current.socksPort = node }} type="number" inputMode="numeric" min="1" max="65535" value={draft.socksPort} onChange={(event) => update('socksPort', event.target.value)} placeholder="Automatic" aria-invalid={Boolean(errors.socksPort)} aria-describedby={describedBy} />
@@ -140,7 +144,7 @@ export function ServerFormScreen({ initialValue, currentUsername, sshKeys = [], 
 
           <div className="choice-cards" role="radiogroup" aria-label="Authentication method">
             <button type="button" role="radio" aria-checked={draft.authMode === 'agent'} className={draft.authMode === 'agent' ? 'choice-card is-selected' : 'choice-card'} onClick={() => update('authMode', 'agent')}>
-              <ShieldCheck aria-hidden="true" /><span><strong>SSH agent</strong><small>Use keys already loaded on this Mac</small></span>{draft.authMode === 'agent' ? <Check aria-hidden="true" /> : null}
+              <ShieldCheck aria-hidden="true" /><span><strong>SSH agent</strong><small>Use keys already loaded in your SSH agent</small></span>{draft.authMode === 'agent' ? <Check aria-hidden="true" /> : null}
             </button>
             <button type="button" role="radio" aria-checked={draft.authMode === 'private_key'} className={draft.authMode === 'private_key' ? 'choice-card is-selected' : 'choice-card'} onClick={() => update('authMode', 'private_key')}>
               <Save aria-hidden="true" /><span><strong>Private key</strong><small>Use a key file from disk</small></span>{draft.authMode === 'private_key' ? <Check aria-hidden="true" /> : null}
@@ -161,7 +165,7 @@ export function ServerFormScreen({ initialValue, currentUsername, sshKeys = [], 
               {keyChoice === CUSTOM_KEY_VALUE ? (
                 <Field id="server-key-reference" label="Private key path" error={errors.keyReference} hint="The passphrase is requested only when a tunnel starts.">
                   {({ describedBy }) => (
-                    <input id="server-key-reference" ref={(node) => { refs.current.keyReference = node }} value={draft.keyReference} onChange={(event) => update('keyReference', event.target.value)} placeholder="/Users/you/.ssh/id_ed25519" autoCapitalize="none" spellCheck="false" aria-invalid={Boolean(errors.keyReference)} aria-describedby={describedBy} />
+                    <input id="server-key-reference" ref={(node) => { refs.current.keyReference = node }} value={draft.keyReference} onChange={(event) => update('keyReference', event.target.value)} placeholder={keyPathPlaceholder} autoCapitalize="none" spellCheck="false" aria-invalid={Boolean(errors.keyReference)} aria-describedby={describedBy} />
                   )}
                 </Field>
               ) : null}

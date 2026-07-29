@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -752,11 +751,7 @@ func TestPrepareOwnedApplicationReleasesLeaseWhenBootstrapFails(t *testing.T) {
 }
 
 func TestShowExistingOwnerSendsAppShow(t *testing.T) {
-	socketDir, err := os.MkdirTemp("/tmp", "ssh-man-")
-	if err != nil {
-		t.Fatalf("create socket directory: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+	socketDir := t.TempDir()
 	socketPath := filepath.Join(socketDir, "control.sock")
 	shown := make(chan struct{}, 1)
 	server := control.NewServer(socketPath, control.Backend{

@@ -377,9 +377,7 @@ func TestUploadCopiesLocalFilesIntoRemoteDirectory(t *testing.T) {
 	if err := os.WriteFile(localPath, []byte("upload contents"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(localPath, 0o750); err != nil {
-		t.Fatal(err)
-	}
+	wantMode := prepareLocalUploadMode(t, localPath, 0o750)
 
 	result, err := service.Upload(context.Background(), []string{localPath}, "~/Projects")
 	if err != nil {
@@ -394,8 +392,8 @@ func TestUploadCopiesLocalFilesIntoRemoteDirectory(t *testing.T) {
 	if got := string(node.content); got != "upload contents" {
 		t.Fatalf("uploaded content = %q", got)
 	}
-	if got := node.mode.Perm(); got != 0o750 {
-		t.Fatalf("uploaded mode = %v, want %v", got, os.FileMode(0o750))
+	if got := node.mode.Perm(); got != wantMode {
+		t.Fatalf("uploaded mode = %v, want %v", got, wantMode)
 	}
 }
 
@@ -459,9 +457,7 @@ func TestUploadRemovesUnsafeWritePermissionsFromLocalFiles(t *testing.T) {
 	if err := os.WriteFile(localPath, []byte("#!/bin/sh\n"), 0o777); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(localPath, 0o777); err != nil {
-		t.Fatal(err)
-	}
+	wantMode := prepareLocalUploadMode(t, localPath, 0o777)
 
 	result, err := service.Upload(context.Background(), []string{localPath}, "~")
 	if err != nil {
@@ -472,8 +468,8 @@ func TestUploadRemovesUnsafeWritePermissionsFromLocalFiles(t *testing.T) {
 	if !reflect.DeepEqual(result.Uploaded, []string{wantPath}) || len(result.Failures) != 0 {
 		t.Fatalf("Upload() = %#v, want uploaded path %q", result, wantPath)
 	}
-	if got := service.fs.(*memoryFS).nodes[wantPath].mode.Perm(); got != 0o755 {
-		t.Fatalf("uploaded mode = %v, want %v", got, os.FileMode(0o755))
+	if got := service.fs.(*memoryFS).nodes[wantPath].mode.Perm(); got != wantMode {
+		t.Fatalf("uploaded mode = %v, want %v", got, wantMode)
 	}
 }
 

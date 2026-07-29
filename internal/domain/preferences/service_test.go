@@ -329,11 +329,12 @@ func TestServiceSaveNormalizesCustomBrowsers(t *testing.T) {
 	store := &memoryStore{}
 	service := NewService(store)
 	input := Default()
+	applicationPath := filepath.Join(t.TempDir(), "Applications", "Kagi Browser.app")
 	input.CustomBrowsers = []CustomBrowser{
 		{
 			ID:              " custom-kagi ",
 			DisplayName:     " Kagi Browser ",
-			LaunchReference: filepath.Join(string(filepath.Separator), "Applications", "Kagi Browser.app") + string(filepath.Separator),
+			LaunchReference: applicationPath + string(filepath.Separator),
 			Engine:          BrowserEngineChromium,
 		},
 	}
@@ -342,7 +343,7 @@ func TestServiceSaveNormalizesCustomBrowsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save preferences: %v", err)
 	}
-	wantPath := filepath.Join(string(filepath.Separator), "Applications", "Kagi Browser.app")
+	wantPath := applicationPath
 	if len(saved.CustomBrowsers) != 1 {
 		t.Fatalf("custom browsers = %#v, want one entry", saved.CustomBrowsers)
 	}
@@ -353,10 +354,11 @@ func TestServiceSaveNormalizesCustomBrowsers(t *testing.T) {
 }
 
 func TestServiceSaveRejectsInvalidCustomBrowsers(t *testing.T) {
+	applicationDirectory := filepath.Join(t.TempDir(), "Applications")
 	valid := CustomBrowser{
 		ID:              "custom-kagi",
 		DisplayName:     "Kagi Browser",
-		LaunchReference: filepath.Join(string(filepath.Separator), "Applications", "Kagi Browser.app"),
+		LaunchReference: filepath.Join(applicationDirectory, "Kagi Browser.app"),
 		Engine:          BrowserEngineChromium,
 	}
 	tests := []struct {
@@ -381,7 +383,7 @@ func TestServiceSaveRejectsInvalidCustomBrowsers(t *testing.T) {
 		},
 		{
 			name:      "duplicate ids",
-			browsers:  []CustomBrowser{valid, {ID: " custom-kagi ", DisplayName: "Other", LaunchReference: filepath.Join(string(filepath.Separator), "Applications", "Other.app"), Engine: BrowserEngineRegular}},
+			browsers:  []CustomBrowser{valid, {ID: " custom-kagi ", DisplayName: "Other", LaunchReference: filepath.Join(applicationDirectory, "Other.app"), Engine: BrowserEngineRegular}},
 			wantError: "duplicate id",
 		},
 		{

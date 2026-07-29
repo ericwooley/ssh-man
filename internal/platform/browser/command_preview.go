@@ -19,3 +19,18 @@ func formatCommand(parts ...string) string {
 	}
 	return strings.Join(quoted, " ")
 }
+
+func windowsPowerShellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func formatWindowsCommand(parts ...string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	quoted := make([]string, 0, len(parts))
+	for _, part := range parts {
+		quoted = append(quoted, windowsPowerShellQuote(part))
+	}
+	return "& " + strings.Join(quoted, " ")
+}

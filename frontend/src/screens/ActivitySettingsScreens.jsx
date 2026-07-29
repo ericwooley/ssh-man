@@ -535,8 +535,18 @@ function URLRoutingSettings({
       <div className="default-browser-control">
         <Route aria-hidden="true" />
         <div>
-          <strong>{state.defaultBrowser.isDefault ? 'SSH Man is your default browser.' : 'Make SSH Man your default browser'}</strong>
-          <span>macOS will send HTTP and HTTPS links here for routing and may ask you to confirm.</span>
+          <strong>
+            {!state.defaultBrowser.supported
+              ? 'Default browser integration is unavailable'
+              : state.defaultBrowser.isDefault
+                ? 'SSH Man is your default browser.'
+                : 'Make SSH Man your default browser'}
+          </strong>
+          <span>
+            {state.defaultBrowser.supported
+              ? 'macOS will send HTTP and HTTPS links here for routing and may ask you to confirm.'
+              : 'You can still launch any detected browser through an SSH tunnel.'}
+          </span>
         </div>
         <button
           className="secondary-button"
@@ -546,6 +556,8 @@ function URLRoutingSettings({
         >
           {state.defaultBrowser.isDefault
             ? <><Check aria-hidden="true" /> Default</>
+            : !state.defaultBrowser.supported
+              ? 'Unavailable'
             : settingDefault
               ? <><LoaderCircle className="spin" aria-hidden="true" /> Waiting for macOS…</>
               : 'Make SSH Man default'}
