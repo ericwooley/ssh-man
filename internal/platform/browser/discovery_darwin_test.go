@@ -62,7 +62,7 @@ func TestZenProxyPreviewUsesFirefoxProfileArguments(t *testing.T) {
 	}
 }
 
-func TestChromiumProxyPreviewIncludesQuietProfileAndTunnelIsolationFlags(t *testing.T) {
+func TestChromiumProxyPreviewIncludesQuietProfileFlagsWithoutResolverOverride(t *testing.T) {
 	option := BrowserOption{
 		ID:              "google-chrome",
 		DisplayName:     "Google Chrome",
@@ -76,12 +76,14 @@ func TestChromiumProxyPreviewIncludesQuietProfileAndTunnelIsolationFlags(t *test
 		"--no-default-browser-check",
 		"--disable-search-engine-choice-screen",
 		"--disable-sync",
-		"--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1",
 		"--webrtc-ip-handling-policy=disable_non_proxied_udp",
 	} {
 		if !strings.Contains(preview, expected) {
 			t.Errorf("Chromium preview = %q, want %q", preview, expected)
 		}
+	}
+	if strings.Contains(preview, "--host-resolver-rules") {
+		t.Errorf("Chromium preview = %q, should not include a resolver override", preview)
 	}
 }
 

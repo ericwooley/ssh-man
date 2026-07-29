@@ -5,13 +5,12 @@ import (
 	"testing"
 )
 
-func TestChromiumProxyArguments(t *testing.T) {
+func TestChromiumProxyArgumentsOmitsResolverOverride(t *testing.T) {
 	got := chromiumProxyArguments("localhost", "/tmp/chrome-profile", 41001)
 	want := []string{
 		"--proxy-server=socks5://localhost:41001",
 		"--user-data-dir=/tmp/chrome-profile",
 		"--proxy-bypass-list=<-loopback>",
-		"--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost",
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-search-engine-choice-screen",
@@ -20,6 +19,6 @@ func TestChromiumProxyArguments(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("chromiumProxyArguments() = %#v, want %#v", got, want)
+		t.Fatalf("chromiumProxyArguments() = %#v, want %#v without a resolver override", got, want)
 	}
 }

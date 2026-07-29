@@ -5,6 +5,7 @@ import {
   onBrowserSwitcherCommitRequested,
   onBrowserSwitcherRequested,
   openServerCommand,
+  previewBrowserLaunchThroughSocks,
   saveBrowserAppearance,
   setURLRouteWindowMode,
 } from './api'
@@ -44,6 +45,15 @@ describe('browser appearance persistence', () => {
       'proxy:server-1:google-chrome',
       { icon: 'icon:x', primaryColor: '#22C55E' },
     )
+  })
+})
+
+describe('browser launch preview', () => {
+  test('omits the Chromium resolver override from the fallback command', async () => {
+    const preview = await previewBrowserLaunchThroughSocks('configuration-1', 'google-chrome')
+
+    expect(preview.command).toContain('--proxy-server=socks5://127.0.0.1:')
+    expect(preview.command).not.toContain('--host-resolver-rules')
   })
 })
 

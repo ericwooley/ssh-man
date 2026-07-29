@@ -248,7 +248,7 @@ export async function previewBrowserLaunchThroughSocks(configurationId, browserI
     supported: true,
     command: browserId === 'firefox'
       ? `firefox -new-instance -profile /tmp/ssh-man-browser-profiles/firefox-${boundPort}`
-      : `${browserId} --proxy-server=socks5://127.0.0.1:${boundPort} --proxy-bypass-list=<-loopback> --host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1`,
+      : `${browserId} --proxy-server=socks5://127.0.0.1:${boundPort} --proxy-bypass-list=<-loopback>`,
   }
 }
 
