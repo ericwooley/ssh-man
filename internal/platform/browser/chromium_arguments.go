@@ -7,7 +7,6 @@ func chromiumProxyArguments(proxyHost string, profileDir string, socksPort int) 
 		fmt.Sprintf("--proxy-server=socks5://%s:%d", proxyHost, socksPort),
 		fmt.Sprintf("--user-data-dir=%s", profileDir),
 		"--proxy-bypass-list=<-loopback>",
-		fmt.Sprintf("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE %s", proxyHost),
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-search-engine-choice-screen",
