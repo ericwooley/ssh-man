@@ -752,11 +752,13 @@ func TestPrepareOwnedApplicationReleasesLeaseWhenBootstrapFails(t *testing.T) {
 }
 
 func TestShowExistingOwnerSendsAppShow(t *testing.T) {
-	socketDir, err := os.MkdirTemp("/tmp", "ssh-man-")
+	socketDir, err := os.MkdirTemp("", "sm-")
 	if err != nil {
-		t.Fatalf("create socket directory: %v", err)
+		t.Fatalf("MkdirTemp() error = %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+	t.Cleanup(func() {
+		_ = os.RemoveAll(socketDir)
+	})
 	socketPath := filepath.Join(socketDir, "control.sock")
 	shown := make(chan struct{}, 1)
 	server := control.NewServer(socketPath, control.Backend{

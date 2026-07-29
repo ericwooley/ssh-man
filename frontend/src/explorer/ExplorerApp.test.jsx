@@ -355,7 +355,7 @@ describe('server explorer window', () => {
     })
 
     expect((await screen.findByRole('alert')).textContent).toBe(
-      'moved.txt isn’t on this Mac anymore. Save it to a folder, then drop it again.',
+      'moved.txt isn’t on this computer anymore. Save it to a folder, then drop it again.',
     )
   })
 

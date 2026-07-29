@@ -3,6 +3,7 @@ module ssh-man
 go 1.26.5
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/mattn/go-sqlite3 v1.14.48
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7

@@ -281,13 +281,120 @@ ssh-man tunnel add socks "Browser proxy" --server "Production" --listen auto
 
 Server and tunnel deletion require `--yes`; `app quit` requires it when tunnels are active. Key passphrases are accepted through a hidden terminal prompt or `--passphrase-stdin`; they are never accepted as command-line arguments where process listings or shell history could expose them. Run `ssh-man --help` for the complete command reference.
 
+## Windows
+
+Windows is supported through a native PowerShell clone-and-build workflow. The
+desktop build uses CGO for SQLite, so a Windows-targeting MinGW-w64 GCC compiler
+is required in addition to Go.
+
+### Requirements
+
+- 64-bit Windows 10 or Windows 11
+- Git
+- Go `1.26.5`
+- Node.js 24 LTS
+- Corepack with pnpm `11.17.0`, or a global pnpm `11.17.0` installation
+- MinGW-w64 GCC (the MSYS2 UCRT64 package is recommended)
+- Microsoft Edge WebView2 Evergreen Runtime
+
+The prerequisites are available through WinGet. Run these commands in
+PowerShell, omitting anything already installed:
+
+```powershell
+winget install --exact --id Git.Git
+winget install --exact --id GoLang.Go --version 1.26.5
+winget install --exact --id OpenJS.NodeJS.LTS
+winget install --exact --id MSYS2.MSYS2
+winget install --exact --id Microsoft.EdgeWebView2Runtime
+```
+
+Open a new PowerShell window after the installers finish. Install the UCRT64
+compiler through MSYS2:
+
+```powershell
+& 'C:\msys64\usr\bin\bash.exe' -lc 'pacman -Syu --noconfirm'
+& 'C:\msys64\usr\bin\bash.exe' -lc 'pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-gcc'
+```
+
+Put `C:\msys64\ucrt64\bin` at the front of both the current and future user
+`PATH`:
+
+```powershell
+$mingwBin = 'C:\msys64\ucrt64\bin'
+$env:Path = "$mingwBin;$env:Path"
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($userPath -split ';') -notcontains $mingwBin) {
+    [Environment]::SetEnvironmentVariable('Path', "$mingwBin;$userPath".TrimEnd(';'), 'User')
+}
+```
+
+Enable the package-manager version declared by `frontend/package.json`:
+
+```powershell
+corepack enable
+corepack prepare pnpm@11.17.0 --activate
+```
+
+If the Node.js installation does not provide Corepack, install pnpm directly
+instead:
+
+```powershell
+npm install --global pnpm@11.17.0
+```
+
+Confirm that Go and GCC have the expected Windows toolchains before building:
+
+```powershell
+go version
+node --version
+corepack pnpm --version
+gcc -dumpmachine
+```
+
+`go version` should report `go1.26.5 windows/amd64`, pnpm should report
+`11.17.0`, and the GCC target should be the 64-bit
+`x86_64-w64-mingw32` target. When using the global pnpm fallback, run
+`pnpm --version` instead of `corepack pnpm --version`.
+
+### Build and run
+
+```powershell
+git clone https://github.com/ericwooley/ssh-man.git
+Set-Location ssh-man
+.\scripts\build-current-os.ps1
+.\build\bin\ssh-man.exe
+```
+
+The same executable exposes the CLI:
+
+```powershell
+.\build\bin\ssh-man.exe --help
+.\build\bin\ssh-man.exe status
+```
+
+The PowerShell helper enables CGO, verifies that `gcc` targets Windows,
+installs the locked frontend dependencies, and runs the repository-pinned
+Wails `v2.13.0` build. If local execution policy blocks a checked-out script,
+enable it only for the current PowerShell process and retry:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Before adding a server in SSH Man, connect once with Windows OpenSSH to accept
+the host key and confirm that the intended key works:
+
+```powershell
+ssh user@example-host
+```
+
 ## Linux
 
 Linux is currently supported through a clone-and-build workflow.
 
 ### Requirements
 
-- Go `1.24.x`
+- Go `1.26.5`
 - Node.js with Corepack (or pnpm)
 - `pkg-config`
 - GTK 3 development headers
@@ -335,7 +442,7 @@ If your distro needs the explicit Linux Wails build path, use:
 
 ### Requirements
 
-- Go `1.24.x`
+- Go `1.26.5`
 - Node.js
 - Corepack (or pnpm)
 - Xcode Command Line Tools on macOS
@@ -369,11 +476,31 @@ The packaged app bundle is written to `build/bin/ssh-man.app`; its executable se
 
 ### Run in dev mode
 
+Windows:
+
+```powershell
+.\scripts\dev-current-os.ps1
+```
+
+macOS or Linux:
+
 ```bash
 ./scripts/dev-current-os.sh
 ```
 
 ### Validate the repo
+
+Windows:
+
+```powershell
+.\scripts\validate.ps1
+```
+
+The Windows validation helper checks Go formatting without modifying the
+worktree, then runs the frontend build/tests plus `go vet` and `go test`.
+Release automation tests still require Bash and the Unix validation helper.
+
+macOS or Linux:
 
 ```bash
 ./scripts/validate.sh
@@ -426,6 +553,17 @@ Rotate credentials before they expire or are revoked: install replacements first
 
 ### Frontend-only checks
 
+The cross-platform Node launcher preserves the Corepack-first, global-pnpm
+fallback used by the shell helpers and Wails:
+
+```powershell
+node .\scripts\pnpm.cjs install
+node .\scripts\pnpm.cjs run validate
+```
+
+On macOS or Linux, the existing shell entrypoint delegates to the same
+launcher:
+
 ```bash
 ./scripts/pnpm.sh install
 ./scripts/pnpm.sh run validate
@@ -451,6 +589,7 @@ tests/      integration and smoke coverage
 
 - macOS: supported via Homebrew cask and local source build
 - Linux: supported via local source build
+- Windows: supported via local PowerShell source build
 - Homebrew tap: `ericwooley/homebrew-apps`
 
 ## License

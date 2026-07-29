@@ -121,7 +121,7 @@ function uploadFailureGuidance(failures, remoteDirectory) {
     return `Give SSH Man access to ${names}, or check ${plural ? 'their' : 'its'} file permissions, then drop ${plural ? 'them' : 'it'} again.`
   }
   if (failures[0]?.code === 'missing') {
-    return `${names} ${plural ? 'aren’t' : 'isn’t'} on this Mac anymore. Save ${plural ? 'them' : 'it'} to a folder, then drop ${plural ? 'them' : 'it'} again.`
+    return `${names} ${plural ? 'aren’t' : 'isn’t'} on this computer anymore. Save ${plural ? 'them' : 'it'} to a folder, then drop ${plural ? 'them' : 'it'} again.`
   }
   if (failures[0]?.code === 'permissions') {
     return `${names} couldn’t be uploaded safely, so nothing was added to ${remoteDirectory}. Uploads to this server aren’t supported yet.`
