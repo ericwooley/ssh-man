@@ -1020,6 +1020,26 @@ describe('React application flows', () => {
     expect(screen.getByRole('combobox', { name: 'Rule 1 browser' })).toBeTruthy()
   })
 
+  test('keeps saved custom browser commands read-only on unsupported platforms', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.customBrowsers = [{
+      id: 'saved-browser',
+      displayName: 'Work browser',
+      command: 'open -a "Zen" "<URL>"',
+      icon: 'icon:briefcase',
+    }]
+    api.defaultBrowserStatus.mockResolvedValue({ supported: false, isDefault: false })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+
+    expect(screen.getByRole('textbox', { name: 'Custom browser name' }).readOnly).toBe(false)
+    expect(screen.getByRole('textbox', { name: 'Custom browser command' }).readOnly).toBe(true)
+    expect(screen.getByText('This saved command remains unchanged. Use SSH Man on macOS to edit it.')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Briefcase icon' }).disabled).toBe(false)
+  })
+
   test('gives an available recovery path when no browsers are detected', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi()
@@ -1115,6 +1135,27 @@ describe('React application flows', () => {
     expect(screen.getByRole('button', {
       name: 'Edit rule 1: https://work.example/; Starts with; Open directly',
     }).getAttribute('aria-current')).toBe('true')
+  })
+
+  test('explains literal rule matching against the complete link', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+
+    const matchValue = screen.getByRole('textbox', { name: 'Rule 1 match value' })
+    expect(screen.getByText('SSH Man compares this value with the complete link.')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Starts with' }))
+    expect(matchValue.placeholder).toBe('https://github.com/')
+
+    await user.click(screen.getByRole('button', { name: 'Ends with' }))
+    expect(matchValue.placeholder).toBe('/login')
+
+    await user.click(screen.getByRole('button', { name: 'Contains' }))
+    expect(matchValue.placeholder).toBe('github.com')
   })
 
   test('restores focus to an adjacent browser or the add button after deletion', async () => {

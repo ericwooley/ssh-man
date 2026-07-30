@@ -66,17 +66,11 @@ func discoverCustomBrowsers(custom []preferencesdomain.CustomBrowser) []BrowserO
 		if err != nil || info.IsDir() {
 			continue
 		}
-		engine := BrowserEngine(browser.Engine)
-		options = append(options, BrowserOption{
-			ID:                  browser.ID,
-			DisplayName:         browser.DisplayName,
-			LaunchReference:     browser.LaunchReference,
-			ExecutableReference: browser.LaunchReference,
-			Icon:                browser.Icon,
-			Engine:              engine,
-			SupportsProxyLaunch: engine != BrowserEngineRegular,
-			Custom:              true,
-		})
+		options = append(options, customExecutableBrowserOption(
+			browser,
+			browser.LaunchReference,
+			browser.LaunchReference,
+		))
 	}
 	return options
 }

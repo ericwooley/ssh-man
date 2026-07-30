@@ -57,6 +57,13 @@ const matchModeOptions = [
 
 const matchModeLabels = Object.fromEntries(matchModeOptions.map((option) => [option.value, option.label]))
 
+const matchModePlaceholders = {
+  starts_with: 'https://github.com/',
+  ends_with: '/login',
+  contains: 'github.com',
+  regex: String.raw`^https://github\.com/`,
+}
+
 function settingsDraft(preferences, catalog) {
   const input = {
     defaultBrowserId: preferences.defaultBrowserId || '',
@@ -485,11 +492,18 @@ function BrowserSettings({
                       aria-label="Custom browser command"
                       value={selectedBrowser.command || ''}
                       placeholder={'open -a "Browser" "<URL>"'}
+                      readOnly={!customBrowserCommandsSupported}
                       aria-invalid={Boolean(errors[`browser:${selectedBrowser.id}:command`])}
                       aria-describedby={errors[`browser:${selectedBrowser.id}:command`] ? `custom-browser-${selectedBrowser.id}-command-error` : `custom-browser-${selectedBrowser.id}-command-help`}
                       onChange={(event) => updateCustomBrowser({ command: event.target.value })}
                     />
-                    <small id={`custom-browser-${selectedBrowser.id}-command-help`}>Use a macOS <code>open</code> command and place <code>&lt;URL&gt;</code> where the link belongs.</small>
+                    <small id={`custom-browser-${selectedBrowser.id}-command-help`}>
+                      {customBrowserCommandsSupported
+                        ? <>Use a macOS <code>open</code> command and place <code>&lt;URL&gt;</code> where the link belongs.</>
+                        : selectedBrowser.command
+                          ? 'This saved command remains unchanged. Use SSH Man on macOS to edit it.'
+                          : 'This browser keeps its original application setup. Use SSH Man on macOS to add a command.'}
+                    </small>
                     {selectedBrowser.launchReference && !selectedBrowser.command
                       ? <small>This saved browser uses its original application setup. Add a command to update it.</small>
                       : null}
@@ -839,11 +853,17 @@ function RoutingSettings({
                     ref={newRulePatternRef}
                     aria-label={`Rule ${selectedRuleIndex + 1} match value`}
                     value={selectedRule.pattern}
-                    placeholder={selectedRule.matchMode === 'regex' ? String.raw`^https://github\.com/` : 'github.com'}
+                    placeholder={matchModePlaceholders[selectedRule.matchMode] || matchModePlaceholders.contains}
                     aria-invalid={Boolean(errors[`rule:${selectedRule.id}:pattern`])}
-                    aria-describedby={errors[`rule:${selectedRule.id}:pattern`] ? `rule-${selectedRule.id}-pattern-error` : undefined}
+                    aria-describedby={[
+                      selectedRule.matchMode === 'regex' ? '' : `rule-${selectedRule.id}-pattern-help`,
+                      errors[`rule:${selectedRule.id}:pattern`] ? `rule-${selectedRule.id}-pattern-error` : '',
+                    ].filter(Boolean).join(' ') || undefined}
                     onChange={(event) => updateRule({ pattern: event.target.value })}
                   />
+                  {selectedRule.matchMode !== 'regex'
+                    ? <small id={`rule-${selectedRule.id}-pattern-help`}>SSH Man compares this value with the complete link.</small>
+                    : null}
                   {errors[`rule:${selectedRule.id}:pattern`]
                     ? <small id={`rule-${selectedRule.id}-pattern-error`} className="field-error">{errors[`rule:${selectedRule.id}:pattern`]}</small>
                     : null}

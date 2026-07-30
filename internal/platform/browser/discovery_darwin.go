@@ -79,18 +79,11 @@ func discoverCustomBrowsers(custom []preferencesdomain.CustomBrowser) []BrowserO
 		if _, err := os.Stat(browser.LaunchReference); err != nil {
 			continue
 		}
-		engine := BrowserEngine(browser.Engine)
-		executableReference := darwinBundleExecutable(browser.LaunchReference)
-		options = append(options, BrowserOption{
-			ID:                  browser.ID,
-			DisplayName:         browser.DisplayName,
-			LaunchReference:     browser.LaunchReference,
-			ExecutableReference: executableReference,
-			Icon:                browser.Icon,
-			Engine:              engine,
-			SupportsProxyLaunch: engine != BrowserEngineRegular,
-			Custom:              true,
-		})
+		options = append(options, customExecutableBrowserOption(
+			browser,
+			browser.LaunchReference,
+			darwinBundleExecutable(browser.LaunchReference),
+		))
 	}
 	return options
 }
