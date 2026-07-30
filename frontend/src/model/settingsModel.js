@@ -163,11 +163,26 @@ export function removeCustomBrowser(input, browserId, catalog = []) {
   }, catalog, [browserId])
 }
 
-export function settingsDraftErrors(draft, catalog = []) {
+function persistedCommandsById(items = [], include = () => true) {
+  const commands = new Map()
+  for (const item of items) {
+    const id = String(item?.id || '').trim()
+    const command = String(item?.command || '').trim()
+    if (id && command && include(item)) commands.set(id, command)
+  }
+  return commands
+}
+
+export function settingsDraftErrors(draft, catalog = [], persistedDraft = {}) {
   const errors = {}
   const browserChoices = settingsBrowserChoices(catalog, draft.customBrowsers, draft.disabledBrowserIds)
   const browserIds = new Set(browserChoices.map((browser) => browser.id))
   const proxyIds = new Set(browserChoices.filter((browser) => browser.supportsProxyLaunch).map((browser) => browser.id))
+  const persistedBrowserCommands = persistedCommandsById(persistedDraft.customBrowsers)
+  const persistedRuleCommands = persistedCommandsById(
+    persistedDraft.urlRules,
+    (rule) => rule.action === 'command',
+  )
 
   for (const browser of draft.customBrowsers || []) {
     if (!browser.displayName?.trim()) {
@@ -175,7 +190,8 @@ export function settingsDraftErrors(draft, catalog = []) {
     }
     if (browser.command) {
       const commandError = directCommandTemplateError(browser.command)
-      if (commandError) errors[`browser:${browser.id}:command`] = commandError
+      const unchanged = persistedBrowserCommands.get(String(browser.id || '').trim()) === String(browser.command).trim()
+      if (commandError && !unchanged) errors[`browser:${browser.id}:command`] = commandError
     } else if (!browser.launchReference) {
       errors[`browser:${browser.id}:command`] = 'Add a command that includes <URL>.'
     }
@@ -190,7 +206,8 @@ export function settingsDraftErrors(draft, catalog = []) {
     }
     if (rule.action === 'command') {
       const commandError = directCommandTemplateError(rule.command || '')
-      if (commandError) errors[`rule:${rule.id}:command`] = commandError
+      const unchanged = persistedRuleCommands.get(String(rule.id || '').trim()) === String(rule.command || '').trim()
+      if (commandError && !unchanged) errors[`rule:${rule.id}:command`] = commandError
     }
   }
 

@@ -1020,6 +1020,48 @@ describe('React application flows', () => {
     expect(screen.getByRole('combobox', { name: 'Rule 1 browser' })).toBeTruthy()
   })
 
+  test('saves unrelated edits while unchanged legacy commands remain repairable', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.customBrowsers = [{
+      id: 'legacy-browser',
+      displayName: 'Legacy browser',
+      command: '/bin/zsh -lc "open <URL>"',
+      icon: '',
+    }]
+    state.preferences.urlRules = [{
+      id: 'legacy-rule',
+      matchMode: 'contains',
+      pattern: 'example.com',
+      action: 'command',
+      browserId: '',
+      command: '/bin/zsh -lc "open <URL>"',
+      openDirect: false,
+    }]
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    const name = screen.getByRole('textbox', { name: 'Custom browser name' })
+    await user.clear(name)
+    await user.type(name, 'Updated legacy browser')
+
+    const save = screen.getByRole('button', { name: 'Save all settings' })
+    expect(save.disabled).toBe(false)
+    await user.click(save)
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      customBrowsers: [expect.objectContaining({
+        id: 'legacy-browser',
+        displayName: 'Updated legacy browser',
+        command: '/bin/zsh -lc "open <URL>"',
+      })],
+      urlRules: [expect.objectContaining({
+        id: 'legacy-rule',
+        command: '/bin/zsh -lc "open <URL>"',
+      })],
+    })))
+  })
+
   test('keeps saved custom browser commands read-only on unsupported platforms', async () => {
     const user = userEvent.setup()
     const { api, state } = createFakeApi()

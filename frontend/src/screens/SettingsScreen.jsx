@@ -1182,7 +1182,10 @@ export function SettingsScreen({
     setPersistedDraft(next)
   }, [catalog, persistedDraft, preferences, routingSignature, saving])
 
-  const syncErrors = useMemo(() => settingsDraftErrors(draft, catalog), [catalog, draft])
+  const syncErrors = useMemo(
+    () => settingsDraftErrors(draft, catalog, persistedDraft),
+    [catalog, draft, persistedDraft],
+  )
   const regexRules = useMemo(() => (
     (draft.urlRules || []).filter((rule) => (
       rule.matchMode === 'regex' &&

@@ -155,6 +155,59 @@ describe('settings draft validation', () => {
     expect(errors['rule:rule-1:command']).toContain('open command')
   })
 
+  it('allows unchanged legacy commands to remain repairable', () => {
+    const legacyDraft = draft({
+      customBrowsers: [{
+        id: 'legacy-browser',
+        displayName: 'Legacy browser',
+        command: `/bin/zsh -lc "open <URL>"`,
+      }],
+      urlRules: [{
+        id: 'legacy-rule',
+        matchMode: 'contains',
+        pattern: 'example.com',
+        action: 'command',
+        command: `/bin/zsh -lc "open <URL>"`,
+      }],
+    })
+
+    expect(settingsDraftErrors(legacyDraft, catalog, legacyDraft)).toEqual({})
+  })
+
+  it('still rejects new or edited legacy command syntax', () => {
+    const persisted = draft({
+      customBrowsers: [{
+        id: 'legacy-browser',
+        displayName: 'Legacy browser',
+        command: `/bin/zsh -lc "open <URL>"`,
+      }],
+      urlRules: [{
+        id: 'legacy-rule',
+        matchMode: 'contains',
+        pattern: 'example.com',
+        action: 'command',
+        command: `/bin/zsh -lc "open <URL>"`,
+      }],
+    })
+    const changed = {
+      ...persisted,
+      customBrowsers: persisted.customBrowsers.concat({
+        id: 'new-browser',
+        displayName: 'New browser',
+        command: `/bin/zsh -lc "open <URL>"`,
+      }),
+      urlRules: persisted.urlRules.map((rule) => ({
+        ...rule,
+        command: `/bin/sh -lc "open <URL>"`,
+      })),
+    }
+
+    const errors = settingsDraftErrors(changed, catalog, persisted)
+
+    expect(errors['browser:new-browser:command']).toContain('open command')
+    expect(errors['rule:legacy-rule:command']).toContain('open command')
+  })
+
   it('accepts quoted direct-command arguments and URL embedding', () => {
     expect(settingsDraftErrors(draft({
       customBrowsers: [{
