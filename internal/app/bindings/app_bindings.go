@@ -18,13 +18,14 @@ import (
 )
 
 type AppBindings struct {
-	app                 *bootstrap.Application
-	window              *appwindow.Controller
-	displayVersion      string
-	setBrowserShortcuts func(string, string) error
-	showBrowserSwitcher func() bool
-	savePreferences     func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
-	setDefaultBrowser   func() (defaultbrowser.Status, error)
+	app                   *bootstrap.Application
+	window                *appwindow.Controller
+	displayVersion        string
+	setBrowserShortcuts   func(string, string) error
+	showBrowserSwitcher   func() bool
+	savePreferences       func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
+	saveBrowserAppearance func(string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)
+	setDefaultBrowser     func() (defaultbrowser.Status, error)
 }
 
 func (a *AppBindings) SetBrowserShortcutsRegistrar(registrar func(string, string) error) {
@@ -37,6 +38,10 @@ func (a *AppBindings) SetBrowserSwitcherPresenter(presenter func() bool) {
 
 func (a *AppBindings) SetPreferencesSaver(saver func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)) {
 	a.savePreferences = saver
+}
+
+func (a *AppBindings) SetBrowserAppearanceSaver(saver func(string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)) {
+	a.saveBrowserAppearance = saver
 }
 
 func (a *AppBindings) SetDefaultBrowserSetter(setter func() (defaultbrowser.Status, error)) {

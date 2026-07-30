@@ -29,6 +29,24 @@ function renderSwitcher(overrides = {}) {
 }
 
 describe('BrowserSwitcher keyboard navigation', () => {
+  test.each([
+    ['loading', { items: [], loading: true }],
+    ['empty', { items: [] }],
+    ['error', { items: [], error: 'Browser discovery failed.' }],
+  ])('focuses the dialog in the %s state and restores the opener', async (_state, overrides) => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+
+    const { unmount } = renderSwitcher(overrides)
+    const dialog = screen.getByRole('dialog', { name: 'Switch browser' })
+    await waitFor(() => expect(document.activeElement).toBe(dialog))
+
+    unmount()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
   test('uses arrow keys for option movement without trapping Tab', () => {
     const { props } = renderSwitcher()
     props.onSelect.mockClear()
@@ -78,6 +96,9 @@ describe('BrowserSwitcher appearance customization', () => {
     expect(props.onActivate).not.toHaveBeenCalled()
     fireEvent.click(customize)
     expect(screen.getByRole('heading', { name: 'Customize Chrome two' })).toBeTruthy()
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('dialog', { name: 'Customize Chrome two' }),
+    ))
     fireEvent.click(screen.getByRole('radio', { name: 'X icon' }))
     fireEvent.click(screen.getByRole('radio', { name: 'Green color' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))

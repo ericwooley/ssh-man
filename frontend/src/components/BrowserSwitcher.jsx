@@ -143,7 +143,13 @@ export function BrowserSwitcher({
   onRefresh,
   onClose,
 }) {
+  const dialogRef = useRef(null)
   const itemRefs = useRef([])
+  const returnFocusRef = useRef(
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  )
   const [editingKey, setEditingKey] = useState('')
   const [appearanceDraft, setAppearanceDraft] = useState({ icon: '', primaryColor: '' })
   const [appearanceErrors, setAppearanceErrors] = useState({})
@@ -155,11 +161,27 @@ export function BrowserSwitcher({
   const selectedItem = items[selectedIndex]
 
   useEffect(() => {
-    if (editingItem) return
-    const selected = itemRefs.current[selectedIndex]
-    selected?.focus()
-    selected?.scrollIntoView?.({ block: 'nearest', inline: 'center' })
-  }, [editingItem, items, selectedIndex])
+    if (editingItem) {
+      dialogRef.current?.focus()
+      return
+    }
+    const selected = !loading && !error && items.length
+      ? itemRefs.current[selectedIndex]
+      : null
+    if (selected) {
+      selected.focus()
+      selected.scrollIntoView?.({ block: 'nearest', inline: 'center' })
+      return
+    }
+    dialogRef.current?.focus()
+  }, [editingItem, error, items, loading, selectedIndex])
+
+  useEffect(() => () => {
+    const returnTarget = returnFocusRef.current
+    if (returnTarget?.isConnected) {
+      returnTarget.focus()
+    }
+  }, [])
 
   useEffect(() => {
     if (editingKey && !editingItem) {
@@ -232,7 +254,14 @@ export function BrowserSwitcher({
   const manual = mode === 'manual'
 
   return (
-    <section className="browser-switcher" role="dialog" aria-modal="true" aria-labelledby="browser-switcher-title">
+    <section
+      ref={dialogRef}
+      className="browser-switcher"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="browser-switcher-title"
+      tabIndex={-1}
+    >
       <header className="browser-switcher__header">
         <div>
           <span className="eyebrow">{editingItem ? 'Browser appearance' : 'Quick switch'}</span>

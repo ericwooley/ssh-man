@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  allowSettingsWindowClose,
   openSettingsWindow,
   onBrowserSwitcherCancelRequested,
   onBrowserSwitcherCommitRequested,
   onBrowserSwitcherRequested,
+  onSettingsCloseRequested,
   openServerCommand,
   previewBrowserLaunchThroughSocks,
   saveBrowserAppearance,
   setURLRouteWindowMode,
+  validateURLRulePattern,
 } from './api'
 
 function installRuntime() {
@@ -57,6 +60,25 @@ describe('browser launch preview', () => {
   })
 })
 
+describe('URL rule validation', () => {
+  test('uses the Go regex validator in the Wails runtime', async () => {
+    const result = { valid: true, message: '' }
+    const ValidateURLRulePattern = vi.fn(async () => result)
+    window.go = { bindings: { AppBindings: { ValidateURLRulePattern } } }
+
+    await expect(validateURLRulePattern('regex', '(?=work)')).resolves.toEqual(result)
+
+    expect(ValidateURLRulePattern).toHaveBeenCalledWith('regex', '(?=work)')
+  })
+
+  test('does not apply the JavaScript regex dialect without the Go runtime', async () => {
+    await expect(validateURLRulePattern('regex', '(?P<name>work)')).resolves.toEqual({
+      valid: true,
+      message: '',
+    })
+  })
+})
+
 describe('URL route window sizing', () => {
   test('uses the expanded chooser size and restores the main window size', () => {
     window.runtime = {
@@ -90,6 +112,27 @@ describe('companion window launchers', () => {
     await openServerCommand('server-1')
 
     expect(Open).toHaveBeenCalledWith('server-1')
+  })
+})
+
+describe('settings window close lifecycle', () => {
+  test('allows an intentional close through the settings binding', async () => {
+    const AllowClose = vi.fn(async () => undefined)
+    window.go = { bindings: { SettingsWindowBindings: { AllowClose } } }
+
+    await allowSettingsWindowClose()
+
+    expect(AllowClose).toHaveBeenCalledTimes(1)
+  })
+
+  test('subscribes to native settings close requests', () => {
+    const listeners = installRuntime()
+    const onClose = vi.fn()
+
+    onSettingsCloseRequested(onClose)
+    listeners.get('settings:close-requested')()
+
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/rivo/uniseg"
 
+	"ssh-man/internal/domain/browsercommand"
 	"ssh-man/internal/keyboardshortcut"
 )
 
@@ -26,6 +27,7 @@ const (
 	maxBrowserIDBytes            = 128
 	maxBrowserDisplayNameBytes   = 256
 	maxBrowserLaunchPathBytes    = 4096
+	maxBrowserCommandBytes       = 8192
 	maxURLRuleIDBytes            = 128
 	maxURLRulePatternBytes       = 4096
 	maxURLRuleCommandBytes       = 8192
@@ -62,9 +64,20 @@ const (
 type CustomBrowser struct {
 	ID              string        `json:"id"`
 	DisplayName     string        `json:"displayName"`
-	LaunchReference string        `json:"launchReference"`
-	Engine          BrowserEngine `json:"engine"`
+	Command         string        `json:"command,omitempty"`
+	Icon            string        `json:"icon,omitempty"`
+	LaunchReference string        `json:"launchReference,omitempty"`
+	Engine          BrowserEngine `json:"engine,omitempty"`
 }
+
+type URLRuleMatchMode string
+
+const (
+	URLRuleMatchRegex      URLRuleMatchMode = "regex"
+	URLRuleMatchStartsWith URLRuleMatchMode = "starts_with"
+	URLRuleMatchEndsWith   URLRuleMatchMode = "ends_with"
+	URLRuleMatchContains   URLRuleMatchMode = "contains"
+)
 
 type URLRuleAction string
 
@@ -74,11 +87,13 @@ const (
 )
 
 type URLRule struct {
-	ID        string        `json:"id"`
-	Pattern   string        `json:"pattern"`
-	Action    URLRuleAction `json:"action"`
-	BrowserID string        `json:"browserId,omitempty"`
-	Command   string        `json:"command,omitempty"`
+	ID         string           `json:"id"`
+	MatchMode  URLRuleMatchMode `json:"matchMode"`
+	Pattern    string           `json:"pattern"`
+	Action     URLRuleAction    `json:"action"`
+	BrowserID  string           `json:"browserId,omitempty"`
+	Command    string           `json:"command,omitempty"`
+	OpenDirect bool             `json:"openDirect,omitempty"`
 }
 
 type URLPortAssignment struct {
@@ -96,6 +111,7 @@ type UserPreference struct {
 	BrowserAppearances              map[string]BrowserAppearance `json:"browserAppearances"`
 	DefaultBrowserID                string                       `json:"defaultBrowserId,omitempty"`
 	ProxyBrowserID                  string                       `json:"proxyBrowserId,omitempty"`
+	DisabledBrowserIDs              []string                     `json:"disabledBrowserIds"`
 	CustomBrowsers                  []CustomBrowser              `json:"customBrowsers"`
 	URLRules                        []URLRule                    `json:"urlRules"`
 	URLPortAssignments              []URLPortAssignment          `json:"urlPortAssignments"`
@@ -108,14 +124,25 @@ func Default() UserPreference {
 		BrowserSwitcherShortcut:         keyboardshortcut.DefaultBrowserSwitcher,
 		BrowserSwitcherBackwardShortcut: keyboardshortcut.DefaultBrowserSwitcherBackward,
 		BrowserAppearances:              map[string]BrowserAppearance{},
+		DisabledBrowserIDs:              []string{},
 		CustomBrowsers:                  []CustomBrowser{},
 		URLRules:                        []URLRule{},
 		URLPortAssignments:              []URLPortAssignment{},
-		UpdatedAt:                       time.Now().UTC(),
 	}
 }
 
 func (p UserPreference) Validate() error {
+	return p.validate(false)
+}
+
+// ValidateAllowingLegacyCommandSyntax validates structurally repairable
+// preferences. Save and execution boundaries separately reject new or changed
+// legacy command syntax.
+func (p UserPreference) ValidateAllowingLegacyCommandSyntax() error {
+	return p.validate(true)
+}
+
+func (p UserPreference) validate(allowLegacyCommandSyntax bool) error {
 	if p.Theme != ThemeLight && p.Theme != ThemeDark {
 		return fmt.Errorf("theme must be light or dark")
 	}
@@ -147,24 +174,40 @@ func (p UserPreference) Validate() error {
 	if err := validateBrowserID("proxy browser", p.ProxyBrowserID, false); err != nil {
 		return err
 	}
+	disabledBrowserIDs := make(map[string]struct{}, len(p.DisabledBrowserIDs))
+	for index, browserID := range p.DisabledBrowserIDs {
+		if err := validateBrowserID(fmt.Sprintf("disabled browser %d", index+1), browserID, true); err != nil {
+			return err
+		}
+		if _, exists := disabledBrowserIDs[browserID]; exists {
+			return fmt.Errorf("disabled browser id %q is duplicated", browserID)
+		}
+		disabledBrowserIDs[browserID] = struct{}{}
+	}
 	customBrowserIDs := make(map[string]struct{}, len(p.CustomBrowsers))
-	customBrowserPaths := make(map[string]struct{}, len(p.CustomBrowsers))
+	customBrowserLaunches := make(map[string]struct{}, len(p.CustomBrowsers))
 	for index, customBrowser := range p.CustomBrowsers {
-		if err := customBrowser.Validate(); err != nil {
+		if err := customBrowser.validate(allowLegacyCommandSyntax); err != nil {
 			return fmt.Errorf("custom browser %d: %w", index+1, err)
 		}
 		if _, exists := customBrowserIDs[customBrowser.ID]; exists {
 			return fmt.Errorf("custom browser duplicate id %q", customBrowser.ID)
 		}
 		customBrowserIDs[customBrowser.ID] = struct{}{}
-		if _, exists := customBrowserPaths[customBrowser.LaunchReference]; exists {
-			return fmt.Errorf("custom browser duplicate application path %q", customBrowser.LaunchReference)
+		launchKey := customBrowser.Command
+		launchLabel := "command"
+		if launchKey == "" {
+			launchKey = customBrowser.LaunchReference
+			launchLabel = "application path"
 		}
-		customBrowserPaths[customBrowser.LaunchReference] = struct{}{}
+		if _, exists := customBrowserLaunches[launchKey]; exists {
+			return fmt.Errorf("custom browser duplicate %s %q", launchLabel, launchKey)
+		}
+		customBrowserLaunches[launchKey] = struct{}{}
 	}
 	ruleIDs := make(map[string]struct{}, len(p.URLRules))
 	for index, rule := range p.URLRules {
-		if err := rule.Validate(); err != nil {
+		if err := rule.validate(allowLegacyCommandSyntax); err != nil {
 			return fmt.Errorf("URL rule %d: %w", index+1, err)
 		}
 		if _, exists := ruleIDs[rule.ID]; exists {
@@ -191,6 +234,10 @@ func (p UserPreference) Validate() error {
 }
 
 func (b CustomBrowser) Validate() error {
+	return b.validate(false)
+}
+
+func (b CustomBrowser) validate(allowLegacyCommandSyntax bool) error {
 	if err := validateBrowserID("browser", b.ID, true); err != nil {
 		return err
 	}
@@ -208,8 +255,28 @@ func (b CustomBrowser) Validate() error {
 			return fmt.Errorf("display name must not contain control characters")
 		}
 	}
+	if err := (BrowserAppearance{Icon: b.Icon}).Validate(); err != nil {
+		return fmt.Errorf("icon: %w", err)
+	}
+	if b.Command != "" {
+		if len(b.Command) > maxBrowserCommandBytes {
+			return fmt.Errorf("command must be at most %d bytes", maxBrowserCommandBytes)
+		}
+		if !strings.Contains(b.Command, "<URL>") {
+			return fmt.Errorf("command must contain <URL>")
+		}
+		if !allowLegacyCommandSyntax {
+			if err := browsercommand.Validate(b.Command); err != nil {
+				return fmt.Errorf("command: %w", err)
+			}
+		}
+		if b.LaunchReference != "" || b.Engine != "" {
+			return fmt.Errorf("command browser must not include legacy application settings")
+		}
+		return nil
+	}
 	if b.LaunchReference == "" {
-		return fmt.Errorf("application path is required")
+		return fmt.Errorf("command is required")
 	}
 	if len(b.LaunchReference) > maxBrowserLaunchPathBytes {
 		return fmt.Errorf("application path must be at most %d bytes", maxBrowserLaunchPathBytes)
@@ -226,6 +293,10 @@ func (b CustomBrowser) Validate() error {
 }
 
 func (r URLRule) Validate() error {
+	return r.validate(false)
+}
+
+func (r URLRule) validate(allowLegacyCommandSyntax bool) error {
 	if r.ID == "" {
 		return fmt.Errorf("id is required")
 	}
@@ -235,14 +306,8 @@ func (r URLRule) Validate() error {
 	if !browserAppearanceKeyPattern.MatchString(r.ID) {
 		return fmt.Errorf("id contains unsupported characters")
 	}
-	if r.Pattern == "" {
-		return fmt.Errorf("pattern is required")
-	}
-	if len(r.Pattern) > maxURLRulePatternBytes {
-		return fmt.Errorf("pattern must be at most %d bytes", maxURLRulePatternBytes)
-	}
-	if _, err := regexp.Compile(r.Pattern); err != nil {
-		return fmt.Errorf("pattern must be a valid regular expression: %w", err)
+	if err := ValidateURLRulePattern(r.MatchMode, r.Pattern); err != nil {
+		return err
 	}
 	switch r.Action {
 	case URLRuleActionBrowser:
@@ -265,8 +330,32 @@ func (r URLRule) Validate() error {
 		if !strings.Contains(r.Command, "<URL>") {
 			return fmt.Errorf("command must contain <URL>")
 		}
+		if !allowLegacyCommandSyntax {
+			if err := browsercommand.Validate(r.Command); err != nil {
+				return fmt.Errorf("command: %w", err)
+			}
+		}
 	default:
 		return fmt.Errorf("action must be browser or command")
+	}
+	return nil
+}
+
+func ValidateURLRulePattern(matchMode URLRuleMatchMode, pattern string) error {
+	if pattern == "" {
+		return fmt.Errorf("pattern is required")
+	}
+	if len(pattern) > maxURLRulePatternBytes {
+		return fmt.Errorf("pattern must be at most %d bytes", maxURLRulePatternBytes)
+	}
+	switch matchMode {
+	case "", URLRuleMatchRegex:
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("pattern must be a valid regular expression: %w", err)
+		}
+	case URLRuleMatchStartsWith, URLRuleMatchEndsWith, URLRuleMatchContains:
+	default:
+		return fmt.Errorf("match mode must be starts_with, ends_with, contains, or regex")
 	}
 	return nil
 }

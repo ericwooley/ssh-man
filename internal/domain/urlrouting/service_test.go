@@ -3,9 +3,11 @@ package urlrouting
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
@@ -18,6 +20,18 @@ type fakePreferences struct {
 }
 
 func (f fakePreferences) Load(context.Context) (preferencesdomain.UserPreference, error) {
+	return f.value, nil
+}
+
+type blockingPreferences struct {
+	value   preferencesdomain.UserPreference
+	loaded  chan struct{}
+	release chan struct{}
+}
+
+func (f blockingPreferences) Load(context.Context) (preferencesdomain.UserPreference, error) {
+	close(f.loaded)
+	<-f.release
 	return f.value, nil
 }
 
@@ -138,6 +152,383 @@ func TestHandlePresentsMatchingCommandAsDefault(t *testing.T) {
 	}
 	if gotTemplate != pref.URLRules[0].Command || gotURL != "https://github.com/workorg/repo?q=a&b=c" {
 		t.Fatalf("template=%q url=%q", gotTemplate, gotURL)
+	}
+}
+
+func TestHandleExcludesLegacyInvalidCommandRuleUntilRepaired(t *testing.T) {
+	for _, openDirect := range []bool{false, true} {
+		t.Run(fmt.Sprintf("open_direct_%t", openDirect), func(t *testing.T) {
+			pref := preferencesdomain.Default()
+			pref.DefaultBrowserID = "brave-browser"
+			pref.URLRules = []preferencesdomain.URLRule{{
+				ID:         "legacy-shell",
+				MatchMode:  preferencesdomain.URLRuleMatchContains,
+				Pattern:    "github.com/workorg",
+				Action:     preferencesdomain.URLRuleActionCommand,
+				Command:    `/bin/zsh -lc "open <URL>"`,
+				OpenDirect: openDirect,
+			}}
+			service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, routingBrowsers())
+			commandRuns := 0
+			service.runCommand = func(string, string) error {
+				commandRuns++
+				return nil
+			}
+
+			result, err := service.Handle(context.Background(), "https://github.com/workorg/repo")
+			if err != nil {
+				t.Fatalf("handle URL: %v", err)
+			}
+			if result.Kind != ResultNeedsChoice || result.Request == nil {
+				t.Fatalf("result = %#v, want regular browser chooser", result)
+			}
+			if result.Request.DefaultChoiceID != "browser:brave-browser" {
+				t.Fatalf("default choice = %q, want browser:brave-browser", result.Request.DefaultChoiceID)
+			}
+			if choiceIndex(result.Request.Choices, "command:legacy-shell") >= 0 {
+				t.Fatalf("legacy command choice remained available: %#v", result.Request.Choices)
+			}
+			if commandRuns != 0 {
+				t.Fatalf("legacy command runs = %d, want 0", commandRuns)
+			}
+		})
+	}
+}
+
+func TestWithPendingInvalidationPreventsCapturedCommandResolution(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.URLRules = []preferencesdomain.URLRule{{
+		ID:      "work-container",
+		Pattern: "github.com/workorg",
+		Action:  preferencesdomain.URLRuleActionCommand,
+		Command: `open -a "Zen" "<URL>"`,
+	}}
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, routingBrowsers())
+	commandRuns := 0
+	service.runCommand = func(string, string) error {
+		commandRuns++
+		return nil
+	}
+
+	result, err := service.Handle(context.Background(), "https://github.com/workorg/repo")
+	if err != nil {
+		t.Fatalf("handle url: %v", err)
+	}
+	if result.Request == nil {
+		t.Fatal("expected pending URL route")
+	}
+
+	saveCalled := false
+	if err := service.WithPendingInvalidation(func() error {
+		saveCalled = true
+		return nil
+	}); err != nil {
+		t.Fatalf("invalidate after save: %v", err)
+	}
+	if !saveCalled {
+		t.Fatal("preference save callback was not called")
+	}
+	if err := service.ResolveChoice(context.Background(), result.Request.ID, result.Request.DefaultChoiceID); err == nil {
+		t.Fatal("expected invalidated route resolution to fail")
+	}
+	if commandRuns != 0 {
+		t.Fatalf("command runs = %d, want 0", commandRuns)
+	}
+}
+
+func TestWithPendingInvalidationPreservesRouteWhenSaveFails(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.URLRules = []preferencesdomain.URLRule{{
+		ID:      "work-container",
+		Pattern: "github.com/workorg",
+		Action:  preferencesdomain.URLRuleActionCommand,
+		Command: `open -a "Zen" "<URL>"`,
+	}}
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, routingBrowsers())
+	commandRuns := 0
+	service.runCommand = func(string, string) error {
+		commandRuns++
+		return nil
+	}
+
+	result, err := service.Handle(context.Background(), "https://github.com/workorg/repo")
+	if err != nil {
+		t.Fatalf("handle url: %v", err)
+	}
+	saveErr := errors.New("save failed")
+	if err := service.WithPendingInvalidation(func() error { return saveErr }); !errors.Is(err, saveErr) {
+		t.Fatalf("save error = %v, want %v", err, saveErr)
+	}
+	if err := service.ResolveChoice(context.Background(), result.Request.ID, result.Request.DefaultChoiceID); err != nil {
+		t.Fatalf("resolve preserved route: %v", err)
+	}
+	if commandRuns != 1 {
+		t.Fatalf("command runs = %d, want 1", commandRuns)
+	}
+}
+
+func TestWithPendingInvalidationSerializesRouteCreation(t *testing.T) {
+	pref := preferencesdomain.Default()
+	preferences := blockingPreferences{
+		value:   pref,
+		loaded:  make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	service := NewService(preferences, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, routingBrowsers())
+	handleDone := make(chan error, 1)
+	go func() {
+		_, err := service.Handle(context.Background(), "https://example.com")
+		handleDone <- err
+	}()
+	<-preferences.loaded
+
+	saveStarted := make(chan struct{})
+	invalidationDone := make(chan error, 1)
+	go func() {
+		invalidationDone <- service.WithPendingInvalidation(func() error {
+			close(saveStarted)
+			return nil
+		})
+	}()
+
+	select {
+	case <-saveStarted:
+		t.Fatal("preference save started before in-flight route creation completed")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(preferences.release)
+	if err := <-handleDone; err != nil {
+		t.Fatalf("handle URL: %v", err)
+	}
+	if err := <-invalidationDone; err != nil {
+		t.Fatalf("invalidate pending route: %v", err)
+	}
+	if _, ok := service.Pending(); ok {
+		t.Fatal("route created from the old preference snapshot survived the save")
+	}
+}
+
+func TestHandleMatchesLiteralRuleModes(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    preferencesdomain.URLRuleMatchMode
+		pattern string
+		rawURL  string
+	}{
+		{
+			name:    "starts with",
+			mode:    preferencesdomain.URLRuleMatchStartsWith,
+			pattern: "https://github.com/workorg/",
+			rawURL:  "https://github.com/workorg/repo",
+		},
+		{
+			name:    "ends with",
+			mode:    preferencesdomain.URLRuleMatchEndsWith,
+			pattern: "/dashboard",
+			rawURL:  "https://example.com/dashboard",
+		},
+		{
+			name:    "contains",
+			mode:    preferencesdomain.URLRuleMatchContains,
+			pattern: "ticket=",
+			rawURL:  "https://example.com/issues?ticket=123",
+		},
+		{
+			name:    "regex",
+			mode:    preferencesdomain.URLRuleMatchRegex,
+			pattern: `^https://(docs|wiki)\.`,
+			rawURL:  "https://docs.example.com/",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pref := preferencesdomain.Default()
+			pref.DefaultBrowserID = "safari"
+			pref.URLRules = []preferencesdomain.URLRule{{
+				ID:        "rule",
+				MatchMode: test.mode,
+				Pattern:   test.pattern,
+				Action:    preferencesdomain.URLRuleActionBrowser,
+				BrowserID: "firefox",
+			}}
+			service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, routingBrowsers())
+
+			result, err := service.Handle(context.Background(), test.rawURL)
+			if err != nil {
+				t.Fatalf("handle url: %v", err)
+			}
+			if result.Request == nil || result.Request.DefaultChoiceID != "browser:firefox" {
+				t.Fatalf("result = %#v, want Firefox default", result)
+			}
+		})
+	}
+}
+
+func TestHandleOpensDirectBrowserRuleWithoutPresentingChooser(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.URLRules = []preferencesdomain.URLRule{{
+		ID:         "work",
+		MatchMode:  preferencesdomain.URLRuleMatchStartsWith,
+		Pattern:    "https://github.com/workorg/",
+		Action:     preferencesdomain.URLRuleActionBrowser,
+		BrowserID:  "brave-browser",
+		OpenDirect: true,
+	}}
+	browsers := routingBrowsers()
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, browsers)
+	presented := false
+	service.SetPresenter(func(RouteRequest) { presented = true })
+
+	rawURL := "https://github.com/workorg/repo"
+	result, err := service.Handle(context.Background(), rawURL)
+	if err != nil {
+		t.Fatalf("handle URL: %v", err)
+	}
+	if result.Kind != ResultOpenedDirectly || result.Request != nil {
+		t.Fatalf("result = %#v, want direct open", result)
+	}
+	if presented {
+		t.Fatal("direct rule presented a chooser")
+	}
+	if _, ok := service.Pending(); ok {
+		t.Fatal("direct rule left a pending chooser")
+	}
+	want := []browserCall{{browserID: "brave-browser", url: rawURL}}
+	if !reflect.DeepEqual(browsers.regular, want) {
+		t.Fatalf("regular calls = %#v, want %#v", browsers.regular, want)
+	}
+}
+
+func TestHandleFallsBackToChooserWhenDirectRuleBrowserIsUnavailable(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "safari"
+	pref.URLRules = []preferencesdomain.URLRule{{
+		ID:         "removed-work-browser",
+		MatchMode:  preferencesdomain.URLRuleMatchContains,
+		Pattern:    "work.example",
+		Action:     preferencesdomain.URLRuleActionBrowser,
+		BrowserID:  "removed-browser",
+		OpenDirect: true,
+	}}
+	browsers := routingBrowsers()
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, browsers)
+	presented := false
+	service.SetPresenter(func(RouteRequest) { presented = true })
+
+	result, err := service.Handle(context.Background(), "https://work.example/ticket")
+	if err != nil {
+		t.Fatalf("handle URL: %v", err)
+	}
+	if result.Kind != ResultNeedsChoice || result.Request == nil {
+		t.Fatalf("result = %#v, want fallback chooser", result)
+	}
+	if !presented {
+		t.Fatal("unavailable direct rule did not present the fallback chooser")
+	}
+	if len(result.Request.Choices) == 0 || !choiceExists(result.Request.Choices, result.Request.DefaultChoiceID) {
+		t.Fatalf("fallback request = %#v, want an available default choice", result.Request)
+	}
+	if len(browsers.regular) != 0 {
+		t.Fatalf("regular browser calls = %#v, want no browser opened before chooser resolution", browsers.regular)
+	}
+}
+
+func TestHandleOpensDirectCustomBrowserWithURLAsArgvData(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.URLRules = []preferencesdomain.URLRule{{
+		ID:         "work",
+		MatchMode:  preferencesdomain.URLRuleMatchContains,
+		Pattern:    "example.com",
+		Action:     preferencesdomain.URLRuleActionBrowser,
+		BrowserID:  "custom-work",
+		OpenDirect: true,
+	}}
+	browsers := routingBrowsers()
+	browsers.destinations = append(browsers.destinations, BrowserDestination{
+		ID:      "custom-work",
+		Name:    "Work profile",
+		Command: `open <URL>`,
+	})
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, browsers)
+	var gotArguments []string
+	service.runCommand = func(template, rawURL string) error {
+		var err error
+		gotArguments, err = commandTemplateArguments(template, rawURL)
+		return err
+	}
+
+	rawURL := "https://example.com/?q=$((1+1))&value=$(printf%20unsafe)"
+	result, err := service.Handle(context.Background(), rawURL)
+	if err != nil {
+		t.Fatalf("handle URL: %v", err)
+	}
+	if result.Kind != ResultOpenedDirectly || result.Request != nil {
+		t.Fatalf("result = %#v, want direct open", result)
+	}
+	want := []string{"/usr/bin/open", rawURL}
+	if !reflect.DeepEqual(gotArguments, want) {
+		t.Fatalf("command arguments = %#v, want %#v", gotArguments, want)
+	}
+}
+
+func TestHandleOpensCustomBrowserCommandAsBrowserChoice(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "custom-work"
+	browsers := routingBrowsers()
+	browsers.destinations = append(browsers.destinations, BrowserDestination{
+		ID:      "custom-work",
+		Name:    "Work profile",
+		Command: `open -a "Zen" "ext+container:name=Work&url=<URL>"`,
+		Icon:    "icon:briefcase",
+	})
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, browsers)
+	var gotTemplate, gotURL string
+	service.runCommand = func(template, rawURL string) error {
+		gotTemplate, gotURL = template, rawURL
+		return nil
+	}
+
+	result, err := service.Handle(context.Background(), "https://example.com/")
+	if err != nil {
+		t.Fatalf("handle URL: %v", err)
+	}
+	if result.Request == nil || result.Request.DefaultChoiceID != "browser:custom-work" {
+		t.Fatalf("result = %#v, want custom browser default", result)
+	}
+	customChoice := result.Request.Choices[choiceIndex(result.Request.Choices, "browser:custom-work")]
+	if customChoice.Kind != RouteChoiceCommand || customChoice.Icon != "icon:briefcase" {
+		t.Fatalf("custom browser choice = %#v", customChoice)
+	}
+	if err := service.ResolveChoice(context.Background(), result.Request.ID, result.Request.DefaultChoiceID); err != nil {
+		t.Fatalf("resolve custom browser: %v", err)
+	}
+	if gotTemplate != browsers.destinations[len(browsers.destinations)-1].Command || gotURL != "https://example.com/" {
+		t.Fatalf("command = %q URL = %q", gotTemplate, gotURL)
+	}
+}
+
+func TestHandleExcludesLegacyInvalidCustomBrowserUntilRepaired(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "custom-legacy"
+	browsers := routingBrowsers()
+	browsers.destinations = append(browsers.destinations, BrowserDestination{
+		ID:      "custom-legacy",
+		Name:    "Legacy profile",
+		Command: `/bin/zsh -lc "open <URL>"`,
+	})
+	service := NewService(fakePreferences{value: pref}, fakeConfigurations{}, fakeServers{}, fakeRuntimes{}, browsers)
+
+	result, err := service.Handle(context.Background(), "https://example.com/")
+	if err != nil {
+		t.Fatalf("handle URL: %v", err)
+	}
+	if result.Kind != ResultNeedsChoice || result.Request == nil {
+		t.Fatalf("result = %#v, want regular browser chooser", result)
+	}
+	if result.Request.DefaultChoiceID == "browser:custom-legacy" ||
+		choiceIndex(result.Request.Choices, "browser:custom-legacy") >= 0 {
+		t.Fatalf("legacy custom browser remained available: %#v", result.Request)
 	}
 }
 

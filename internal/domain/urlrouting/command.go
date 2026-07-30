@@ -3,96 +3,33 @@ package urlrouting
 import (
 	"fmt"
 	"os/exec"
-	"runtime"
-	"strings"
+
+	"ssh-man/internal/domain/browsercommand"
 )
 
-type shellQuoteState uint8
-
-const (
-	shellUnquoted shellQuoteState = iota
-	shellSingleQuoted
-	shellDoubleQuoted
-)
-
-func expandCommandTemplate(template, rawURL string) (string, error) {
-	if !strings.Contains(template, "<URL>") {
-		return "", fmt.Errorf("command must contain <URL>")
-	}
-
-	var result strings.Builder
-	state := shellUnquoted
-	escaped := false
-	for index := 0; index < len(template); {
-		if !escaped && strings.HasPrefix(template[index:], "<URL>") {
-			switch state {
-			case shellSingleQuoted:
-				result.WriteString(strings.ReplaceAll(rawURL, "'", "'\\''"))
-			case shellDoubleQuoted:
-				replacer := strings.NewReplacer(
-					`\`, `\\`,
-					`"`, `\"`,
-					`$`, `\$`,
-					"`", "\\`",
-				)
-				result.WriteString(replacer.Replace(rawURL))
-			default:
-				result.WriteString(shellQuote(rawURL))
-			}
-			index += len("<URL>")
-			continue
-		}
-
-		value := template[index]
-		result.WriteByte(value)
-		index++
-		if escaped {
-			escaped = false
-			continue
-		}
-		if value == '\\' && state != shellSingleQuoted {
-			escaped = true
-			continue
-		}
-		switch value {
-		case '\'':
-			if state == shellUnquoted {
-				state = shellSingleQuoted
-			} else if state == shellSingleQuoted {
-				state = shellUnquoted
-			}
-		case '"':
-			if state == shellUnquoted {
-				state = shellDoubleQuoted
-			} else if state == shellDoubleQuoted {
-				state = shellUnquoted
-			}
-		}
-	}
-	if escaped || state != shellUnquoted {
-		return "", fmt.Errorf("command contains unbalanced quotes or escapes")
-	}
-	return result.String(), nil
+func commandTemplateArguments(template, rawURL string) ([]string, error) {
+	return browsercommand.Arguments(template, rawURL)
 }
 
 func runCommandTemplate(template, rawURL string) error {
-	command, err := expandCommandTemplate(template, rawURL)
+	return runCommandTemplateWithStarter(template, rawURL, startCommand)
+}
+
+func runCommandTemplateWithStarter(
+	template string,
+	rawURL string,
+	start func(executable string, arguments []string) error,
+) error {
+	arguments, err := commandTemplateArguments(template, rawURL)
 	if err != nil {
 		return err
 	}
-	shell := "/bin/sh"
-	if runtime.GOOS == "darwin" {
-		shell = "/bin/zsh"
-	}
-	if err := exec.Command(shell, "-lc", command).Start(); err != nil {
+	if err := start(arguments[0], arguments[1:]); err != nil {
 		return fmt.Errorf("execute URL command: %w", err)
 	}
 	return nil
 }
 
-func shellQuote(value string) string {
-	if value == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+func startCommand(executable string, arguments []string) error {
+	return exec.Command(executable, arguments...).Start()
 }

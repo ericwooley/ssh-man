@@ -424,6 +424,15 @@ func Run(assets fs.FS) (runErr error) {
 		}
 		return saved, saveErr
 	}
+	controlBackend.SaveBrowserAppearance = func(_ context.Context, appearanceKey string, appearance preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error) {
+		saved, saveErr := app.SaveBrowserAppearance(appearanceKey, appearance)
+		if saveErr == nil {
+			if ctx, contextErr := window.Context(); contextErr == nil {
+				wailsruntime.EventsEmit(ctx, preferencesChangedEventName, saved)
+			}
+		}
+		return saved, saveErr
+	}
 	controlServer := control.NewServer(paths.ControlSocketPath(application.ConfigDir), controlBackend)
 	urlRoutingReady := make(chan struct{})
 	var urlRoutingReadyOnce sync.Once

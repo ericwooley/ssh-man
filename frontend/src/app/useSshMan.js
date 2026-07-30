@@ -19,6 +19,7 @@ const defaultPreferences = {
   browserAppearances: {},
   defaultBrowserId: '',
   proxyBrowserId: '',
+  disabledBrowserIds: [],
   customBrowsers: [],
   urlRules: [],
   urlPortAssignments: [],
@@ -28,6 +29,61 @@ const unavailableDiagnostics = {
   appDataPath: '',
   databasePath: '',
   version: '',
+}
+
+function normalizePreferences(preferences = {}) {
+  return {
+    ...defaultPreferences,
+    ...preferences,
+    browserAppearances: preferences.browserAppearances || {},
+    disabledBrowserIds: preferences.disabledBrowserIds || [],
+    customBrowsers: preferences.customBrowsers || [],
+    urlRules: preferences.urlRules || [],
+    urlPortAssignments: preferences.urlPortAssignments || [],
+  }
+}
+
+function browserConfigurationSignature(preferences = {}) {
+  return JSON.stringify({
+    defaultBrowserId: preferences.defaultBrowserId || '',
+    proxyBrowserId: preferences.proxyBrowserId || '',
+    disabledBrowserIds: preferences.disabledBrowserIds || [],
+    customBrowsers: preferences.customBrowsers || [],
+    urlRules: preferences.urlRules || [],
+    urlPortAssignments: preferences.urlPortAssignments || [],
+  })
+}
+
+function preferenceRevision(value) {
+  const match = String(value || '').match(
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/,
+  )
+  if (!match) return null
+  return [match[1], (match[2] || '').padEnd(9, '0')]
+}
+
+function comparePreferenceRevisions(candidate, current) {
+  if (candidate?.updatedAt === current?.updatedAt) return 0
+  const candidateRevision = preferenceRevision(candidate?.updatedAt)
+  const currentRevision = preferenceRevision(current?.updatedAt)
+  if (!currentRevision) return candidateRevision ? 1 : 0
+  if (!candidateRevision) return -1
+  if (candidateRevision[0] !== currentRevision[0]) {
+    return candidateRevision[0] > currentRevision[0] ? 1 : -1
+  }
+  if (candidateRevision[1] === currentRevision[1]) return 0
+  return candidateRevision[1] > currentRevision[1] ? 1 : -1
+}
+
+function isPreferenceConflict(error) {
+  return String(error?.message || error || '').includes('preference update conflict')
+}
+
+function preferenceSaveErrorDetail(error) {
+  if (isPreferenceConflict(error)) {
+    return 'Settings changed before this update was saved. Please try again.'
+  }
+  return error?.message || ''
 }
 
 async function writeClipboard(text) {
@@ -69,20 +125,28 @@ export function useSshMan(api = defaultApi, options = {}) {
   const [browserAfterUnlock, setBrowserAfterUnlock] = useState(null)
   const [browserState, setBrowserState] = useState({
     configurationId: '',
+    configurationRevision: 0,
     items: [],
     selectedId: '',
     preview: '',
     loading: false,
   })
+  const [browserConfigurationRevision, setBrowserConfigurationRevision] = useState(0)
   const [urlRoutingState, setURLRoutingState] = useState({
     browsers: [],
+    browserCatalog: [],
     defaultBrowser: { supported: false, isDefault: false },
     loading: false,
   })
 
   const notificationCounter = useRef(0)
   const preferenceWriteCounter = useRef(0)
+  const preferenceWriteQueueRef = useRef(Promise.resolve())
+  const persistedPreferencesRef = useRef(defaultPreferences)
   const pendingRef = useRef(new Set())
+  const browserConfigurationSignatureRef = useRef(browserConfigurationSignature(defaultPreferences))
+  const browserConfigurationRevisionRef = useRef(0)
+  const browserDiscoveryRequestRef = useRef(0)
 
   const notify = useCallback((kind, message, detail = '') => {
     notificationCounter.current += 1
@@ -125,17 +189,18 @@ export function useSshMan(api = defaultApi, options = {}) {
     try {
       const state = await api.loadInitialState()
       const nextServers = state.servers || []
-      const nextPreferences = {
-        ...defaultPreferences,
-        ...(state.preferences || {}),
-        browserAppearances: state.preferences?.browserAppearances || {},
-        customBrowsers: state.preferences?.customBrowsers || [],
-        urlRules: state.preferences?.urlRules || [],
-      }
-      const nextServerId = selectInitialServerId(nextServers, nextPreferences.lastSelectedServerId)
+      const nextPreferences = normalizePreferences(state.preferences)
 
+      if (comparePreferenceRevisions(nextPreferences, persistedPreferencesRef.current) >= 0) {
+        browserConfigurationSignatureRef.current = browserConfigurationSignature(nextPreferences)
+        persistedPreferencesRef.current = nextPreferences
+        setPreferences(nextPreferences)
+      }
+      const nextServerId = selectInitialServerId(
+        nextServers,
+        persistedPreferencesRef.current.lastSelectedServerId,
+      )
       setServers(nextServers)
-      setPreferences(nextPreferences)
       setSessions(buildRuntimeSessions(state.sessions || []))
       setDiagnostics(state.diagnostics || unavailableDiagnostics)
       setCurrentUsername(state.currentUsername || '')
@@ -167,17 +232,18 @@ export function useSshMan(api = defaultApi, options = {}) {
       .then((state) => {
         if (!active) return
         const nextServers = state.servers || []
-        const nextPreferences = {
-          ...defaultPreferences,
-          ...(state.preferences || {}),
-          browserAppearances: state.preferences?.browserAppearances || {},
-          customBrowsers: state.preferences?.customBrowsers || [],
-          urlRules: state.preferences?.urlRules || [],
-        }
-        const nextServerId = selectInitialServerId(nextServers, nextPreferences.lastSelectedServerId)
+        const nextPreferences = normalizePreferences(state.preferences)
 
+        if (comparePreferenceRevisions(nextPreferences, persistedPreferencesRef.current) >= 0) {
+          browserConfigurationSignatureRef.current = browserConfigurationSignature(nextPreferences)
+          persistedPreferencesRef.current = nextPreferences
+          setPreferences(nextPreferences)
+        }
+        const nextServerId = selectInitialServerId(
+          nextServers,
+          persistedPreferencesRef.current.lastSelectedServerId,
+        )
         setServers(nextServers)
-        setPreferences(nextPreferences)
         setSessions(buildRuntimeSessions(state.sessions || []))
         setDiagnostics(state.diagnostics || unavailableDiagnostics)
         setCurrentUsername(state.currentUsername || '')
@@ -208,7 +274,25 @@ export function useSshMan(api = defaultApi, options = {}) {
 
   useEffect(() => {
     if (!api.onPreferencesChanged) return undefined
-    return api.onPreferencesChanged(() => {
+    return api.onPreferencesChanged((nextPreferences) => {
+      const normalized = normalizePreferences(nextPreferences)
+      if (comparePreferenceRevisions(normalized, persistedPreferencesRef.current) < 0) return
+      persistedPreferencesRef.current = normalized
+      setPreferences(normalized)
+      const signature = browserConfigurationSignature(normalized)
+      if (signature !== browserConfigurationSignatureRef.current) {
+        browserConfigurationSignatureRef.current = signature
+        browserDiscoveryRequestRef.current += 1
+        browserConfigurationRevisionRef.current += 1
+        setBrowserConfigurationRevision(browserConfigurationRevisionRef.current)
+        setBrowserState((current) => ({
+          ...current,
+          items: [],
+          selectedId: '',
+          preview: '',
+          loading: Boolean(current.configurationId),
+        }))
+      }
       void hydrate({ quiet: true })
     })
   }, [api, hydrate])
@@ -225,32 +309,49 @@ export function useSshMan(api = defaultApi, options = {}) {
   const selectedHistory = historyByConfiguration[selectedConfigurationId] || []
   const liveSessions = useMemo(() => activeSessions(runtimeSessions), [runtimeSessions])
 
-  const savePreferencesQuietly = useCallback(async (next, persist = api.savePreferences) => {
+  const savePreferencesQuietly = useCallback(async (update, persist = api.savePreferences) => {
     preferenceWriteCounter.current += 1
     const writeId = preferenceWriteCounter.current
-    let previous
-    setPreferences((current) => {
-      previous = current
-      return next
+    setPreferences((current) => update(current))
+
+    const write = preferenceWriteQueueRef.current.then(async () => {
+      try {
+        const candidate = update(persistedPreferencesRef.current)
+        const saved = await persist(candidate)
+        const persisted = saved || candidate
+        const current = persistedPreferencesRef.current
+        const adopted = comparePreferenceRevisions(persisted, current) >= 0
+        if (adopted) persistedPreferencesRef.current = persisted
+        const result = adopted ? persisted : current
+        if (writeId === preferenceWriteCounter.current) setPreferences(result)
+        return result
+      } catch (error) {
+        if (isPreferenceConflict(error)) {
+          await hydrate({ quiet: true })
+        }
+        throw error
+      }
     })
+    preferenceWriteQueueRef.current = write.catch(() => undefined)
+
     try {
-      const saved = await persist(next)
-      if (writeId === preferenceWriteCounter.current) setPreferences(saved || next)
-      return saved || next
+      return await write
     } catch (error) {
-      if (writeId === preferenceWriteCounter.current && previous) setPreferences(previous)
-      notify('warning', 'Your preference could not be saved.', error.message || '')
+      if (writeId === preferenceWriteCounter.current) {
+        setPreferences(persistedPreferencesRef.current)
+      }
+      notify('warning', 'Your preference could not be saved.', preferenceSaveErrorDetail(error))
       return null
     }
-  }, [api, notify])
+  }, [api, hydrate, notify])
 
   const selectServer = useCallback((serverId) => {
     const nextConfigurationId = firstConfigurationId(servers, serverId)
     setSelectedServerId(serverId)
     setSelectedConfigurationId(nextConfigurationId)
-    void savePreferencesQuietly({ ...preferences, lastSelectedServerId: serverId })
+    void savePreferencesQuietly((current) => ({ ...current, lastSelectedServerId: serverId }))
     return nextConfigurationId
-  }, [preferences, savePreferencesQuietly, servers])
+  }, [savePreferencesQuietly, servers])
 
   const refreshHistory = useCallback(async (configurationId) => {
     if (!configurationId) return []
@@ -275,10 +376,10 @@ export function useSshMan(api = defaultApi, options = {}) {
     setSelectedConfigurationId(isManagedSOCKSConfiguration(record.configuration)
       ? firstConfigurationId(servers, record.server.id)
       : configurationId)
-    void savePreferencesQuietly({ ...preferences, lastSelectedServerId: record.server.id })
+    void savePreferencesQuietly((current) => ({ ...current, lastSelectedServerId: record.server.id }))
     if (!isManagedSOCKSConfiguration(record.configuration)) void refreshHistory(configurationId)
     return record
-  }, [preferences, refreshHistory, savePreferencesQuietly, servers])
+  }, [refreshHistory, savePreferencesQuietly, servers])
 
   const saveServer = useCallback((value) => runPending(`save-server:${value.id || 'new'}`, async () => {
     try {
@@ -305,14 +406,14 @@ export function useSshMan(api = defaultApi, options = {}) {
       })
       setSelectedServerId(saved.id)
       setSelectedConfigurationId((current) => value.id ? current : '')
-      await savePreferencesQuietly({ ...preferences, lastSelectedServerId: saved.id })
+      await savePreferencesQuietly((current) => ({ ...current, lastSelectedServerId: saved.id }))
       notify('success', `${saved.name} saved.`)
       return saved
     } catch (error) {
       notify('danger', 'The server could not be saved.', error.message || '')
       return null
     }
-  }), [api, notify, preferences, runPending, savePreferencesQuietly])
+  }), [api, notify, runPending, savePreferencesQuietly])
 
   const deleteServer = useCallback((serverId) => runPending(`delete-server:${serverId}`, async () => {
     try {
@@ -556,45 +657,49 @@ export function useSshMan(api = defaultApi, options = {}) {
   }, [requestUnlock, sessions])
 
   const toggleTheme = useCallback(async () => {
-    const next = { ...preferences, theme: preferences.theme === 'dark' ? 'light' : 'dark' }
-    await savePreferencesQuietly(next)
+    const theme = preferences.theme === 'dark' ? 'light' : 'dark'
+    await savePreferencesQuietly((current) => ({ ...current, theme }))
   }, [preferences, savePreferencesQuietly])
 
   const setBrowserSwitcherShortcut = useCallback(async (shortcut) => {
-    return savePreferencesQuietly({ ...preferences, browserSwitcherShortcut: shortcut })
-  }, [preferences, savePreferencesQuietly])
+    return savePreferencesQuietly((current) => ({ ...current, browserSwitcherShortcut: shortcut }))
+  }, [savePreferencesQuietly])
 
   const setBrowserSwitcherBackwardShortcut = useCallback(async (shortcut) => {
-    return savePreferencesQuietly({ ...preferences, browserSwitcherBackwardShortcut: shortcut })
-  }, [preferences, savePreferencesQuietly])
+    return savePreferencesQuietly((current) => ({ ...current, browserSwitcherBackwardShortcut: shortcut }))
+  }, [savePreferencesQuietly])
 
   const setBrowserAppearance = useCallback(async (appearanceKey, appearance = {}) => {
     const key = String(appearanceKey || '').trim()
     if (!key) return null
     const icon = String(appearance.icon || '').trim()
     const primaryColor = String(appearance.primaryColor || '').trim().toUpperCase()
-    const browserAppearances = { ...(preferences.browserAppearances || {}) }
-    if (!icon && !primaryColor) {
-      delete browserAppearances[key]
-    } else {
-      browserAppearances[key] = { icon, primaryColor }
+    const update = (current) => {
+      const browserAppearances = { ...(current.browserAppearances || {}) }
+      if (!icon && !primaryColor) {
+        delete browserAppearances[key]
+      } else {
+        browserAppearances[key] = { icon, primaryColor }
+      }
+      return { ...current, browserAppearances }
     }
-    const nextPreferences = { ...preferences, browserAppearances }
     const persist = api.saveBrowserAppearance
       ? () => api.saveBrowserAppearance(key, { icon, primaryColor })
-      : () => api.savePreferences(nextPreferences)
-    return savePreferencesQuietly(nextPreferences, persist)
-  }, [api, preferences, savePreferencesQuietly])
+      : (candidate) => api.savePreferences(candidate)
+    return savePreferencesQuietly(update, persist)
+  }, [api, savePreferencesQuietly])
 
   const loadURLRoutingSettings = useCallback(async () => {
     setURLRoutingState((current) => ({ ...current, loading: true }))
     try {
-      const [browsers, defaultBrowser] = await Promise.all([
+      const [browsers, browserCatalog, defaultBrowser] = await Promise.all([
         api.discoverBrowsers(),
+        api.discoverBrowserCatalog?.() || api.discoverBrowsers(),
         api.defaultBrowserStatus?.() || Promise.resolve({ supported: false, isDefault: false }),
       ])
       const next = {
         browsers: browsers || [],
+        browserCatalog: browserCatalog || [],
         defaultBrowser: defaultBrowser || { supported: false, isDefault: false },
         loading: false,
       }
@@ -608,21 +713,27 @@ export function useSshMan(api = defaultApi, options = {}) {
   }, [api, notify])
 
   const saveURLRoutingSettings = useCallback(async (input) => {
-    const next = {
-      ...preferences,
+    const update = (current) => ({
+      ...current,
       defaultBrowserId: String(input.defaultBrowserId || '').trim(),
       proxyBrowserId: String(input.proxyBrowserId || '').trim(),
+      disabledBrowserIds: input.disabledBrowserIds || [],
       customBrowsers: input.customBrowsers || [],
       urlRules: input.urlRules || [],
       urlPortAssignments: input.urlPortAssignments || [],
-    }
-    const saved = await savePreferencesQuietly(next)
+    })
+    const saved = await savePreferencesQuietly(update)
     if (saved) {
-      notify('success', 'URL routing saved.')
+      notify('success', 'Browser and routing settings saved.')
       await loadURLRoutingSettings()
     }
     return saved
-  }, [loadURLRoutingSettings, notify, preferences, savePreferencesQuietly])
+  }, [loadURLRoutingSettings, notify, savePreferencesQuietly])
+
+  const validateURLRulePattern = useCallback(
+    (matchMode, pattern) => api.validateURLRulePattern(matchMode, pattern),
+    [api],
+  )
 
   const chooseBrowserApplication = useCallback(async () => {
     try {
@@ -647,17 +758,27 @@ export function useSshMan(api = defaultApi, options = {}) {
 
   const refreshBrowsers = useCallback(async (configurationId = selectedConfigurationId) => {
     if (!configurationId) return []
-    setBrowserState((current) => ({ ...current, configurationId, loading: true, preview: '' }))
+    const requestId = ++browserDiscoveryRequestRef.current
+    const configurationRevision = browserConfigurationRevisionRef.current
+    setBrowserState((current) => ({
+      ...current,
+      configurationId,
+      configurationRevision,
+      loading: true,
+      preview: '',
+    }))
     try {
-      const items = await api.discoverBrowsers()
+      const items = await api.discoverBrowsers() || []
+      if (requestId !== browserDiscoveryRequestRef.current) return []
       setBrowserState((current) => {
         const existing = items.some((browser) => browser.id === current.selectedId) ? current.selectedId : ''
         const selectedId = existing || items.find((browser) => browser.supportsProxyLaunch)?.id || items[0]?.id || ''
-        return { configurationId, items, selectedId, preview: '', loading: false }
+        return { configurationId, configurationRevision, items, selectedId, preview: '', loading: false }
       })
       return items
     } catch (error) {
-      setBrowserState({ configurationId, items: [], selectedId: '', preview: '', loading: false })
+      if (requestId !== browserDiscoveryRequestRef.current) return []
+      setBrowserState({ configurationId, configurationRevision, items: [], selectedId: '', preview: '', loading: false })
       notify('warning', 'Installed browsers could not be discovered.', error.message || '')
       return []
     }
@@ -665,13 +786,30 @@ export function useSshMan(api = defaultApi, options = {}) {
 
   useEffect(() => {
     if (selectedConfiguration?.connectionType !== 'socks_proxy') {
-      setBrowserState({ configurationId: '', items: [], selectedId: '', preview: '', loading: false })
+      browserDiscoveryRequestRef.current += 1
+      setBrowserState({
+        configurationId: '',
+        configurationRevision: browserConfigurationRevision,
+        items: [],
+        selectedId: '',
+        preview: '',
+        loading: false,
+      })
       return
     }
-    if (browserState.configurationId !== selectedConfiguration.id) {
+    if (
+      browserState.configurationId !== selectedConfiguration.id ||
+      browserState.configurationRevision !== browserConfigurationRevision
+    ) {
       refreshBrowsers(selectedConfiguration.id)
     }
-  }, [browserState.configurationId, refreshBrowsers, selectedConfiguration])
+  }, [
+    browserConfigurationRevision,
+    browserState.configurationId,
+    browserState.configurationRevision,
+    refreshBrowsers,
+    selectedConfiguration,
+  ])
 
   useEffect(() => {
     let active = true
@@ -801,6 +939,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     historyLoading: historyLoadingId === selectedConfigurationId,
     unlockRequest,
     browserState,
+    browserConfigurationRevision,
     urlRoutingState,
     hydrate,
     refreshRuntimeSessions,
@@ -827,6 +966,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     setBrowserAppearance,
     loadURLRoutingSettings,
     saveURLRoutingSettings,
+    validateURLRulePattern,
     chooseBrowserApplication,
     setAsDefaultBrowser,
     copyHistory,

@@ -13,8 +13,22 @@ func discoverBrowsers() ([]BrowserOption, error) {
 	return nil, fmt.Errorf("browser discovery is not supported on %s", runtime.GOOS)
 }
 
-func discoverCustomBrowsers([]preferencesdomain.CustomBrowser) []BrowserOption {
-	return []BrowserOption{}
+func discoverCustomBrowsers(custom []preferencesdomain.CustomBrowser) []BrowserOption {
+	options := make([]BrowserOption, 0, len(custom))
+	for _, browser := range custom {
+		if browser.Command == "" {
+			continue
+		}
+		options = append(options, BrowserOption{
+			ID:              browser.ID,
+			DisplayName:     browser.DisplayName,
+			CommandTemplate: browser.Command,
+			Icon:            browser.Icon,
+			Engine:          BrowserEngineRegular,
+			Custom:          true,
+		})
+	}
+	return options
 }
 
 func launchBrowser(string, string, BrowserOption, int, string) error {

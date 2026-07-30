@@ -12,7 +12,7 @@ import (
 	"ssh-man/internal/platform/defaultbrowser"
 )
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 type ServerRecord struct {
 	Server         serverdomain.Server                    `json:"server"`
@@ -46,15 +46,17 @@ type BulkResult struct {
 }
 
 type Request struct {
-	ProtocolVersion int                                   `json:"protocolVersion"`
-	Command         string                                `json:"command"`
-	ServerID        string                                `json:"serverId,omitempty"`
-	ConfigurationID string                                `json:"configurationId,omitempty"`
-	BrowserID       string                                `json:"browserId,omitempty"`
-	Secret          string                                `json:"secret,omitempty"`
-	Server          *serverdomain.Server                  `json:"server,omitempty"`
-	Configuration   *configdomain.ConnectionConfiguration `json:"configuration,omitempty"`
-	Preferences     *preferencesdomain.UserPreference     `json:"preferences,omitempty"`
+	ProtocolVersion   int                                   `json:"protocolVersion"`
+	Command           string                                `json:"command"`
+	ServerID          string                                `json:"serverId,omitempty"`
+	ConfigurationID   string                                `json:"configurationId,omitempty"`
+	BrowserID         string                                `json:"browserId,omitempty"`
+	AppearanceKey     string                                `json:"appearanceKey,omitempty"`
+	Secret            string                                `json:"secret,omitempty"`
+	Server            *serverdomain.Server                  `json:"server,omitempty"`
+	Configuration     *configdomain.ConnectionConfiguration `json:"configuration,omitempty"`
+	Preferences       *preferencesdomain.UserPreference     `json:"preferences,omitempty"`
+	BrowserAppearance *preferencesdomain.BrowserAppearance  `json:"browserAppearance,omitempty"`
 }
 
 type Error struct {
@@ -69,24 +71,25 @@ type Response struct {
 }
 
 type Backend struct {
-	State               func(context.Context) (State, error)
-	SaveServer          func(context.Context, serverdomain.Server) (serverdomain.Server, error)
-	DeleteServer        func(context.Context, string) error
-	SaveConfiguration   func(context.Context, configdomain.ConnectionConfiguration) (configdomain.ConnectionConfiguration, error)
-	DeleteConfiguration func(context.Context, string) error
-	Start               func(context.Context, string) (sessiondomain.RuntimeSession, error)
-	StartServer         func(context.Context, string) BulkResult
-	Stop                func(context.Context, string) (sessiondomain.RuntimeSession, error)
-	StopServer          func(context.Context, string) BulkResult
-	Retry               func(context.Context, string) (sessiondomain.RuntimeSession, error)
-	Unlock              func(context.Context, string, string) (sessiondomain.RuntimeSession, error)
-	History             func(context.Context, string) ([]sessiondomain.SessionHistoryEntry, error)
-	DiscoverBrowsers    func(context.Context) ([]browser.BrowserOption, error)
-	PreviewBrowser      func(context.Context, string, string) (browser.LaunchPreview, error)
-	LaunchBrowser       func(context.Context, string, string) error
-	SavePreferences     func(context.Context, preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
-	SetDefaultBrowser   func(context.Context) (defaultbrowser.Status, error)
-	Show                func() error
-	Hide                func() error
-	Quit                func() error
+	State                 func(context.Context) (State, error)
+	SaveServer            func(context.Context, serverdomain.Server) (serverdomain.Server, error)
+	DeleteServer          func(context.Context, string) error
+	SaveConfiguration     func(context.Context, configdomain.ConnectionConfiguration) (configdomain.ConnectionConfiguration, error)
+	DeleteConfiguration   func(context.Context, string) error
+	Start                 func(context.Context, string) (sessiondomain.RuntimeSession, error)
+	StartServer           func(context.Context, string) BulkResult
+	Stop                  func(context.Context, string) (sessiondomain.RuntimeSession, error)
+	StopServer            func(context.Context, string) BulkResult
+	Retry                 func(context.Context, string) (sessiondomain.RuntimeSession, error)
+	Unlock                func(context.Context, string, string) (sessiondomain.RuntimeSession, error)
+	History               func(context.Context, string) ([]sessiondomain.SessionHistoryEntry, error)
+	DiscoverBrowsers      func(context.Context) ([]browser.BrowserOption, error)
+	PreviewBrowser        func(context.Context, string, string) (browser.LaunchPreview, error)
+	LaunchBrowser         func(context.Context, string, string) error
+	SavePreferences       func(context.Context, preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
+	SaveBrowserAppearance func(context.Context, string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)
+	SetDefaultBrowser     func(context.Context) (defaultbrowser.Status, error)
+	Show                  func() error
+	Hide                  func() error
+	Quit                  func() error
 }

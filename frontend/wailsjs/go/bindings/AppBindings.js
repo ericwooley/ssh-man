@@ -26,6 +26,10 @@ export function DiscoverBrowsers() {
   return window['go']['bindings']['AppBindings']['DiscoverBrowsers']();
 }
 
+export function DiscoverBrowserCatalog() {
+  return window['go']['bindings']['AppBindings']['DiscoverBrowserCatalog']();
+}
+
 export function DismissURLRoute(arg1) {
   return window['go']['bindings']['AppBindings']['DismissURLRoute'](arg1);
 }
@@ -144,4 +148,8 @@ export function StopConfiguration(arg1) {
 
 export function SubmitKeyUnlock(arg1, arg2) {
   return window['go']['bindings']['AppBindings']['SubmitKeyUnlock'](arg1, arg2);
+}
+
+export function ValidateURLRulePattern(arg1, arg2) {
+  return window['go']['bindings']['AppBindings']['ValidateURLRulePattern'](arg1, arg2);
 }

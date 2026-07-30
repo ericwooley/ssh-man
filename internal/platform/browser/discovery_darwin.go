@@ -65,6 +65,17 @@ func discoverDarwinBrowsers() []BrowserOption {
 func discoverCustomBrowsers(custom []preferencesdomain.CustomBrowser) []BrowserOption {
 	options := make([]BrowserOption, 0, len(custom))
 	for _, browser := range custom {
+		if browser.Command != "" {
+			options = append(options, BrowserOption{
+				ID:              browser.ID,
+				DisplayName:     browser.DisplayName,
+				CommandTemplate: browser.Command,
+				Icon:            browser.Icon,
+				Engine:          BrowserEngineRegular,
+				Custom:          true,
+			})
+			continue
+		}
 		if _, err := os.Stat(browser.LaunchReference); err != nil {
 			continue
 		}
@@ -75,6 +86,7 @@ func discoverCustomBrowsers(custom []preferencesdomain.CustomBrowser) []BrowserO
 			DisplayName:         browser.DisplayName,
 			LaunchReference:     browser.LaunchReference,
 			ExecutableReference: executableReference,
+			Icon:                browser.Icon,
 			Engine:              engine,
 			SupportsProxyLaunch: engine != BrowserEngineRegular,
 			Custom:              true,

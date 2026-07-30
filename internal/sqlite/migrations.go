@@ -2,7 +2,10 @@ package sqlite
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+
+	"ssh-man/internal/domain/preferences"
 )
 
 const enableForeignKeys = `PRAGMA foreign_keys = ON;`
@@ -156,6 +159,27 @@ func RunMigrations(db *sql.DB) error {
 	); err != nil {
 		return err
 	}
+	commandBrowsersAdded, err := ensureUserPreferencesColumn(
+		tx,
+		"command_browsers_json",
+		`ALTER TABLE user_preferences ADD COLUMN command_browsers_json TEXT;`,
+	)
+	if err != nil {
+		return err
+	}
+	browserRoutingRulesAdded, err := ensureUserPreferencesColumn(
+		tx,
+		"browser_routing_rules_json",
+		`ALTER TABLE user_preferences ADD COLUMN browser_routing_rules_json TEXT;`,
+	)
+	if err != nil {
+		return err
+	}
+	if commandBrowsersAdded || browserRoutingRulesAdded {
+		if err := migrateBrowserRoutingStorage(tx, commandBrowsersAdded, browserRoutingRulesAdded); err != nil {
+			return err
+		}
+	}
 	if _, err := ensureUserPreferencesColumn(
 		tx,
 		"url_port_assignments_json",
@@ -163,10 +187,79 @@ func RunMigrations(db *sql.DB) error {
 	); err != nil {
 		return err
 	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"disabled_browser_ids_json",
+		`ALTER TABLE user_preferences ADD COLUMN disabled_browser_ids_json TEXT NOT NULL DEFAULT '[]';`,
+	); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migrations: %w", err)
 	}
+	return nil
+}
+
+func migrateBrowserRoutingStorage(tx *sql.Tx, migrateCommandBrowsers, migrateBrowserRules bool) error {
+	var customBrowsersJSON, urlRulesJSON string
+	err := tx.QueryRow(`
+		SELECT custom_browsers_json, url_rules_json
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&customBrowsersJSON, &urlRulesJSON)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load browser routing preferences for migration: %w", err)
+	}
+
+	if migrateCommandBrowsers {
+		var customBrowsers []preferences.CustomBrowser
+		// Invalid legacy JSON remains in place with a NULL modern partition so
+		// normal preference loading can surface the existing recoverable error.
+		if decodeErr := json.Unmarshal([]byte(customBrowsersJSON), &customBrowsers); decodeErr == nil {
+			legacyBrowsers, commandBrowsers := splitCustomBrowsers(customBrowsers)
+			legacyBrowsersJSON, err := json.Marshal(legacyBrowsers)
+			if err != nil {
+				return fmt.Errorf("encode legacy custom browsers for migration: %w", err)
+			}
+			commandBrowsersJSON, err := json.Marshal(commandBrowsers)
+			if err != nil {
+				return fmt.Errorf("encode command browsers for migration: %w", err)
+			}
+			if _, err := tx.Exec(`
+				UPDATE user_preferences
+				SET custom_browsers_json = ?,
+				    command_browsers_json = ?
+				WHERE id = 1
+			`, string(legacyBrowsersJSON), string(commandBrowsersJSON)); err != nil {
+				return fmt.Errorf("migrate command browser storage: %w", err)
+			}
+		}
+	}
+
+	if migrateBrowserRules {
+		var rules []preferences.URLRule
+		// Migrate each partition independently so one corrupt legacy value does
+		// not prevent the other valid browser preferences from being upgraded.
+		if decodeErr := json.Unmarshal([]byte(urlRulesJSON), &rules); decodeErr == nil {
+			legacyRulesJSON, err := json.Marshal(projectLegacyURLRules(rules))
+			if err != nil {
+				return fmt.Errorf("encode legacy-compatible URL rules for migration: %w", err)
+			}
+			if _, err := tx.Exec(`
+				UPDATE user_preferences
+				SET url_rules_json = ?,
+				    browser_routing_rules_json = ?
+				WHERE id = 1
+			`, string(legacyRulesJSON), urlRulesJSON); err != nil {
+				return fmt.Errorf("migrate browser routing rule storage: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 

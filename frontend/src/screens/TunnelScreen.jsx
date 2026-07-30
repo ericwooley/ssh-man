@@ -96,12 +96,12 @@ function BrowserLauncher({ configuration, session, browserState, pending, onRefr
       ) : browserState.items.length ? (
         <div className="browser-controls">
           <label className="field-group" htmlFor="browser-select">
-            <span>Installed browser</span>
+            <span>Browser destination</span>
             <select id="browser-select" value={browserState.selectedId} onChange={(event) => onSelect(event.target.value)}>
               <option value="">Choose a browser</option>
               {browserState.items.map((browser) => (
                 <option key={browser.id} value={browser.id}>
-                  {browser.displayName}{browser.supportsProxyLaunch ? '' : ' — unsupported'}
+                  {browser.displayName}{browser.supportsProxyLaunch ? '' : ' — regular links only'}
                 </option>
               ))}
             </select>
@@ -131,7 +131,7 @@ function BrowserLauncher({ configuration, session, browserState, pending, onRefr
       ) : (
         <div className="compact-empty">
           <Globe2 aria-hidden="true" />
-          <div><strong>No supported browsers found</strong><span>Install a browser or add its application path in URL routing settings, then refresh.</span></div>
+          <div><strong>No supported browsers found</strong><span>Enable a proxy-capable installed browser under Settings → Browsers, then refresh.</span></div>
         </div>
       )}
     </section>

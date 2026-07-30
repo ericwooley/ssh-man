@@ -81,6 +81,94 @@ func TestServerClientRoundTrip(t *testing.T) {
 	}
 }
 
+func TestServerRejectsLegacyProtocolPreferenceWrites(t *testing.T) {
+	t.Parallel()
+
+	saveCalled := false
+	server := NewServer("", Backend{
+		SavePreferences: func(context.Context, preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
+			saveCalled = true
+			return preferencesdomain.Default(), nil
+		},
+	})
+	preferences := preferencesdomain.Default()
+	body, err := json.Marshal(Request{
+		ProtocolVersion: 1,
+		Command:         "preferences.save",
+		Preferences:     &preferences,
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/command", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("response status = %d, body = %s, want %d", response.Code, response.Body.String(), http.StatusConflict)
+	}
+	if saveCalled {
+		t.Fatal("legacy preference write reached the backend")
+	}
+
+	var payload Response
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload.ProtocolVersion != ProtocolVersion {
+		t.Fatalf("response protocol version = %d, want %d", payload.ProtocolVersion, ProtocolVersion)
+	}
+	if payload.Error == nil || payload.Error.Code != "protocol_mismatch" {
+		t.Fatalf("response error = %#v, want protocol_mismatch", payload.Error)
+	}
+}
+
+func TestServerAcceptsLegacyProtocolStateRequests(t *testing.T) {
+	t.Parallel()
+
+	stateCalled := false
+	server := NewServer("", Backend{
+		State: func(context.Context) (State, error) {
+			stateCalled = true
+			return State{Message: "compatible"}, nil
+		},
+	})
+	body, err := json.Marshal(Request{
+		ProtocolVersion: 1,
+		Command:         "state",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/command", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("response status = %d, body = %s, want %d", response.Code, response.Body.String(), http.StatusOK)
+	}
+	if !stateCalled {
+		t.Fatal("legacy state request did not reach the backend")
+	}
+
+	var payload Response
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload.ProtocolVersion != 1 {
+		t.Fatalf("response protocol version = %d, want 1", payload.ProtocolVersion)
+	}
+	var state State
+	if err := json.Unmarshal(payload.Data, &state); err != nil {
+		t.Fatalf("Unmarshal(state) error = %v", err)
+	}
+	if state.Message != "compatible" {
+		t.Fatalf("state message = %q, want compatible", state.Message)
+	}
+}
+
 func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 	type contextKey struct{}
 	marker := &struct{}{}
@@ -154,6 +242,10 @@ func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 			record(ctx)
 			return value, nil
 		},
+		SaveBrowserAppearance: func(ctx context.Context, _ string, _ preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error) {
+			record(ctx)
+			return preferencesdomain.Default(), nil
+		},
 		SetDefaultBrowser: func(ctx context.Context) (defaultbrowser.Status, error) {
 			record(ctx)
 			return defaultbrowser.Status{Supported: true, IsDefault: true}, nil
@@ -180,6 +272,11 @@ func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 		{name: "preview browser", request: Request{Command: "browser.preview", ConfigurationID: "tunnel-1", BrowserID: "browser-1"}},
 		{name: "launch browser", request: Request{Command: "browser.launch", ConfigurationID: "tunnel-1", BrowserID: "browser-1"}},
 		{name: "save preferences", request: Request{Command: "preferences.save", Preferences: &preferencesdomain.UserPreference{}}},
+		{name: "save browser appearance", request: Request{
+			Command:           "preferences.appearance.save",
+			AppearanceKey:     "regular:google-chrome",
+			BrowserAppearance: &preferencesdomain.BrowserAppearance{Icon: "icon:star"},
+		}},
 		{name: "set default browser", request: Request{Command: "browser.default.set"}},
 	}
 

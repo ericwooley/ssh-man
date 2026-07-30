@@ -12,6 +12,10 @@ func (a *AppBindings) DiscoverBrowsers() (any, error) {
 	return a.app.BrowserService.Discover(context.Background())
 }
 
+func (a *AppBindings) DiscoverBrowserCatalog() (any, error) {
+	return a.app.BrowserService.DiscoverCatalog(context.Background())
+}
+
 func (a *AppBindings) ChooseBrowserApplication() (string, error) {
 	ctx, err := a.window.Context()
 	if err != nil {
