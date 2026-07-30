@@ -24,6 +24,8 @@ go test ./...
 bash "$ROOT_DIR/scripts/validate-commit-message.test.sh"
 bash "$ROOT_DIR/scripts/release-plan.test.sh"
 bash "$ROOT_DIR/scripts/update-homebrew-cask.test.sh"
+bash "$ROOT_DIR/scripts/render-winget-manifests.test.sh"
+bash "$ROOT_DIR/scripts/package-windows-release.test.sh"
 bash "$ROOT_DIR/scripts/create-dmg.test.sh"
 bash "$ROOT_DIR/scripts/sign-notarize-darwin-release.test.sh"
 bash "$ROOT_DIR/scripts/e2e-vm.test.sh"
