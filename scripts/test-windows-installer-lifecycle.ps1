@@ -170,10 +170,20 @@ function Test-InstallerChannel {
         -ExpectedDisplayName $ProductName
 
     $uninstallerPath = Join-Path $installDirectory 'uninstall.exe'
+    $temporaryUninstallerName = "ssh-man-uninstall-$([Guid]::NewGuid().ToString('N')).exe"
+    $temporaryUninstallerPath = Join-Path `
+        ([System.IO.Path]::GetTempPath()) `
+        $temporaryUninstallerName
     Write-Host "Uninstalling $ProductName"
-    $uninstallExitCode = Invoke-ProcessWithTimeout `
-        -FilePath $uninstallerPath `
-        -ArgumentList @('/S')
+    Copy-Item -LiteralPath $uninstallerPath -Destination $temporaryUninstallerPath
+    try {
+        $uninstallExitCode = Invoke-ProcessWithTimeout `
+            -FilePath $temporaryUninstallerPath `
+            -ArgumentList @('/S', "_?=$installDirectory")
+    }
+    finally {
+        Remove-Item -LiteralPath $temporaryUninstallerPath -Force -ErrorAction SilentlyContinue
+    }
     if ($uninstallExitCode -ne 0) {
         throw "Uninstallation exited with code $uninstallExitCode."
     }

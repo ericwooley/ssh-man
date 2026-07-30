@@ -157,6 +157,9 @@ assert_contains "$LIFECYCLE_TEST" '[System.IO.FileShare]::Read'
 assert_contains "$LIFECYCLE_TEST" "Set-ItemProperty -LiteralPath \$registryPath -Name 'DisplayVersion' -Value '0.0.0-test-locked'"
 assert_contains "$LIFECYCLE_TEST" 'if ($upgradeExitCode -ne 1)'
 assert_contains "$LIFECYCLE_TEST" 'Silent upgrade changed the installed executable after reporting failure.'
+assert_contains "$LIFECYCLE_TEST" 'Copy-Item -LiteralPath $uninstallerPath -Destination $temporaryUninstallerPath'
+assert_contains "$LIFECYCLE_TEST" "-ArgumentList @('/S', \"_?=\$installDirectory\")"
+assert_contains "$LIFECYCLE_TEST" 'Remove-Item -LiteralPath $temporaryUninstallerPath -Force'
 assert_contains "$LIFECYCLE_TEST" 'Installer lifecycle tests passed.'
 
 printf 'Windows release packaging tests passed.\n'
