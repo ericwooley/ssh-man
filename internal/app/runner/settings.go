@@ -24,6 +24,7 @@ import (
 )
 
 const settingsOwnerRequestTimeout = 5 * time.Second
+const settingsCloseRequestedEventName = "settings:close-requested"
 
 func RunSettings(assets fs.FS) error {
 	application, err := bootstrap.New(context.Background())
@@ -32,7 +33,11 @@ func RunSettings(assets fs.FS) error {
 	}
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
-	marker := bindings.NewSettingsWindowBindings()
+	marker := bindings.NewSettingsWindowBindingsWithCloseRequester(func() {
+		if ctx, contextErr := window.Context(); contextErr == nil {
+			wailsruntime.EventsEmit(ctx, settingsCloseRequestedEventName)
+		}
+	})
 	owner := control.NewClient(paths.ControlSocketPath(application.ConfigDir), settingsOwnerRequestTimeout)
 	app.SetPreferencesSaver(func(input preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), settingsOwnerRequestTimeout)
@@ -40,6 +45,19 @@ func RunSettings(assets fs.FS) error {
 		var saved preferencesdomain.UserPreference
 		if err := owner.Call(ctx, control.Request{Command: "preferences.save", Preferences: &input}, &saved); err != nil {
 			return preferencesdomain.UserPreference{}, fmt.Errorf("save settings through SSH Man: %w", err)
+		}
+		return saved, nil
+	})
+	app.SetBrowserAppearanceSaver(func(appearanceKey string, input preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), settingsOwnerRequestTimeout)
+		defer cancel()
+		var saved preferencesdomain.UserPreference
+		if err := owner.Call(ctx, control.Request{
+			Command:           "preferences.appearance.save",
+			AppearanceKey:     appearanceKey,
+			BrowserAppearance: &input,
+		}, &saved); err != nil {
+			return preferencesdomain.UserPreference{}, fmt.Errorf("save browser appearance through SSH Man: %w", err)
 		}
 		return saved, nil
 	})
@@ -61,6 +79,7 @@ func RunSettings(assets fs.FS) error {
 	go func() {
 		select {
 		case <-signalContext.Done():
+			marker.AllowClose()
 			if err := window.Quit(); err != nil {
 				log.Printf("quit settings after parent shutdown: %v", err)
 			}
@@ -101,6 +120,9 @@ func newSettingsOptions(assets fs.FS, app *bindings.AppBindings, marker *binding
 		},
 		OnStartup: func(ctx context.Context) {
 			app.SetContext(ctx)
+		},
+		OnBeforeClose: func(context.Context) bool {
+			return marker.RequestCloseConfirmation()
 		},
 		OnShutdown: func(ctx context.Context) {
 			if err := app.Shutdown(ctx); err != nil {

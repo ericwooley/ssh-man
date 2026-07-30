@@ -18,6 +18,8 @@ export function DeleteServer(arg1:string):Promise<void>;
 
 export function DiscoverBrowsers():Promise<any>;
 
+export function DiscoverBrowserCatalog():Promise<any>;
+
 export function DismissURLRoute(arg1:string):Promise<void>;
 
 export function HideWindow():Promise<void>;
@@ -77,3 +79,5 @@ export function StartServerConfigurations(arg1:string):Promise<any>;
 export function StopConfiguration(arg1:string):Promise<any>;
 
 export function SubmitKeyUnlock(arg1:string,arg2:string):Promise<any>;
+
+export function ValidateURLRulePattern(arg1:string,arg2:string):Promise<bindings.URLRulePatternValidationResult>;

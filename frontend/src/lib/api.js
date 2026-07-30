@@ -15,6 +15,11 @@ function getSettingsLauncherBindings() {
   return window.go?.bindings?.SettingsLauncherBindings || null
 }
 
+function getSettingsWindowBindings() {
+  if (typeof window === 'undefined') return null
+  return window.go?.bindings?.SettingsWindowBindings || null
+}
+
 function getCommandLauncherBindings() {
   if (typeof window === 'undefined') return null
   return window.go?.bindings?.CommandLauncherBindings || null
@@ -226,6 +231,20 @@ export async function discoverBrowsers() {
   ]
 }
 
+export async function discoverBrowserCatalog() {
+  if (hasWailsRuntime()) {
+    return appBindings().DiscoverBrowserCatalog()
+  }
+  return (await discoverBrowsers()).map((browser) => ({ ...browser, enabled: true }))
+}
+
+export async function validateURLRulePattern(matchMode, pattern) {
+  if (hasWailsRuntime()) {
+    return appBindings().ValidateURLRulePattern(matchMode, pattern)
+  }
+  return { valid: true, message: '' }
+}
+
 export async function chooseBrowserApplication() {
   if (hasWailsRuntime()) {
     return appBindings().ChooseBrowserApplication()
@@ -324,6 +343,17 @@ export function onPreferencesChanged(callback) {
     return window.runtime.EventsOn('preferences:changed', (preferences) => callback(preferences))
   }
   return () => {}
+}
+
+export function onSettingsCloseRequested(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('settings:close-requested', callback)
+  }
+  return () => {}
+}
+
+export async function allowSettingsWindowClose() {
+  return getSettingsWindowBindings()?.AllowClose?.()
 }
 
 export function onBrowserSwitcherRequested(callback) {

@@ -25,9 +25,12 @@ type BrowserOption struct {
 	DisplayName         string        `json:"displayName"`
 	LaunchReference     string        `json:"-"`
 	ExecutableReference string        `json:"-"`
+	CommandTemplate     string        `json:"-"`
+	Icon                string        `json:"icon,omitempty"`
 	Engine              BrowserEngine `json:"engine"`
 	SupportsProxyLaunch bool          `json:"supportsProxyLaunch"`
 	Custom              bool          `json:"custom"`
+	Enabled             bool          `json:"enabled"`
 }
 
 type LaunchPreview struct {
@@ -112,6 +115,7 @@ func (s *Service) Discover(ctx context.Context) ([]BrowserOption, error) {
 	if err != nil {
 		return nil, err
 	}
+	setBrowserOptionsEnabled(builtIns, nil)
 	if s.preferences == nil {
 		return builtIns, nil
 	}
@@ -119,7 +123,29 @@ func (s *Service) Discover(ctx context.Context) ([]BrowserOption, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load custom browsers: %w", err)
 	}
-	return mergeBrowserOptions(builtIns, s.discoverCustom(pref.CustomBrowsers)), nil
+	custom := s.discoverCustom(pref.CustomBrowsers)
+	setBrowserOptionsEnabled(custom, nil)
+	return filterDisabledBrowserOptions(
+		mergeBrowserOptions(builtIns, custom),
+		pref.DisabledBrowserIDs,
+	), nil
+}
+
+func (s *Service) DiscoverCatalog(ctx context.Context) ([]BrowserOption, error) {
+	builtIns, err := s.discover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.preferences == nil {
+		setBrowserOptionsEnabled(builtIns, nil)
+		return builtIns, nil
+	}
+	pref, err := s.preferences.Load(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load browser visibility: %w", err)
+	}
+	setBrowserOptionsEnabled(builtIns, pref.DisabledBrowserIDs)
+	return builtIns, nil
 }
 
 func mergeBrowserOptions(builtIns, custom []BrowserOption) []BrowserOption {
@@ -129,19 +155,25 @@ func mergeBrowserOptions(builtIns, custom []BrowserOption) []BrowserOption {
 	appendUnique := func(option BrowserOption) {
 		id := strings.TrimSpace(option.ID)
 		launchReference := strings.TrimSpace(option.LaunchReference)
-		if id == "" || launchReference == "" {
+		commandTemplate := strings.TrimSpace(option.CommandTemplate)
+		if id == "" || (launchReference == "" && commandTemplate == "") {
 			return
 		}
 		if _, exists := ids[id]; exists {
 			return
 		}
-		if _, exists := launchReferences[launchReference]; exists {
-			return
+		if launchReference != "" {
+			if _, exists := launchReferences[launchReference]; exists {
+				return
+			}
 		}
 		option.ID = id
 		option.LaunchReference = launchReference
+		option.CommandTemplate = commandTemplate
 		ids[id] = struct{}{}
-		launchReferences[launchReference] = struct{}{}
+		if launchReference != "" {
+			launchReferences[launchReference] = struct{}{}
+		}
 		result = append(result, option)
 	}
 	for _, option := range builtIns {
@@ -151,6 +183,33 @@ func mergeBrowserOptions(builtIns, custom []BrowserOption) []BrowserOption {
 		appendUnique(option)
 	}
 	return result
+}
+
+func setBrowserOptionsEnabled(options []BrowserOption, disabledBrowserIDs []string) {
+	disabled := make(map[string]struct{}, len(disabledBrowserIDs))
+	for _, browserID := range disabledBrowserIDs {
+		disabled[browserID] = struct{}{}
+	}
+	for index := range options {
+		_, isDisabled := disabled[options[index].ID]
+		options[index].Enabled = !isDisabled
+	}
+}
+
+func filterDisabledBrowserOptions(options []BrowserOption, disabledBrowserIDs []string) []BrowserOption {
+	disabled := make(map[string]struct{}, len(disabledBrowserIDs))
+	for _, browserID := range disabledBrowserIDs {
+		disabled[browserID] = struct{}{}
+	}
+	filtered := make([]BrowserOption, 0, len(options))
+	for _, option := range options {
+		if _, isDisabled := disabled[option.ID]; isDisabled {
+			continue
+		}
+		option.Enabled = true
+		filtered = append(filtered, option)
+	}
+	return filtered
 }
 
 func browserEngine(option BrowserOption) BrowserEngine {

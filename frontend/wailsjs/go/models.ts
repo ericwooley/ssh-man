@@ -92,6 +92,20 @@ export namespace bindings {
 	        this.path = source["path"];
 	    }
 	}
+	export class URLRulePatternValidationResult {
+	    valid: boolean;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new URLRulePatternValidationResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.valid = source["valid"];
+	        this.message = source["message"];
+	    }
+	}
 	export class ServerWithConfigurations {
 	    server: server.Server;
 	    configurations: config.ConnectionConfiguration[];
@@ -404,8 +418,10 @@ export namespace preferences {
 	export class CustomBrowser {
 	    id: string;
 	    displayName: string;
-	    launchReference: string;
-	    engine: string;
+	    command?: string;
+	    icon?: string;
+	    launchReference?: string;
+	    engine?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new CustomBrowser(source);
@@ -415,6 +431,8 @@ export namespace preferences {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.displayName = source["displayName"];
+	        this.command = source["command"];
+	        this.icon = source["icon"];
 	        this.launchReference = source["launchReference"];
 	        this.engine = source["engine"];
 	    }
@@ -439,10 +457,12 @@ export namespace preferences {
 	}
 	export class URLRule {
 	    id: string;
+	    matchMode: string;
 	    pattern: string;
 	    action: string;
 	    browserId?: string;
 	    command?: string;
+	    openDirect?: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new URLRule(source);
@@ -451,10 +471,12 @@ export namespace preferences {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.matchMode = source["matchMode"];
 	        this.pattern = source["pattern"];
 	        this.action = source["action"];
 	        this.browserId = source["browserId"];
 	        this.command = source["command"];
+	        this.openDirect = source["openDirect"];
 	    }
 	}
 	export class UserPreference {
@@ -465,6 +487,7 @@ export namespace preferences {
 	    browserAppearances: Record<string, BrowserAppearance>;
 	    defaultBrowserId?: string;
 	    proxyBrowserId?: string;
+	    disabledBrowserIds: string[];
 	    customBrowsers: CustomBrowser[];
 	    urlRules: URLRule[];
 	    urlPortAssignments: URLPortAssignment[];
@@ -484,6 +507,7 @@ export namespace preferences {
 	        this.browserAppearances = this.convertValues(source["browserAppearances"], BrowserAppearance, true);
 	        this.defaultBrowserId = source["defaultBrowserId"];
 	        this.proxyBrowserId = source["proxyBrowserId"];
+	        this.disabledBrowserIds = source["disabledBrowserIds"];
 	        this.customBrowsers = this.convertValues(source["customBrowsers"], CustomBrowser);
 	        this.urlRules = this.convertValues(source["urlRules"], URLRule);
 	        this.urlPortAssignments = this.convertValues(source["urlPortAssignments"], URLPortAssignment);

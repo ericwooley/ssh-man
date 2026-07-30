@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"ssh-man/internal/domain/browsercommand"
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
@@ -47,6 +48,8 @@ type BrowserDestination struct {
 	ID            string
 	Name          string
 	SupportsProxy bool
+	Command       string
+	Icon          string
 }
 
 type BrowserRouter interface {
@@ -58,7 +61,8 @@ type BrowserRouter interface {
 type ResultKind string
 
 const (
-	ResultNeedsChoice ResultKind = "needs_choice"
+	ResultNeedsChoice    ResultKind = "needs_choice"
+	ResultOpenedDirectly ResultKind = "opened_directly"
 )
 
 type RouteChoiceKind string
@@ -79,6 +83,7 @@ type RouteChoice struct {
 	ConfigurationID string          `json:"configurationId,omitempty"`
 	BrowserID       string          `json:"browserId,omitempty"`
 	BrowserName     string          `json:"browserName,omitempty"`
+	Icon            string          `json:"icon,omitempty"`
 	Command         string          `json:"-"`
 }
 
@@ -111,6 +116,7 @@ type Service struct {
 	probe          func(context.Context, int, string, int) error
 	runCommand     func(string, string) error
 
+	routeMu   sync.Mutex
 	mu        sync.Mutex
 	pending   *RouteRequest
 	presenter func(RouteRequest)
@@ -141,6 +147,9 @@ func (s *Service) SetPresenter(presenter func(RouteRequest)) {
 }
 
 func (s *Service) Handle(ctx context.Context, rawURL string) (Result, error) {
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+
 	parsed, err := parseWebURL(rawURL)
 	if err != nil {
 		return Result{}, err
@@ -154,8 +163,25 @@ func (s *Service) Handle(ctx context.Context, rawURL string) (Result, error) {
 		return Result{}, fmt.Errorf("list URL routing browsers: %w", err)
 	}
 
+	matchedRule, err := firstMatchingRule(preferences.URLRules, rawURL)
+	if err != nil {
+		return Result{}, err
+	}
+	if matchedRule != nil && matchedRule.OpenDirect {
+		choice, available, choiceErr := routeChoiceForRule(*matchedRule, destinations)
+		if choiceErr != nil {
+			return Result{}, choiceErr
+		}
+		if available {
+			if executeErr := s.executeChoice(ctx, choice, rawURL); executeErr != nil {
+				return Result{}, executeErr
+			}
+			return Result{Kind: ResultOpenedDirectly}, nil
+		}
+	}
+
 	choices := regularBrowserChoices(destinations)
-	defaultChoiceID, commandChoice, err := matchingRuleDefault(preferences.URLRules, rawURL)
+	defaultChoiceID, commandChoice, err := matchingRuleDefault(matchedRule)
 	if err != nil {
 		return Result{}, err
 	}
@@ -235,6 +261,9 @@ func (s *Service) Pending() (RouteRequest, bool) {
 }
 
 func (s *Service) ResolveChoice(ctx context.Context, requestID, choiceID string) error {
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+
 	s.mu.Lock()
 	if s.pending == nil || s.pending.ID != requestID {
 		s.mu.Unlock()
@@ -253,23 +282,7 @@ func (s *Service) ResolveChoice(ctx context.Context, requestID, choiceID string)
 		return fmt.Errorf("the selected URL route is not available")
 	}
 
-	var err error
-	switch selected.Kind {
-	case RouteChoiceBrowser:
-		err = s.browsers.OpenURL(ctx, selected.BrowserID, request.URL)
-	case RouteChoiceProxy:
-		err = s.browsers.LaunchThroughSOCKSURL(
-			ctx,
-			selected.ConfigurationID,
-			selected.BrowserID,
-			request.URL,
-		)
-	case RouteChoiceCommand:
-		err = s.runCommand(selected.Command, request.URL)
-	default:
-		err = fmt.Errorf("the selected URL route is invalid")
-	}
-	if err != nil {
+	if err := s.executeChoice(ctx, *selected, request.URL); err != nil {
 		return err
 	}
 
@@ -281,12 +294,60 @@ func (s *Service) ResolveChoice(ctx context.Context, requestID, choiceID string)
 	return nil
 }
 
+func (s *Service) executeChoice(ctx context.Context, selected RouteChoice, rawURL string) error {
+	switch selected.Kind {
+	case RouteChoiceBrowser:
+		return s.browsers.OpenURL(ctx, selected.BrowserID, rawURL)
+	case RouteChoiceProxy:
+		return s.browsers.LaunchThroughSOCKSURL(
+			ctx,
+			selected.ConfigurationID,
+			selected.BrowserID,
+			rawURL,
+		)
+	case RouteChoiceCommand:
+		return s.runCommand(selected.Command, rawURL)
+	default:
+		return fmt.Errorf("the selected URL route is invalid")
+	}
+}
+
 func (s *Service) DismissChoice(requestID string) {
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pending != nil && s.pending.ID == requestID {
 		s.pending = nil
 	}
+}
+
+// WithPendingInvalidation serializes a routing-relevant preference save with
+// route execution. A successful save clears the captured chooser request before
+// any resolver can execute it; a failed save leaves the request available.
+func (s *Service) WithPendingInvalidation(save func() error) error {
+	return s.WithPreferenceUpdate(func() (bool, error) {
+		return true, save()
+	})
+}
+
+// WithPreferenceUpdate serializes every preference write with route creation
+// and execution. The callback reports whether its successful write changed a
+// routing field and therefore made the captured chooser request stale.
+func (s *Service) WithPreferenceUpdate(update func() (bool, error)) error {
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	invalidatePending, err := update()
+	if err != nil {
+		return err
+	}
+	if invalidatePending {
+		s.mu.Lock()
+		s.pending = nil
+		s.mu.Unlock()
+	}
+	return nil
 }
 
 func regularBrowserChoices(destinations []BrowserDestination) []RouteChoice {
@@ -299,13 +360,24 @@ func regularBrowserChoices(destinations []BrowserDestination) []RouteChoice {
 		if name == "" {
 			name = destination.ID
 		}
+		kind := RouteChoiceBrowser
+		detail := "Regular browser"
+		if destination.Command != "" {
+			if err := browsercommand.Validate(destination.Command); err != nil {
+				continue
+			}
+			kind = RouteChoiceCommand
+			detail = "Custom browser"
+		}
 		choices = append(choices, RouteChoice{
 			ID:          regularChoiceID(destination.ID),
-			Kind:        RouteChoiceBrowser,
+			Kind:        kind,
 			Label:       name,
-			Detail:      "Regular browser",
+			Detail:      detail,
 			BrowserID:   destination.ID,
 			BrowserName: name,
+			Icon:        destination.Icon,
+			Command:     destination.Command,
 		})
 	}
 	return choices
@@ -338,32 +410,85 @@ func proxyBrowserChoices(servers []proxyServer, destinations []BrowserDestinatio
 	return choices
 }
 
-func matchingRuleDefault(rules []preferencesdomain.URLRule, rawURL string) (string, *RouteChoice, error) {
-	for _, rule := range rules {
-		matcher, err := regexp.Compile(rule.Pattern)
+func firstMatchingRule(rules []preferencesdomain.URLRule, rawURL string) (*preferencesdomain.URLRule, error) {
+	for index := range rules {
+		matches, err := urlRuleMatches(rules[index], rawURL)
 		if err != nil {
-			return "", nil, fmt.Errorf("compile URL rule %q: %w", rule.ID, err)
+			return nil, err
 		}
-		if !matcher.MatchString(rawURL) {
-			continue
-		}
-		switch rule.Action {
-		case preferencesdomain.URLRuleActionBrowser:
-			return regularChoiceID(rule.BrowserID), nil, nil
-		case preferencesdomain.URLRuleActionCommand:
-			choice := RouteChoice{
-				ID:      commandChoiceID(rule.ID),
-				Kind:    RouteChoiceCommand,
-				Label:   "Matching URL rule",
-				Detail:  fmt.Sprintf("Run rule %s", rule.ID),
-				Command: rule.Command,
-			}
-			return choice.ID, &choice, nil
-		default:
-			return "", nil, fmt.Errorf("URL rule %q has an unsupported action", rule.ID)
+		if matches {
+			rule := rules[index]
+			return &rule, nil
 		}
 	}
-	return "", nil, nil
+	return nil, nil
+}
+
+func urlRuleMatches(rule preferencesdomain.URLRule, rawURL string) (bool, error) {
+	switch rule.MatchMode {
+	case "", preferencesdomain.URLRuleMatchRegex:
+		matcher, err := regexp.Compile(rule.Pattern)
+		if err != nil {
+			return false, fmt.Errorf("compile URL rule %q: %w", rule.ID, err)
+		}
+		return matcher.MatchString(rawURL), nil
+	case preferencesdomain.URLRuleMatchStartsWith:
+		return strings.HasPrefix(rawURL, rule.Pattern), nil
+	case preferencesdomain.URLRuleMatchEndsWith:
+		return strings.HasSuffix(rawURL, rule.Pattern), nil
+	case preferencesdomain.URLRuleMatchContains:
+		return strings.Contains(rawURL, rule.Pattern), nil
+	default:
+		return false, fmt.Errorf("URL rule %q has an unsupported match mode", rule.ID)
+	}
+}
+
+func matchingRuleDefault(rule *preferencesdomain.URLRule) (string, *RouteChoice, error) {
+	if rule == nil {
+		return "", nil, nil
+	}
+	switch rule.Action {
+	case preferencesdomain.URLRuleActionBrowser:
+		return regularChoiceID(rule.BrowserID), nil, nil
+	case preferencesdomain.URLRuleActionCommand:
+		if err := browsercommand.Validate(rule.Command); err != nil {
+			return "", nil, nil
+		}
+		choice := commandChoiceForRule(*rule)
+		return choice.ID, &choice, nil
+	default:
+		return "", nil, fmt.Errorf("URL rule %q has an unsupported action", rule.ID)
+	}
+}
+
+func routeChoiceForRule(rule preferencesdomain.URLRule, destinations []BrowserDestination) (RouteChoice, bool, error) {
+	switch rule.Action {
+	case preferencesdomain.URLRuleActionBrowser:
+		choiceID := regularChoiceID(rule.BrowserID)
+		for _, choice := range regularBrowserChoices(destinations) {
+			if choice.ID == choiceID {
+				return choice, true, nil
+			}
+		}
+		return RouteChoice{}, false, nil
+	case preferencesdomain.URLRuleActionCommand:
+		if err := browsercommand.Validate(rule.Command); err != nil {
+			return RouteChoice{}, false, nil
+		}
+		return commandChoiceForRule(rule), true, nil
+	default:
+		return RouteChoice{}, false, fmt.Errorf("URL rule %q has an unsupported action", rule.ID)
+	}
+}
+
+func commandChoiceForRule(rule preferencesdomain.URLRule) RouteChoice {
+	return RouteChoice{
+		ID:      commandChoiceID(rule.ID),
+		Kind:    RouteChoiceCommand,
+		Label:   "Matching URL rule",
+		Detail:  fmt.Sprintf("Run rule %s", rule.ID),
+		Command: rule.Command,
+	}
 }
 
 func assignedPortChoice(assignments []preferencesdomain.URLPortAssignment, port int, choices []RouteChoice) string {

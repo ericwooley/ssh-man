@@ -10,7 +10,8 @@ import {
 import { ConfirmDialog, UnlockDialog } from '../components/Dialogs'
 import { BrowserSwitcher } from '../components/BrowserSwitcher'
 import { URLRouteChooser } from '../components/URLRouteChooser'
-import { ActivityScreen, SettingsScreen } from '../screens/ActivitySettingsScreens'
+import { ActivityScreen } from '../screens/ActivitySettingsScreens'
+import { SettingsScreen } from '../screens/SettingsScreen'
 import { ServerFormScreen, TunnelFormScreen } from '../screens/FormScreens'
 import { ServerDetailScreen, ServersScreen } from '../screens/ServersScreens'
 import { TunnelDetailScreen } from '../screens/TunnelScreen'
@@ -53,18 +54,35 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
   const [browserSwitcher, setBrowserSwitcher] = useState(emptyBrowserSwitcherState)
   const [urlRouteRequest, setURLRouteRequest] = useState(null)
   const browserSwitcherRef = useRef(browserSwitcher)
+  const urlRouteRequestRef = useRef(urlRouteRequest)
   const pendingBrowserSwitcherDirectionsRef = useRef({ sessionId: '', directions: [] })
   const pendingBrowserSwitcherCommitSessionRef = useRef('')
   const recentBrowserTargetIdsRef = useRef([])
   const browserSwitcherLoadIdRef = useRef(0)
   const browserSwitcherActivationIdRef = useRef(0)
   const browserSwitcherSessionCounterRef = useRef(0)
+  const urlRouteLoadIdRef = useRef(0)
+  const settingsCloseHandlerRef = useRef(null)
+
+  const registerSettingsCloseHandler = useCallback((handler) => {
+    settingsCloseHandlerRef.current = handler
+    return () => {
+      if (settingsCloseHandlerRef.current === handler) {
+        settingsCloseHandlerRef.current = null
+      }
+    }
+  }, [])
 
   const updateBrowserSwitcher = useCallback((update) => {
     const next = typeof update === 'function' ? update(browserSwitcherRef.current) : update
     browserSwitcherRef.current = next
     setBrowserSwitcher(next)
     return next
+  }, [])
+
+  const updateURLRouteRequest = useCallback((request) => {
+    urlRouteRequestRef.current = request
+    setURLRouteRequest(request)
   }, [])
 
   const resetBrowserSwitcher = useCallback(() => {
@@ -74,6 +92,24 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
     pendingBrowserSwitcherCommitSessionRef.current = ''
     updateBrowserSwitcher(emptyBrowserSwitcherState())
   }, [updateBrowserSwitcher])
+
+  useEffect(() => {
+    if (!settingsWindow || !api.onSettingsCloseRequested) return undefined
+    return api.onSettingsCloseRequested(() => {
+      const closeHandler = settingsCloseHandlerRef.current
+      if (closeHandler) {
+        if (browserSwitcherRef.current.open) {
+          resetBrowserSwitcher()
+        }
+        closeHandler()
+        return
+      }
+      void (async () => {
+        await api.allowSettingsWindowClose?.()
+        await api.quitApplication?.()
+      })()
+    })
+  }, [api, resetBrowserSwitcher, settingsWindow])
 
   const refreshBrowserSwitcher = useCallback(async ({
     cycleIfOpen = false,
@@ -180,6 +216,31 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
     }
   }, [api, resetBrowserSwitcher, settingsWindow])
 
+  useEffect(() => {
+    if (!app.browserConfigurationRevision) return
+    urlRouteLoadIdRef.current += 1
+    let browserConsumerWasOpen = false
+    if (browserSwitcherRef.current.open) {
+      resetBrowserSwitcher()
+      browserConsumerWasOpen = true
+    }
+    const routeRequest = urlRouteRequestRef.current
+    if (routeRequest) {
+      updateURLRouteRequest(null)
+      void api.dismissURLRoute?.(routeRequest.id)
+      browserConsumerWasOpen = true
+    }
+    if (browserConsumerWasOpen && !settingsWindow) {
+      void api.hideApplicationWindow?.()
+    }
+  }, [
+    api,
+    app.browserConfigurationRevision,
+    resetBrowserSwitcher,
+    settingsWindow,
+    updateURLRouteRequest,
+  ])
+
   const activateBrowserTarget = useCallback(async (target, sessionId = browserSwitcherRef.current.sessionId) => {
     const current = browserSwitcherRef.current
     if (!target || !sessionId || current.sessionId !== sessionId || current.activating) return
@@ -249,18 +310,24 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
 
   useEffect(() => {
     let active = true
+    const loadId = ++urlRouteLoadIdRef.current
     void api.pendingURLRoute?.()?.then((request) => {
-        if (active && request?.id) setURLRouteRequest(request)
+        if (!active || !request?.id) return
+        if (loadId !== urlRouteLoadIdRef.current) {
+          void api.dismissURLRoute?.(request.id)
+          return
+        }
+        updateURLRouteRequest(request)
       })
       .catch(() => {})
     const unsubscribe = api.onURLRouteChoiceRequested?.((request) => {
-      if (request?.id) setURLRouteRequest(request)
+      if (request?.id) updateURLRouteRequest(request)
     })
     return () => {
       active = false
       unsubscribe?.()
     }
-  }, [api])
+  }, [api, updateURLRouteRequest])
 
   useEffect(() => {
     if (!urlRouteRequest || settingsWindow) return undefined
@@ -397,29 +464,33 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
     return Boolean(app.pending[`${confirmation.kind === 'server' ? 'delete-server' : 'delete-tunnel'}:${confirmation.id}`])
   }, [app.pending, confirmation])
 
-  if (browserSwitcher.open) {
+  const browserSwitcherContent = (
+    <BrowserSwitcher
+      items={browserSwitcher.items}
+      selectedIndex={browserSwitcher.selectedIndex}
+      loading={browserSwitcher.loading}
+      error={browserSwitcher.error}
+      activating={browserSwitcher.activating}
+      mode={browserSwitcher.mode}
+      forwardShortcut={app.preferences.browserSwitcherShortcut}
+      backwardShortcut={app.preferences.browserSwitcherBackwardShortcut}
+      appearances={app.preferences.browserAppearances}
+      onSelect={(selectedIndex) => updateBrowserSwitcher((state) => ({ ...state, selectedIndex }))}
+      onActivate={activateBrowserTarget}
+      onSaveAppearance={app.setBrowserAppearance}
+      onRefresh={() => refreshBrowserSwitcher({
+        sessionId: browserSwitcher.sessionId,
+        mode: browserSwitcher.mode,
+      })}
+      onClose={closeBrowserSwitcher}
+    />
+  )
+
+  if (browserSwitcher.open && !settingsWindow) {
     return (
       <div className="window-shell browser-switcher-mode">
         <div className="app-frame browser-switcher-frame">
-          <BrowserSwitcher
-            items={browserSwitcher.items}
-            selectedIndex={browserSwitcher.selectedIndex}
-            loading={browserSwitcher.loading}
-            error={browserSwitcher.error}
-            activating={browserSwitcher.activating}
-            mode={browserSwitcher.mode}
-            forwardShortcut={app.preferences.browserSwitcherShortcut}
-            backwardShortcut={app.preferences.browserSwitcherBackwardShortcut}
-            appearances={app.preferences.browserAppearances}
-            onSelect={(selectedIndex) => updateBrowserSwitcher((state) => ({ ...state, selectedIndex }))}
-            onActivate={activateBrowserTarget}
-            onSaveAppearance={app.setBrowserAppearance}
-            onRefresh={() => refreshBrowserSwitcher({
-              sessionId: browserSwitcher.sessionId,
-              mode: browserSwitcher.mode,
-            })}
-            onClose={closeBrowserSwitcher}
-          />
+          {browserSwitcherContent}
         </div>
       </div>
     )
@@ -434,12 +505,12 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
             appearances={app.preferences.browserAppearances}
             onChoose={async (choiceID) => {
               await api.resolveURLRoute(urlRouteRequest.id, choiceID)
-              setURLRouteRequest(null)
+              updateURLRouteRequest(null)
               await api.hideApplicationWindow?.()
             }}
             onDismiss={() => {
               void api.dismissURLRoute?.(urlRouteRequest.id)
-              setURLRouteRequest(null)
+              updateURLRouteRequest(null)
               void api.hideApplicationWindow?.()
             }}
           />
@@ -452,8 +523,12 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
     return (
       <div className="window-shell settings-window-mode">
         <div className="app-frame" aria-busy={app.phase === 'loading'}>
-          <AppHeader title="Settings" subtitle="Browser routing, shortcuts, and app preferences" />
-          <main className="app-content">
+          <AppHeader title="Settings" subtitle="Browsers, routing, and app preferences" />
+          <main
+            className="app-content"
+            aria-hidden={browserSwitcher.open ? 'true' : undefined}
+            inert={browserSwitcher.open ? true : undefined}
+          >
             {app.phase === 'loading' ? <LoadingScreen /> : null}
             {app.phase === 'error' ? (
               <div className="screen-scroll screen-scroll--centered">
@@ -479,18 +554,27 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
                 urlRoutingState={app.urlRoutingState}
                 onLoadURLRouting={app.loadURLRoutingSettings}
                 onSaveURLRouting={app.saveURLRoutingSettings}
-                onChooseBrowserApplication={app.chooseBrowserApplication}
+                onValidateURLRulePattern={app.validateURLRulePattern}
                 onSetDefaultBrowser={app.setAsDefaultBrowser}
                 onReload={app.hydrate}
                 onRefreshRuntime={app.refreshRuntimeSessions}
                 onCopyPath={app.copyPath}
                 onOpenDevTools={app.openDevTools}
                 onQuit={app.quitApplication}
+                onRegisterCloseRequestHandler={registerSettingsCloseHandler}
+                onAllowClose={api.allowSettingsWindowClose}
                 standalone
               />
             ) : null}
           </main>
-          <ToastRegion notification={app.notification} onDismiss={app.dismissNotification} />
+          {browserSwitcher.open ? null : (
+            <ToastRegion notification={app.notification} onDismiss={app.dismissNotification} />
+          )}
+          {browserSwitcher.open ? (
+            <div className="settings-browser-switcher-overlay">
+              {browserSwitcherContent}
+            </div>
+          ) : null}
         </div>
       </div>
     )

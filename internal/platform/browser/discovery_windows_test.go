@@ -154,6 +154,7 @@ func TestDiscoverCustomWindowsBrowserAcceptsExecutableFiles(t *testing.T) {
 			ID:              "custom-browser",
 			DisplayName:     "Custom Browser",
 			LaunchReference: executable,
+			Icon:            "icon:briefcase",
 			Engine:          preferencesdomain.BrowserEngineFirefox,
 		},
 		{
@@ -169,6 +170,9 @@ func TestDiscoverCustomWindowsBrowserAcceptsExecutableFiles(t *testing.T) {
 	}
 	if got[0].LaunchReference != executable || got[0].ExecutableReference != executable {
 		t.Fatalf("custom browser executable references = %#v", got[0])
+	}
+	if got[0].Icon != "icon:briefcase" {
+		t.Fatalf("custom browser icon = %q, want icon:briefcase", got[0].Icon)
 	}
 	if got[0].Engine != BrowserEngineFirefox || !got[0].SupportsProxyLaunch || !got[0].Custom {
 		t.Fatalf("custom browser metadata = %#v", got[0])

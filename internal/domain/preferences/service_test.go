@@ -3,8 +3,10 @@ package preferences
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type memoryStore struct {
@@ -35,6 +37,36 @@ func TestServiceSaveDefaultsBrowserSwitcherShortcuts(t *testing.T) {
 	}
 	if saved.BrowserSwitcherBackwardShortcut != "Alt+Z" {
 		t.Fatalf("backward shortcut = %q, want Alt+Z", saved.BrowserSwitcherBackwardShortcut)
+	}
+}
+
+func TestServiceSaveAdvancesRevisionPastAcceptedFutureValue(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	input := Default()
+	input.UpdatedAt = time.Now().UTC().Add(time.Hour)
+	acceptedRevision := input.UpdatedAt
+
+	saved, err := service.Save(context.Background(), input)
+	if err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	if !saved.UpdatedAt.After(acceptedRevision) {
+		t.Fatalf("saved revision = %s, want after accepted revision %s", saved.UpdatedAt, acceptedRevision)
+	}
+}
+
+func TestServiceSaveRejectsExhaustedMaximumRevision(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	input := Default()
+	input.UpdatedAt = time.Date(9999, 12, 31, 23, 59, 59, 999999999, time.UTC)
+
+	if _, err := service.Save(context.Background(), input); err == nil {
+		t.Fatal("expected maximum preference revision to be rejected")
+	}
+	if store.saveCalls != 0 {
+		t.Fatalf("save calls = %d, want 0", store.saveCalls)
 	}
 }
 
@@ -325,6 +357,62 @@ func TestServiceSaveNormalizesAndValidatesURLRoutingRules(t *testing.T) {
 	}
 }
 
+func TestServiceSaveNormalizesBrowserVisibilityAndLiteralRuleModes(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	input := Default()
+	input.DisabledBrowserIDs = []string{" firefox ", "safari", "firefox"}
+	input.URLRules = []URLRule{
+		{
+			ID:         "work",
+			MatchMode:  URLRuleMatchStartsWith,
+			Pattern:    " https://github.com/workorg/ ",
+			Action:     URLRuleActionBrowser,
+			BrowserID:  " brave-browser ",
+			OpenDirect: true,
+		},
+		{
+			ID:        "issues",
+			MatchMode: URLRuleMatchContains,
+			Pattern:   " ticket= ",
+			Action:    URLRuleActionBrowser,
+			BrowserID: "firefox",
+		},
+	}
+
+	saved, err := service.Save(context.Background(), input)
+	if err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	if got, want := saved.DisabledBrowserIDs, []string{"firefox", "safari"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("disabled browser ids = %#v, want %#v", got, want)
+	}
+	if got := saved.URLRules[0]; got.MatchMode != URLRuleMatchStartsWith || got.Pattern != "https://github.com/workorg/" || !got.OpenDirect {
+		t.Fatalf("normalized starts-with rule = %#v", got)
+	}
+	if got := saved.URLRules[1]; got.MatchMode != URLRuleMatchContains || got.Pattern != "ticket=" {
+		t.Fatalf("normalized contains rule = %#v", got)
+	}
+}
+
+func TestServiceLoadDefaultsLegacyURLRulesToRegex(t *testing.T) {
+	pref := Default()
+	pref.URLRules = []URLRule{{
+		ID:        "legacy",
+		Pattern:   `^https://example\.com/`,
+		Action:    URLRuleActionBrowser,
+		BrowserID: "safari",
+	}}
+
+	loaded, err := NewService(&memoryStore{pref: pref}).Load(context.Background())
+	if err != nil {
+		t.Fatalf("load preferences: %v", err)
+	}
+	if got := loaded.URLRules[0].MatchMode; got != URLRuleMatchRegex {
+		t.Fatalf("legacy match mode = %q, want %q", got, URLRuleMatchRegex)
+	}
+}
+
 func TestServiceSaveNormalizesCustomBrowsers(t *testing.T) {
 	store := &memoryStore{}
 	service := NewService(store)
@@ -349,6 +437,29 @@ func TestServiceSaveNormalizesCustomBrowsers(t *testing.T) {
 	}
 	got := saved.CustomBrowsers[0]
 	if got.ID != "custom-kagi" || got.DisplayName != "Kagi Browser" || got.LaunchReference != wantPath || got.Engine != BrowserEngineChromium {
+		t.Fatalf("normalized custom browser = %#v", got)
+	}
+}
+
+func TestServiceSaveNormalizesCommandCustomBrowserWithIcon(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	input := Default()
+	input.CustomBrowsers = []CustomBrowser{{
+		ID:          " custom-work ",
+		DisplayName: " Work profile ",
+		Command:     ` open -a "Zen" "ext+container:name=Work&url=<URL>" `,
+		Icon:        " icon:briefcase ",
+	}}
+
+	saved, err := service.Save(context.Background(), input)
+	if err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	got := saved.CustomBrowsers[0]
+	if got.ID != "custom-work" || got.DisplayName != "Work profile" ||
+		got.Command != `open -a "Zen" "ext+container:name=Work&url=<URL>"` ||
+		got.Icon != "icon:briefcase" {
 		t.Fatalf("normalized custom browser = %#v", got)
 	}
 }
@@ -391,6 +502,71 @@ func TestServiceSaveRejectsInvalidCustomBrowsers(t *testing.T) {
 			browsers:  []CustomBrowser{valid, {ID: "custom-other", DisplayName: "Other", LaunchReference: valid.LaunchReference + string(filepath.Separator), Engine: BrowserEngineRegular}},
 			wantError: "duplicate application path",
 		},
+		{
+			name:      "shell pipeline command",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `printf '%s' <URL> | open`}},
+			wantError: "shell operators",
+		},
+		{
+			name:      "nested shell command",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `/usr/bin/nice /bin/sh -c "open <URL>"`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "combined interpreter flag",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `python3 "-cprint('<URL>')"`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "versioned interpreter flag",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `perl5.34 "-eprint('<URL>')"`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "nested interpreter behind delegator",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `/usr/bin/caffeinate /bin/sh -c "open <URL>"`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "attached cmd command",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `cmd.exe "/cecho <URL>"`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "positional awk program",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `awk "BEGIN { system(\"printf %s <URL>\") }"`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "nested osascript source",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `/usr/bin/caffeinate /usr/bin/osascript -e "do shell script \"echo <URL>\""`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "nested environment splitter",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `/usr/bin/caffeinate /usr/bin/env -S "printf %s <URL>"`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "nested parallel command",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `/usr/bin/caffeinate parallel <URL> ::: 1`}},
+			wantError: "executable must be open",
+		},
+		{
+			name:      "open child arguments",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `open -a Terminal --args -c <URL>`}},
+			wantError: "must not forward",
+		},
+		{
+			name:      "non-system open executable",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `/tmp/open <URL>`}},
+			wantError: "open or /usr/bin/open",
+		},
+		{
+			name:      "URL-derived open executable",
+			browsers:  []CustomBrowser{{ID: "custom-kagi", DisplayName: "Kagi", Command: `<URL>/open`}},
+			wantError: "open or /usr/bin/open",
+		},
 	}
 
 	for _, test := range tests {
@@ -406,6 +582,57 @@ func TestServiceSaveRejectsInvalidCustomBrowsers(t *testing.T) {
 				t.Fatalf("save calls = %d, want 0", store.saveCalls)
 			}
 		})
+	}
+}
+
+func TestServiceSavePreservesUnchangedLegacyCommandTemplatesDuringUnrelatedEdits(t *testing.T) {
+	pref := Default()
+	pref.Theme = ThemeLight
+	pref.CustomBrowsers = []CustomBrowser{{
+		ID:          "legacy-browser",
+		DisplayName: "Legacy browser",
+		Command:     `printf '%s' <URL> | open`,
+	}}
+	pref.URLRules = []URLRule{{
+		ID:        "legacy-rule",
+		MatchMode: URLRuleMatchContains,
+		Pattern:   "example.com",
+		Action:    URLRuleActionCommand,
+		Command:   `/bin/zsh -lc "open <URL>"`,
+	}}
+	store := &memoryStore{pref: pref}
+
+	loaded, err := NewService(store).Load(context.Background())
+	if err != nil {
+		t.Fatalf("load legacy preferences: %v", err)
+	}
+	if loaded.Theme != ThemeLight ||
+		loaded.CustomBrowsers[0].Command != `printf '%s' <URL> | open` ||
+		loaded.URLRules[0].Command != `/bin/zsh -lc "open <URL>"` {
+		t.Fatalf("loaded preferences = %#v, want legacy commands preserved", loaded)
+	}
+	loaded.Theme = ThemeDark
+	saved, err := NewService(store).Save(context.Background(), loaded)
+	if err != nil {
+		t.Fatalf("save unrelated theme change: %v", err)
+	}
+	if saved.Theme != ThemeDark ||
+		saved.CustomBrowsers[0].Command != `printf '%s' <URL> | open` ||
+		saved.URLRules[0].Command != `/bin/zsh -lc "open <URL>"` {
+		t.Fatalf("saved preferences = %#v, want unchanged legacy commands preserved", saved)
+	}
+	if store.saveCalls != 1 {
+		t.Fatalf("save calls = %d, want 1", store.saveCalls)
+	}
+
+	changed := saved
+	changed.URLRules = append([]URLRule(nil), saved.URLRules...)
+	changed.URLRules[0].Command = `/bin/sh -c "open <URL>"`
+	if _, err := NewService(store).Save(context.Background(), changed); err == nil {
+		t.Fatal("expected changed legacy command syntax to require repair")
+	}
+	if store.saveCalls != 1 {
+		t.Fatalf("save calls = %d, want changed legacy command rejected", store.saveCalls)
 	}
 }
 
@@ -425,6 +652,10 @@ func TestURLRoutingRuleValidationRejectsInvalidRules(t *testing.T) {
 		{
 			name: "command without placeholder",
 			rule: URLRule{ID: "missing-url", Pattern: ".*", Action: URLRuleActionCommand, Command: "open -a Safari"},
+		},
+		{
+			name: "command with nested interpreter",
+			rule: URLRule{ID: "nested-shell", Pattern: ".*", Action: URLRuleActionCommand, Command: `/usr/bin/nohup /bin/zsh -lc "open <URL>"`},
 		},
 		{
 			name: "unknown action",

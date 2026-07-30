@@ -145,23 +145,58 @@ func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		s.writeError(writer, http.StatusBadRequest, "invalid_request", "control request must contain one JSON object")
 		return
 	}
-	if command.ProtocolVersion != ProtocolVersion {
+	if !supportsRequestProtocol(command) {
 		s.writeError(writer, http.StatusConflict, "protocol_mismatch", fmt.Sprintf("app uses protocol %d, CLI requested %d", ProtocolVersion, command.ProtocolVersion))
 		return
 	}
 
 	result, err := s.dispatch(request.Context(), command)
 	if err != nil {
-		s.writeError(writer, http.StatusBadRequest, "operation_failed", err.Error())
+		s.writeErrorForProtocol(writer, http.StatusBadRequest, "operation_failed", err.Error(), command.ProtocolVersion)
 		return
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
-		s.writeError(writer, http.StatusInternalServerError, "encode_failed", "could not encode control response")
+		s.writeErrorForProtocol(writer, http.StatusInternalServerError, "encode_failed", "could not encode control response", command.ProtocolVersion)
 		return
 	}
 	writer.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(writer).Encode(Response{ProtocolVersion: ProtocolVersion, Data: encoded})
+	_ = json.NewEncoder(writer).Encode(Response{ProtocolVersion: command.ProtocolVersion, Data: encoded})
+}
+
+func supportsRequestProtocol(request Request) bool {
+	if request.ProtocolVersion == ProtocolVersion {
+		return true
+	}
+	if request.ProtocolVersion != 1 {
+		return false
+	}
+
+	switch request.Command {
+	case "ping",
+		"state",
+		"server.save",
+		"server.delete",
+		"configuration.save",
+		"configuration.delete",
+		"session.start",
+		"session.start_server",
+		"session.stop",
+		"session.stop_server",
+		"session.retry",
+		"session.unlock",
+		"session.history",
+		"browser.list",
+		"browser.preview",
+		"browser.launch",
+		"browser.default.set",
+		"app.show",
+		"app.hide",
+		"app.quit":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) dispatch(ctx context.Context, request Request) (any, error) {
@@ -218,6 +253,14 @@ func (s *Server) dispatch(ctx context.Context, request Request) (any, error) {
 			return nil, fmt.Errorf("preferences payload is required")
 		}
 		return call1(ctx, s.backend.SavePreferences, *request.Preferences)
+	case "preferences.appearance.save":
+		if request.BrowserAppearance == nil {
+			return nil, fmt.Errorf("browser appearance payload is required")
+		}
+		if s.backend.SaveBrowserAppearance == nil {
+			return nil, fmt.Errorf("command is unavailable")
+		}
+		return s.backend.SaveBrowserAppearance(ctx, request.AppearanceKey, *request.BrowserAppearance)
 	case "browser.default.set":
 		return call0(ctx, s.backend.SetDefaultBrowser)
 	case "app.show":
@@ -239,9 +282,13 @@ func (s *Server) dispatch(ctx context.Context, request Request) (any, error) {
 }
 
 func (s *Server) writeError(writer http.ResponseWriter, status int, code string, message string) {
+	s.writeErrorForProtocol(writer, status, code, message, ProtocolVersion)
+}
+
+func (s *Server) writeErrorForProtocol(writer http.ResponseWriter, status int, code string, message string, protocolVersion int) {
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(Response{
-		ProtocolVersion: ProtocolVersion,
+		ProtocolVersion: protocolVersion,
 		Error:           &Error{Code: code, Message: message},
 	})
 }

@@ -478,6 +478,16 @@ func TestNewSettingsOptionsConfiguresIndependentResizableWindow(t *testing.T) {
 	if got.SingleInstanceLock == nil || got.SingleInstanceLock.UniqueId != singleInstanceID+".settings" {
 		t.Fatalf("settings lock = %#v", got.SingleInstanceLock)
 	}
+	if got.OnBeforeClose == nil {
+		t.Fatal("settings should guard native close requests")
+	}
+	if !got.OnBeforeClose(context.Background()) {
+		t.Fatal("settings native close should wait for the frontend decision")
+	}
+	marker.AllowClose()
+	if got.OnBeforeClose(context.Background()) {
+		t.Fatal("allowed settings native close should proceed")
+	}
 	if len(got.Bind) != 2 || got.Bind[0] != app || got.Bind[1] != marker {
 		t.Fatalf("settings bindings = %#v", got.Bind)
 	}

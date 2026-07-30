@@ -268,3 +268,47 @@ func TestDiscoverMergesAvailableCustomBrowsersWithoutOverridingBuiltIns(t *testi
 		t.Fatalf("merged browsers = %#v", got)
 	}
 }
+
+func TestDiscoverFiltersDisabledBrowsersWhileCatalogKeepsInstalledOptions(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DisabledBrowserIDs = []string{"firefox", "custom-work"}
+	pref.CustomBrowsers = []preferencesdomain.CustomBrowser{{
+		ID:          "custom-work",
+		DisplayName: "Work profile",
+		Command:     `open -a "Zen" "<URL>"`,
+		Icon:        "icon:briefcase",
+	}}
+	service := NewService("/tmp/ssh-man", stubConfigLookup{}, stubRuntimeLookup{}, nil, stubPreferenceLookup{pref: pref})
+	service.discover = func(context.Context) ([]BrowserOption, error) {
+		return []BrowserOption{
+			{ID: "safari", DisplayName: "Safari", LaunchReference: "/Applications/Safari.app"},
+			{ID: "firefox", DisplayName: "Firefox", LaunchReference: "/Applications/Firefox.app", SupportsProxyLaunch: true},
+		}, nil
+	}
+	service.discoverCustom = func(custom []preferencesdomain.CustomBrowser) []BrowserOption {
+		return []BrowserOption{{
+			ID:              custom[0].ID,
+			DisplayName:     custom[0].DisplayName,
+			CommandTemplate: custom[0].Command,
+			Icon:            custom[0].Icon,
+			Custom:          true,
+		}}
+	}
+
+	visible, err := service.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("discover visible browsers: %v", err)
+	}
+	if len(visible) != 1 || visible[0].ID != "safari" {
+		t.Fatalf("visible browsers = %#v, want Safari only", visible)
+	}
+
+	catalog, err := service.DiscoverCatalog(context.Background())
+	if err != nil {
+		t.Fatalf("discover browser catalog: %v", err)
+	}
+	if len(catalog) != 2 || catalog[0].ID != "safari" || !catalog[0].Enabled ||
+		catalog[1].ID != "firefox" || catalog[1].Enabled {
+		t.Fatalf("browser catalog = %#v", catalog)
+	}
+}

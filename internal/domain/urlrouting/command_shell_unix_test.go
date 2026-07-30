@@ -3,21 +3,19 @@
 package urlrouting
 
 import (
-	"os/exec"
 	"testing"
 )
 
-func TestExpandedCommandPassesMetacharactersAsLiteralURLData(t *testing.T) {
+func TestCommandTemplatePassesMetacharactersAsLiteralURLData(t *testing.T) {
 	rawURL := `https://example.com/a path?q='";touch /tmp/ssh-man-should-not-exist;$HOME&x=1`
-	expanded, err := expandCommandTemplate(`printf '%s' <URL>`, rawURL)
+	arguments, err := commandTemplateArguments(`open <URL>`, rawURL)
 	if err != nil {
-		t.Fatalf("expand template: %v", err)
+		t.Fatalf("parse template: %v", err)
 	}
-	output, err := exec.Command("/bin/sh", "-c", expanded).Output()
-	if err != nil {
-		t.Fatalf("execute expanded command: %v", err)
+	if len(arguments) != 2 {
+		t.Fatalf("arguments = %#v, want executable and URL", arguments)
 	}
-	if string(output) != rawURL {
-		t.Fatalf("command output = %q, want literal URL %q", output, rawURL)
+	if arguments[0] != "/usr/bin/open" || arguments[1] != rawURL {
+		t.Fatalf("arguments = %#v, want URL preserved as argv data", arguments)
 	}
 }

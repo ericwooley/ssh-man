@@ -22,6 +22,8 @@ func (a urlRoutingBrowserAdapter) ListDestinations(ctx context.Context) ([]urlro
 			ID:            option.ID,
 			Name:          option.DisplayName,
 			SupportsProxy: option.SupportsProxyLaunch,
+			Command:       option.CommandTemplate,
+			Icon:          option.Icon,
 		})
 	}
 	return destinations, nil

@@ -51,20 +51,26 @@ func discoverLinuxBrowsers() []BrowserOption {
 func discoverCustomBrowsers(custom []preferencesdomain.CustomBrowser) []BrowserOption {
 	options := make([]BrowserOption, 0, len(custom))
 	for _, browser := range custom {
+		if browser.Command != "" {
+			options = append(options, BrowserOption{
+				ID:              browser.ID,
+				DisplayName:     browser.DisplayName,
+				CommandTemplate: browser.Command,
+				Icon:            browser.Icon,
+				Engine:          BrowserEngineRegular,
+				Custom:          true,
+			})
+			continue
+		}
 		info, err := os.Stat(browser.LaunchReference)
 		if err != nil || info.IsDir() {
 			continue
 		}
-		engine := BrowserEngine(browser.Engine)
-		options = append(options, BrowserOption{
-			ID:                  browser.ID,
-			DisplayName:         browser.DisplayName,
-			LaunchReference:     browser.LaunchReference,
-			ExecutableReference: browser.LaunchReference,
-			Engine:              engine,
-			SupportsProxyLaunch: engine != BrowserEngineRegular,
-			Custom:              true,
-		})
+		options = append(options, customExecutableBrowserOption(
+			browser,
+			browser.LaunchReference,
+			browser.LaunchReference,
+		))
 	}
 	return options
 }

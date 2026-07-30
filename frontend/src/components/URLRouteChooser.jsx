@@ -144,13 +144,17 @@ export function URLRouteChooser({ request, appearances = {}, onChoose, onDismiss
         {request.choices.map((choice) => {
           const ChoiceIcon = choiceIcon(choice)
           const appearance = browserAppearanceForTarget(choice, appearances)
-          const customized = Boolean(appearance.icon || appearance.primaryColor)
+          const displayedAppearance = {
+            ...appearance,
+            icon: appearance.icon || choice.icon || '',
+          }
+          const customized = Boolean(displayedAppearance.icon || displayedAppearance.primaryColor)
           const selected = choice.id === selectedID
           return (
             <button
               key={choice.id}
               className={`${selected ? 'is-selected' : ''} ${customized ? 'has-custom-appearance' : ''}`}
-              style={browserAppearanceStyle(appearance)}
+              style={browserAppearanceStyle(displayedAppearance)}
               type="button"
               role="option"
               aria-selected={selected}
@@ -162,7 +166,7 @@ export function URLRouteChooser({ request, appearances = {}, onChoose, onDismiss
               <span className="url-route-choice-list__icon" aria-hidden="true">
                 <BrowserAppearanceMark
                   target={choice}
-                  appearance={appearance}
+                  appearance={displayedAppearance}
                   fallbackIcon={ChoiceIcon}
                 />
               </span>

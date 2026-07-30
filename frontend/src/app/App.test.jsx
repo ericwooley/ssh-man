@@ -93,6 +93,7 @@ function createFakeApi({
       browserAppearances: {},
       defaultBrowserId: '',
       proxyBrowserId: '',
+      disabledBrowserIds: [],
       customBrowsers: [],
       urlRules: [],
       urlPortAssignments: [],
@@ -189,6 +190,7 @@ function createFakeApi({
     }),
     submitKeyUnlock: vi.fn(async (configurationId) => api.startConfiguration(configurationId)),
     discoverBrowsers: vi.fn(async () => []),
+    discoverBrowserCatalog: vi.fn(async () => api.discoverBrowsers()),
     chooseBrowserApplication: vi.fn(async () => '/Applications/Kagi Browser.app'),
     previewBrowserLaunchThroughSocks: vi.fn(async () => ({ command: '' })),
     launchBrowserThroughSocks: vi.fn(async () => ({ success: true })),
@@ -196,6 +198,7 @@ function createFakeApi({
     activateRunningBrowser: vi.fn(async () => undefined),
     defaultBrowserStatus: vi.fn(async () => ({ supported: true, isDefault: false })),
     setAsDefaultBrowser: vi.fn(async () => ({ supported: true, isDefault: true })),
+    validateURLRulePattern: vi.fn(async () => ({ valid: true, message: '' })),
     pendingURLRoute: vi.fn(async () => null),
     resolveURLRoute: vi.fn(async () => undefined),
     dismissURLRoute: vi.fn(async () => undefined),
@@ -203,6 +206,10 @@ function createFakeApi({
     onURLRouteChoiceRequested: vi.fn((callback) => {
       api.urlRouteChoiceListener = callback
       return () => { api.urlRouteChoiceListener = null }
+    }),
+    onPreferencesChanged: vi.fn((callback) => {
+      api.preferencesChangedListener = callback
+      return () => { api.preferencesChangedListener = null }
     }),
     onBrowserSwitcherRequested: vi.fn((callback) => {
       api.browserSwitcherListener = callback
@@ -220,6 +227,11 @@ function createFakeApi({
     openDevTools: vi.fn(async () => undefined),
     openServerExplorer: vi.fn(async () => undefined),
     openSettingsWindow: vi.fn(async () => undefined),
+    allowSettingsWindowClose: vi.fn(async () => undefined),
+    onSettingsCloseRequested: vi.fn((callback) => {
+      api.settingsCloseListener = callback
+      return () => { api.settingsCloseListener = null }
+    }),
     openServerCommand: vi.fn(async () => undefined),
     hideApplicationWindow: vi.fn(async () => undefined),
     quitApplication: vi.fn(async () => undefined),
@@ -494,11 +506,13 @@ describe('React application flows', () => {
   })
 
   test('shows the backend-provided app version', async () => {
+    const user = userEvent.setup()
     const { api } = createFakeApi({ version: '1.2.3' })
     renderSettingsApp(api)
 
+    await user.click(await screen.findByRole('button', { name: 'App health' }))
     expect(await screen.findByText('App version')).toBeTruthy()
-    expect(screen.getByText('1.2.3')).toBeTruthy()
+    expect(screen.getAllByText('1.2.3')).not.toHaveLength(0)
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {
@@ -708,7 +722,200 @@ describe('React application flows', () => {
     expect(previousRecorder.textContent).toContain('Alt+C')
   })
 
-  test('configures default, proxy, and ordered regex URL routing rules', async () => {
+  test('serializes overlapping preference saves onto the latest persisted revision', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.updatedAt = '2026-07-29T20:00:00Z'
+    let resolveFirst
+    let resolveSecond
+    api.savePreferences
+      .mockImplementationOnce((input) => new Promise((resolve) => {
+        resolveFirst = () => resolve({ ...input, updatedAt: '2026-07-29T20:00:01Z' })
+      }))
+      .mockImplementationOnce((input) => new Promise((resolve) => {
+        resolveSecond = () => resolve({ ...input, updatedAt: '2026-07-29T20:00:02Z' })
+      }))
+    renderSettingsApp(api)
+
+    const nextRecorder = await screen.findByRole('button', { name: 'Next browser shortcut' })
+    const previousRecorder = screen.getByRole('button', { name: 'Previous browser shortcut' })
+    await user.click(nextRecorder)
+    fireEvent.keyDown(nextRecorder, { key: 'b', code: 'KeyB', altKey: true })
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(1))
+
+    await user.click(previousRecorder)
+    fireEvent.keyDown(previousRecorder, { key: 'c', code: 'KeyC', altKey: true })
+    expect(api.savePreferences).toHaveBeenCalledTimes(1)
+
+    await act(async () => resolveFirst())
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(2))
+    expect(api.savePreferences.mock.calls[1][0]).toEqual(expect.objectContaining({
+      browserSwitcherShortcut: 'Alt+B',
+      browserSwitcherBackwardShortcut: 'Alt+C',
+      updatedAt: '2026-07-29T20:00:01Z',
+    }))
+
+    await act(async () => resolveSecond())
+    await waitFor(() => expect(previousRecorder.textContent).toContain('Alt+C'))
+  })
+
+  test('applies a delayed server selection to the latest persisted preferences', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.updatedAt = '2026-07-29T20:00:00Z'
+    let resolveServer
+    api.saveServer.mockImplementationOnce((input) => new Promise((resolve) => {
+      resolveServer = () => resolve({ ...input, id: 'server-2' })
+    }))
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Add server' }))
+    await user.type(screen.getByLabelText('Name'), 'Work server')
+    await user.type(screen.getByLabelText('Host'), 'work.example.com')
+    await user.click(screen.getByRole('button', { name: 'Save server' }))
+    await waitFor(() => expect(api.saveServer).toHaveBeenCalledTimes(1))
+
+    state.preferences = {
+      ...state.preferences,
+      theme: 'light',
+      updatedAt: '2026-07-29T20:00:01Z',
+    }
+    await act(async () => api.preferencesChangedListener(clone(state.preferences)))
+    await waitFor(() => expect(api.loadInitialState).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'))
+
+    await act(async () => resolveServer())
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(1))
+    expect(api.savePreferences.mock.calls[0][0]).toEqual(expect.objectContaining({
+      lastSelectedServerId: 'server-2',
+      theme: 'light',
+      updatedAt: '2026-07-29T20:00:01Z',
+    }))
+  })
+
+  test.each(['resolves', 'rejects'])(
+    'keeps a newer hydrated preference revision when an older save %s',
+    async (outcome) => {
+      const user = userEvent.setup()
+      const { api, state } = createFakeApi()
+      state.preferences.updatedAt = '2026-07-29T20:00:00.100000000Z'
+      let settleSave
+      api.savePreferences.mockImplementationOnce((input) => new Promise((resolve, reject) => {
+        settleSave = () => {
+          if (outcome === 'resolves') {
+            resolve({ ...input, theme: 'dark', updatedAt: '2026-07-29T20:00:00.200000000Z' })
+          } else {
+            reject(new Error('stale preference save failed'))
+          }
+        }
+      }))
+      renderSettingsApp(api)
+
+      const nextRecorder = await screen.findByRole('button', { name: 'Next browser shortcut' })
+      const previousRecorder = screen.getByRole('button', { name: 'Previous browser shortcut' })
+      await user.click(nextRecorder)
+      fireEvent.keyDown(nextRecorder, { key: 'b', code: 'KeyB', altKey: true })
+      await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(1))
+
+      state.preferences = {
+        ...state.preferences,
+        theme: 'light',
+        browserSwitcherShortcut: 'Alt+B',
+        updatedAt: '2026-07-29T20:00:00.300000000Z',
+      }
+      await act(async () => api.preferencesChangedListener(clone(state.preferences)))
+      await waitFor(() => expect(api.loadInitialState).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'))
+
+      await act(async () => settleSave())
+      await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'))
+
+      await user.click(previousRecorder)
+      fireEvent.keyDown(previousRecorder, { key: 'c', code: 'KeyC', altKey: true })
+      await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(2))
+      expect(api.savePreferences.mock.calls[1][0]).toEqual(expect.objectContaining({
+        theme: 'light',
+        browserSwitcherShortcut: 'Alt+B',
+        browserSwitcherBackwardShortcut: 'Alt+C',
+        updatedAt: '2026-07-29T20:00:00.300000000Z',
+      }))
+    },
+  )
+
+  test('uses an accepted preference event while its follow-up hydration is pending', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.updatedAt = '2026-07-29T20:00:00.100000000Z'
+    const loadCurrentState = api.loadInitialState.getMockImplementation()
+    let resolveHydration
+    renderSettingsApp(api)
+
+    const previousRecorder = await screen.findByRole('button', { name: 'Previous browser shortcut' })
+    api.loadInitialState.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveHydration = async () => resolve(await loadCurrentState())
+    }))
+    state.preferences = {
+      ...state.preferences,
+      theme: 'light',
+      browserSwitcherShortcut: 'Alt+B',
+      updatedAt: '2026-07-29T20:00:00.200000000Z',
+    }
+    act(() => api.preferencesChangedListener(clone(state.preferences)))
+    await waitFor(() => expect(api.loadInitialState).toHaveBeenCalledTimes(2))
+
+    await user.click(previousRecorder)
+    fireEvent.keyDown(previousRecorder, { key: 'c', code: 'KeyC', altKey: true })
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(1))
+    expect(api.savePreferences.mock.calls[0][0]).toEqual(expect.objectContaining({
+      theme: 'light',
+      browserSwitcherShortcut: 'Alt+B',
+      browserSwitcherBackwardShortcut: 'Alt+C',
+      updatedAt: '2026-07-29T20:00:00.200000000Z',
+    }))
+
+    await act(async () => resolveHydration())
+  })
+
+  test('refreshes persisted preferences before continuing after a stale-save conflict', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.updatedAt = '2026-07-29T20:00:00.100000000Z'
+    let rejectFirstSave
+    api.savePreferences.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      rejectFirstSave = () => reject(
+        new Error('preference update conflict'),
+      )
+    }))
+    renderSettingsApp(api)
+
+    const nextRecorder = await screen.findByRole('button', { name: 'Next browser shortcut' })
+    const previousRecorder = screen.getByRole('button', { name: 'Previous browser shortcut' })
+    await user.click(nextRecorder)
+    fireEvent.keyDown(nextRecorder, { key: 'b', code: 'KeyB', altKey: true })
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(1))
+    await user.click(previousRecorder)
+    fireEvent.keyDown(previousRecorder, { key: 'c', code: 'KeyC', altKey: true })
+    expect(api.savePreferences).toHaveBeenCalledTimes(1)
+
+    state.preferences = {
+      ...state.preferences,
+      theme: 'light',
+      updatedAt: '2026-07-29T20:00:00.200000000Z',
+    }
+    await act(async () => rejectFirstSave())
+
+    await waitFor(() => expect(api.loadInitialState).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Settings changed before this update was saved. Please try again.')).toBeTruthy()
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledTimes(2))
+    expect(api.savePreferences.mock.calls[1][0]).toEqual(expect.objectContaining({
+      theme: 'light',
+      browserSwitcherShortcut: 'Alt+X',
+      browserSwitcherBackwardShortcut: 'Alt+C',
+      updatedAt: '2026-07-29T20:00:00.200000000Z',
+    }))
+  })
+
+  test('uses the settings sidebar and removes disabled browsers from routing controls', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi()
     api.discoverBrowsers.mockResolvedValue([
@@ -718,36 +925,818 @@ describe('React application flows', () => {
     ])
     renderSettingsApp(api)
 
-    await screen.findByRole('heading', { name: 'URL routing' })
+    expect(await screen.findByRole('heading', { name: 'General' })).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Settings pages' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Browsers' }))
+    expect(await screen.findByRole('heading', { name: 'Browsers' })).toBeTruthy()
     await waitFor(() => expect(api.defaultBrowserStatus).toHaveBeenCalled())
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Fallback browser' }), 'safari')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'SOCKS proxy browser' }), 'firefox')
-    await user.click(screen.getByRole('button', { name: 'Add URL rule' }))
-
-    await user.type(screen.getByRole('textbox', { name: 'Rule 1 regular expression' }), String.raw`https:\/\/github.com\/workorg\/.*`)
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Rule 1 action' }), 'command')
-    await user.type(
-      screen.getByRole('textbox', { name: 'Rule 1 command' }),
-      'open -a "Zen" "ext+container:name=Work&url=<URL>"',
-    )
-    await user.click(screen.getByRole('button', { name: 'Save URL routing' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
 
     await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
-      defaultBrowserId: 'safari',
-      proxyBrowserId: 'firefox',
-      urlRules: [
+      disabledBrowserIds: ['safari'],
+    })))
+
+    await user.click(screen.getByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    expect(within(screen.getByRole('combobox', { name: 'Rule 1 browser' })).queryByRole('option', { name: 'Safari' })).toBeNull()
+  })
+
+  test('shows one empty state when no URL rules exist', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+
+    expect(screen.getByText('No URL rules')).toBeTruthy()
+    expect(screen.queryByText('Select a rule')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Port defaults' })).toBeTruthy()
+  })
+
+  test('explains when default-browser integration is unavailable', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.defaultBrowserStatus.mockResolvedValue({ supported: false, isDefault: false })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+
+    expect(screen.getByText('Default browser integration is unavailable')).toBeTruthy()
+    expect(screen.getByText('You can still launch any detected browser through an SSH tunnel.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Unavailable' }).disabled).toBe(true)
+  })
+
+  test('offers custom command browsers only where command launching is supported', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.defaultBrowserStatus.mockResolvedValue({ supported: false, isDefault: false })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+
+    expect(screen.queryByRole('button', { name: 'Add custom browser' })).toBeNull()
+    expect(screen.getByText('Choose which installed browsers SSH Man can offer.')).toBeTruthy()
+  })
+
+  test('does not offer new command rules where command launching is unsupported', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.defaultBrowserStatus.mockResolvedValue({ supported: false, isDefault: false })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+
+    const action = screen.getByRole('combobox', { name: 'Rule 1 action' })
+    expect(within(action).queryByRole('option', { name: 'Run command' })).toBeNull()
+  })
+
+  test('keeps saved command rules readable and repairable on unsupported platforms', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.urlRules = [{
+      id: 'saved-command',
+      matchMode: 'contains',
+      pattern: 'example.com',
+      action: 'command',
+      browserId: '',
+      command: 'open "<URL>"',
+      openDirect: false,
+    }]
+    api.defaultBrowserStatus.mockResolvedValue({ supported: false, isDefault: false })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+
+    const action = screen.getByRole('combobox', { name: 'Rule 1 action' })
+    expect(within(action).getByRole('option', { name: 'Run command (saved)' }).disabled).toBe(true)
+    expect(screen.getByRole('textbox', { name: 'Rule 1 command' }).readOnly).toBe(true)
+    expect(screen.getByText('This saved command remains unchanged. Switch the action to Open in browser, or use SSH Man on macOS to edit it.')).toBeTruthy()
+
+    await user.selectOptions(action, 'browser')
+    expect(screen.queryByRole('textbox', { name: 'Rule 1 command' })).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Rule 1 browser' })).toBeTruthy()
+  })
+
+  test('saves unrelated edits while unchanged legacy commands remain repairable', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.customBrowsers = [{
+      id: 'legacy-browser',
+      displayName: 'Legacy browser',
+      command: '/bin/zsh -lc "open <URL>"',
+      icon: '',
+    }]
+    state.preferences.urlRules = [{
+      id: 'legacy-rule',
+      matchMode: 'contains',
+      pattern: 'example.com',
+      action: 'command',
+      browserId: '',
+      command: '/bin/zsh -lc "open <URL>"',
+      openDirect: false,
+    }]
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    const name = screen.getByRole('textbox', { name: 'Custom browser name' })
+    await user.clear(name)
+    await user.type(name, 'Updated legacy browser')
+
+    const save = screen.getByRole('button', { name: 'Save all settings' })
+    expect(save.disabled).toBe(false)
+    await user.click(save)
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      customBrowsers: [expect.objectContaining({
+        id: 'legacy-browser',
+        displayName: 'Updated legacy browser',
+        command: '/bin/zsh -lc "open <URL>"',
+      })],
+      urlRules: [expect.objectContaining({
+        id: 'legacy-rule',
+        command: '/bin/zsh -lc "open <URL>"',
+      })],
+    })))
+  })
+
+  test('keeps saved custom browser commands read-only on unsupported platforms', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.customBrowsers = [{
+      id: 'saved-browser',
+      displayName: 'Work browser',
+      command: 'open -a "Zen" "<URL>"',
+      icon: 'icon:briefcase',
+    }]
+    api.defaultBrowserStatus.mockResolvedValue({ supported: false, isDefault: false })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+
+    expect(screen.getByRole('textbox', { name: 'Custom browser name' }).readOnly).toBe(false)
+    expect(screen.getByRole('textbox', { name: 'Custom browser command' }).readOnly).toBe(true)
+    expect(screen.getByText('This saved command remains unchanged. Use SSH Man on macOS to edit it.')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Briefcase icon' }).disabled).toBe(false)
+  })
+
+  test('gives an available recovery path when no browsers are detected', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.defaultBrowserStatus.mockResolvedValue({ supported: false, isDefault: false })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+
+    expect(screen.getByText('No browsers found')).toBeTruthy()
+    expect(screen.getByText('Install a browser on this computer, then reopen Settings to detect it.')).toBeTruthy()
+  })
+
+  test('adds a command-based custom browser with an icon and uses it in a rule', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
+    await user.type(screen.getByRole('textbox', { name: 'Custom browser name' }), 'Work browser')
+    await user.type(screen.getByRole('textbox', { name: 'Custom browser command' }), 'open -a "Zen" "<URL>"')
+    await user.click(screen.getByRole('radio', { name: 'Briefcase icon' }))
+
+    expect(within(screen.getByRole('combobox', { name: 'Fallback browser' })).getByRole('option', { name: 'Work browser' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      customBrowsers: [
         expect.objectContaining({
-          pattern: String.raw`https:\/\/github.com\/workorg\/.*`,
-          action: 'command',
-          command: 'open -a "Zen" "ext+container:name=Work&url=<URL>"',
+          displayName: 'Work browser',
+          command: 'open -a "Zen" "<URL>"',
+          icon: 'icon:briefcase',
         }),
       ],
     })))
 
-    await user.click(screen.getByRole('button', { name: 'Make SSH Man default' }))
-    await waitFor(() => expect(api.setAsDefaultBrowser).toHaveBeenCalled())
-    expect(await screen.findByText('SSH Man is your default browser.')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Rule 1 browser' }), screen.getByRole('option', { name: 'Work browser' }))
+    expect(screen.getByRole('combobox', { name: 'Rule 1 browser' }).value).toMatch(/^custom-browser-/)
+  })
+
+  test('focuses the editor for each newly created settings item', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('textbox', { name: 'Custom browser name' }),
+    ))
+
+    await user.click(screen.getByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('textbox', { name: 'Rule 1 match value' }),
+    ))
+  })
+
+  test('announces the active browser and rule summary in master-detail lists', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    const chromeRow = screen.getByRole('button', { name: 'Edit Google Chrome' })
+    const firefoxRow = screen.getByRole('button', { name: 'Edit Firefox' })
+    expect(chromeRow.getAttribute('aria-current')).toBe('true')
+    expect(firefoxRow.hasAttribute('aria-current')).toBe(false)
+
+    await user.click(firefoxRow)
+    expect(chromeRow.hasAttribute('aria-current')).toBe(false)
+    expect(firefoxRow.getAttribute('aria-current')).toBe('true')
+
+    await user.click(screen.getByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.click(screen.getByRole('button', { name: 'Starts with' }))
+    await user.type(screen.getByRole('textbox', { name: 'Rule 1 match value' }), 'https://work.example/')
+    await user.click(screen.getByRole('checkbox', { name: 'Skip selection for rule 1' }))
+
+    expect(screen.getByText('Open immediately when available. Otherwise, SSH Man shows the chooser.')).toBeTruthy()
+    expect(screen.getByRole('button', {
+      name: 'Edit rule 1: https://work.example/; Starts with; Open directly',
+    }).getAttribute('aria-current')).toBe('true')
+  })
+
+  test('explains literal rule matching against the complete link', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+
+    const matchValue = screen.getByRole('textbox', { name: 'Rule 1 match value' })
+    expect(screen.getByText('SSH Man compares this value with the complete link.')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Starts with' }))
+    expect(matchValue.placeholder).toBe('https://github.com/')
+
+    await user.click(screen.getByRole('button', { name: 'Ends with' }))
+    expect(matchValue.placeholder).toBe('/login')
+
+    await user.click(screen.getByRole('button', { name: 'Contains' }))
+    expect(matchValue.placeholder).toBe('github.com')
+  })
+
+  test('restores focus to an adjacent browser or the add button after deletion', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
+    await user.type(screen.getByRole('textbox', { name: 'Custom browser name' }), 'First browser')
+    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
+    await user.type(screen.getByRole('textbox', { name: 'Custom browser name' }), 'Second browser')
+
+    await user.click(screen.getByRole('button', { name: 'Delete custom browser' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Edit First browser' }),
+    ))
+
+    await user.click(screen.getByRole('button', { name: 'Delete custom browser' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Add custom browser' }),
+    ))
+  })
+
+  test('restores focus to an adjacent rule or the add button after deletion', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+
+    await user.click(screen.getByRole('button', { name: 'Remove rule 2' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Edit rule 1: New rule; Contains; Show chooser' }),
+    ))
+
+    await user.click(screen.getByRole('button', { name: 'Remove rule 1' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Add rule' }),
+    ))
+  })
+
+  test('restores focus to an adjacent port assignment or the add button after deletion', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy] }],
+    })
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Assign port' }))
+    await user.click(screen.getByRole('button', { name: 'Assign port' }))
+
+    await user.click(screen.getByRole('button', { name: 'Remove port assignment 1' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('spinbutton', { name: 'Port assignment 1 port' }),
+    ))
+
+    await user.click(screen.getByRole('button', { name: 'Remove port assignment 1' }))
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Assign port' }),
+    ))
+  })
+
+  test('restores focus to Add rule when the empty port-assignment fallback is disabled', async () => {
+    const user = userEvent.setup()
+    const { api, state } = createFakeApi()
+    state.preferences.urlPortAssignments = [{
+      id: 'unavailable-port-default',
+      port: 3000,
+      serverId: 'unavailable-server',
+      browserId: 'unavailable-browser',
+    }]
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    expect(screen.getByRole('button', { name: 'Assign port' }).disabled).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Remove port assignment 1' }))
+
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Add rule' }),
+    ))
+  })
+
+  test('saves literal starts-with rules that open directly', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'firefox', displayName: 'Firefox', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.click(screen.getByRole('button', { name: 'Starts with' }))
+    await user.type(screen.getByRole('textbox', { name: 'Rule 1 match value' }), 'https://work.example/')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Rule 1 browser' }), 'firefox')
+    await user.click(screen.getByRole('checkbox', { name: 'Skip selection for rule 1' }))
+    expect(screen.getByRole('button', { name: 'URL routing' }).querySelector('.settings-nav-badge').title).toBe('Unsaved changes')
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      urlRules: [
+        expect.objectContaining({
+          matchMode: 'starts_with',
+          pattern: 'https://work.example/',
+          action: 'browser',
+          browserId: 'firefox',
+          openDirect: true,
+        }),
+      ],
+    })))
+  })
+
+  test('shows backend regex validation on the rule match field', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    api.validateURLRulePattern.mockImplementation(async (matchMode, pattern) => {
+      if (matchMode === 'regex' && pattern === '(?=work)') {
+        return { valid: false, message: 'Enter a valid regular expression.' }
+      }
+      return { valid: true, message: '' }
+    })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.click(screen.getByRole('button', { name: 'Regex' }))
+    const matchValue = screen.getByRole('textbox', { name: 'Rule 1 match value' })
+    await user.type(matchValue, '(?=work)')
+
+    expect(await screen.findByText('Enter a valid regular expression.')).toBeTruthy()
+    expect(matchValue.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Save all settings' }).disabled).toBe(true)
+
+    await user.clear(matchValue)
+    await user.type(matchValue, '(?P<name>work)')
+    await waitFor(() => expect(matchValue.getAttribute('aria-invalid')).toBe('false'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save all settings' }).disabled).toBe(false))
+  })
+
+  test('retries regex validation transport failures without changing the pattern', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    let attempts = 0
+    api.validateURLRulePattern.mockImplementation(async () => {
+      attempts += 1
+      if (attempts === 1) throw new Error('bridge unavailable')
+      return { valid: true, message: '' }
+    })
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.click(screen.getByRole('button', { name: 'Regex' }))
+    const matchValue = screen.getByRole('textbox', { name: 'Rule 1 match value' })
+    await user.type(matchValue, 'work')
+
+    expect(await screen.findByText('Regular expressions could not be checked. Retry validation.')).toBeTruthy()
+    expect(matchValue.getAttribute('aria-invalid')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Save all settings' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Make SSH Man default' }).disabled).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Retry validation' }))
+
+    await waitFor(() => expect(api.validateURLRulePattern).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save all settings' }).disabled).toBe(false))
+    expect(screen.getByRole('button', { name: 'Make SSH Man default' }).disabled).toBe(false)
+    expect(matchValue.value).toBe('work')
+  })
+
+  test('surfaces cross-page validation when saving shared browser and routing settings', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.click(screen.getByRole('button', { name: 'Browsers' }))
+
+    expect(screen.getByRole('button', { name: 'Save all settings' }).disabled).toBe(true)
+    expect(screen.getByText('1 URL routing field needs attention.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'URL routing' }).querySelector('.settings-nav-badge').title).toBe('1 field needs attention')
+  })
+
+  test('retains unsaved browser changes when persistence fails', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    let rejectSave
+    api.savePreferences.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      rejectSave = reject
+    }))
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
+
+    expect(screen.getByRole('status').textContent).toBe('Saving browser and routing settings…')
+    await act(async () => rejectSave(new Error('Preference write failed.')))
+
+    expect(await screen.findByText('Your preference could not be saved.')).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'Enable Safari' }).checked).toBe(false)
+    expect(screen.getByRole('button', { name: 'Save all settings' }).disabled).toBe(false)
+    expect(screen.getByText('Unsaved browser and routing changes are ready to save.', {
+      selector: '.settings-save-bar [role="status"]',
+    })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Browsers' }).querySelector('.settings-nav-badge').title).toBe('Unsaved changes')
+  })
+
+  test('retains newer browser changes when an earlier save succeeds', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    let resolveSave
+    api.savePreferences.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSave = resolve
+    }))
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Google Chrome' }))
+    await act(async () => resolveSave())
+
+    expect(screen.getByRole('checkbox', { name: 'Enable Safari' }).checked).toBe(false)
+    expect(screen.getByRole('checkbox', { name: 'Enable Google Chrome' }).checked).toBe(false)
+    expect(screen.getByText('Unsaved browser and routing changes are ready to save.', {
+      selector: '.settings-save-bar [role="status"]',
+    })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Browsers' }).querySelector('.settings-nav-badge').title).toBe('Unsaved changes')
+  })
+
+  test('guards explicit and native settings close requests while changes are unsaved', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'Close Settings' }))
+
+    let dialog = screen.getByRole('dialog', { name: 'Unsaved settings' })
+    expect(within(dialog).getByRole('button', { name: 'Save all settings' })).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    expect(api.quitApplication).not.toHaveBeenCalled()
+    await waitFor(() => expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Close Settings' }),
+    ))
+
+    const safariToggle = screen.getByRole('checkbox', { name: 'Enable Safari' })
+    safariToggle.focus()
+    act(() => api.settingsCloseListener())
+    dialog = screen.getByRole('dialog', { name: 'Unsaved settings' })
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(document.activeElement).toBe(safariToggle))
+
+    act(() => api.settingsCloseListener())
+    dialog = screen.getByRole('dialog', { name: 'Unsaved settings' })
+    await user.click(within(dialog).getByRole('button', { name: 'Discard changes' }))
+
+    await waitFor(() => expect(api.allowSettingsWindowClose).toHaveBeenCalledTimes(1))
+    expect(api.quitApplication).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps discard available while regular expressions are still being checked', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    api.validateURLRulePattern.mockImplementation(() => new Promise(() => {}))
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.click(screen.getByRole('button', { name: 'Regex' }))
+    await user.type(screen.getByRole('textbox', { name: 'Rule 1 match value' }), 'work')
+    expect(await screen.findByText('Checking regular expressions…')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Close Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'Unsaved settings' })
+    expect(within(dialog).getByRole('button', { name: 'Keep editing' }).disabled).toBe(false)
+    expect(within(dialog).getByRole('button', { name: 'Discard changes' }).disabled).toBe(false)
+    expect(within(dialog).queryByRole('button', { name: 'Save all settings' })).toBeNull()
+    expect(within(dialog).getByText('Regular expressions are still being checked. Keep editing or discard these changes.')).toBeTruthy()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard changes' }))
+    await waitFor(() => expect(api.allowSettingsWindowClose).toHaveBeenCalledTimes(1))
+    expect(api.quitApplication).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps unsaved settings guarded while the browser customizer is open', async () => {
+    const user = userEvent.setup()
+    const runningBrowser = {
+      id: 'browser:101',
+      pid: 101,
+      browserId: 'google-chrome',
+      browserName: 'Google Chrome',
+      kind: 'regular',
+    }
+    const { api } = createFakeApi({ runningBrowsers: [runningBrowser] })
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'General' }))
+    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    expect(await screen.findByRole('dialog', { name: 'Switch browser' })).toBeTruthy()
+
+    act(() => api.settingsCloseListener())
+
+    const dialog = await screen.findByRole('dialog', { name: 'Unsaved settings' })
+    expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull()
+    expect(api.allowSettingsWindowClose).not.toHaveBeenCalled()
+    expect(api.quitApplication).not.toHaveBeenCalled()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    await user.click(screen.getByRole('button', { name: 'Browsers' }))
+    expect(screen.getByRole('checkbox', { name: 'Enable Safari' }).checked).toBe(false)
+  })
+
+  test('keeps settings notifications outside the browser customizer modal', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
+    expect(await screen.findByText('Browser and routing settings saved.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Dismiss message' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'General' }))
+    await user.click(screen.getByRole('button', { name: 'Customize' }))
+    expect(await screen.findByRole('dialog', { name: 'Switch browser' })).toBeTruthy()
+    expect(screen.queryByText('Browser and routing settings saved.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Dismiss message' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Close browser switcher' }))
+    expect(await screen.findByText('Browser and routing settings saved.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Dismiss message' })).toBeTruthy()
+  })
+
+  test('allows the frontend to close immediately after a clean native close request', async () => {
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    await screen.findByRole('heading', { name: 'General' })
+    act(() => api.settingsCloseListener())
+
+    await waitFor(() => expect(api.allowSettingsWindowClose).toHaveBeenCalledTimes(1))
+    expect(api.quitApplication).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog', { name: 'Unsaved settings' })).toBeNull()
+  })
+
+  test('allows native close while settings are still loading', async () => {
+    const { api } = createFakeApi()
+    api.loadInitialState.mockImplementationOnce(() => new Promise(() => {}))
+    renderSettingsApp(api)
+
+    await waitFor(() => expect(api.onSettingsCloseRequested).toHaveBeenCalledTimes(1))
+    act(() => api.settingsCloseListener())
+
+    await waitFor(() => expect(api.allowSettingsWindowClose).toHaveBeenCalledTimes(1))
+    expect(api.quitApplication).toHaveBeenCalledTimes(1)
+  })
+
+  test('allows native close after settings fail to load', async () => {
+    const { api } = createFakeApi()
+    api.loadInitialState.mockRejectedValueOnce(new Error('Settings load failed.'))
+    renderSettingsApp(api)
+
+    expect(await screen.findByRole('heading', { name: 'Settings did not load' })).toBeTruthy()
+    act(() => api.settingsCloseListener())
+
+    await waitFor(() => expect(api.allowSettingsWindowClose).toHaveBeenCalledTimes(1))
+    expect(api.quitApplication).toHaveBeenCalledTimes(1)
+  })
+
+  test('saves valid settings from the close guard before closing', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'Close Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'Unsaved settings' })
+    await user.click(within(dialog).getByRole('button', { name: 'Save all settings' }))
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalled())
+    expect(api.allowSettingsWindowClose).toHaveBeenCalledTimes(1)
+    expect(api.quitApplication).toHaveBeenCalledTimes(1)
+  })
+
+  test('shows save failures inside the unsaved-settings close guard', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+      { id: 'safari', displayName: 'Safari', supportsProxyLaunch: false },
+    ])
+    api.savePreferences.mockRejectedValueOnce(new Error('Preference write failed.'))
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Safari' }))
+    await user.click(screen.getByRole('button', { name: 'Close Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'Unsaved settings' })
+    await user.click(within(dialog).getByRole('button', { name: 'Save all settings' }))
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Settings could not be saved. Your changes are still here. Try again or keep editing.',
+    )
+    expect(within(dialog).getByRole('button', { name: 'Save all settings' }).disabled).toBe(false)
+    expect(api.allowSettingsWindowClose).not.toHaveBeenCalled()
+    expect(api.quitApplication).not.toHaveBeenCalled()
+  })
+
+  test('requires invalid settings to be fixed or discarded before closing', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    act(() => api.settingsCloseListener())
+
+    const dialog = screen.getByRole('dialog', { name: 'Unsaved settings' })
+    expect(within(dialog).queryByRole('button', { name: 'Save all settings' })).toBeNull()
+    expect(within(dialog).getByText('Fix the fields that need attention, or discard these changes.')).toBeTruthy()
+  })
+
+  test('associates custom browser validation with its fields', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
+
+    const name = screen.getByRole('textbox', { name: 'Custom browser name' })
+    const command = screen.getByRole('textbox', { name: 'Custom browser command' })
+    expect(document.getElementById(name.getAttribute('aria-describedby')).textContent).toBe('Add a name for this browser.')
+    expect(document.getElementById(command.getAttribute('aria-describedby')).textContent).toContain('Add a command that includes <URL>.')
+  })
+
+  test('explains that browser commands use macOS open', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
+
+    expect(screen.getByText((_, element) => (
+      element.tagName === 'SMALL' &&
+      /use a macOS open command/i.test(element.textContent)
+    ))).toBeTruthy()
+  })
+
+  test('repairs empty rule and port browser references after re-enabling a browser', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy, savedTunnel] }],
+    })
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
+    await user.type(screen.getByRole('textbox', { name: 'Rule 1 match value' }), 'work.example')
+    await user.click(screen.getByRole('button', { name: 'Assign port' }))
+    await user.type(screen.getByRole('spinbutton', { name: 'Port assignment 1 port' }), '3000')
+
+    await user.click(screen.getByRole('button', { name: 'Browsers' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Google Chrome' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Enable Google Chrome' }))
+    await user.click(screen.getByRole('button', { name: 'URL routing' }))
+
+    const ruleBrowser = screen.getByRole('combobox', { name: 'Rule 1 browser' })
+    const portBrowser = screen.getByRole('combobox', { name: 'Port assignment 1 browser' })
+    expect(ruleBrowser.value).toBe('')
+    expect(portBrowser.value).toBe('')
+    expect(within(ruleBrowser).getByRole('option', { name: 'Choose a browser' }).selected).toBe(true)
+    expect(within(portBrowser).getByRole('option', { name: 'Choose a browser' }).selected).toBe(true)
+
+    await user.selectOptions(ruleBrowser, 'google-chrome')
+    await user.selectOptions(portBrowser, 'google-chrome')
+    expect(ruleBrowser.getAttribute('aria-invalid')).toBe('false')
+    expect(portBrowser.getAttribute('aria-invalid')).toBe('false')
   })
 
   test('assigns an explicit URL port to a browser and saved host', async () => {
@@ -762,14 +1751,14 @@ describe('React application flows', () => {
     ])
     renderSettingsApp(api)
 
-    await screen.findByRole('heading', { name: 'URL routing' })
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
     const assignPortButton = screen.getByRole('button', { name: 'Assign port' })
     await waitFor(() => expect(assignPortButton.disabled).toBe(false))
     await user.click(assignPortButton)
     await user.type(screen.getByRole('spinbutton', { name: 'Port assignment 1 port' }), '3000')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Port assignment 1 host' }), savedServer.id)
     await user.selectOptions(screen.getByRole('combobox', { name: 'Port assignment 1 browser' }), 'firefox')
-    await user.click(screen.getByRole('button', { name: 'Save URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
 
     await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
       urlPortAssignments: [
@@ -782,6 +1771,24 @@ describe('React application flows', () => {
     })))
   })
 
+  test('shows and associates port-default validation errors', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [managedBrowserProxy, savedTunnel] }],
+    })
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderSettingsApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'URL routing' }))
+    await user.click(screen.getByRole('button', { name: 'Assign port' }))
+
+    const port = screen.getByRole('spinbutton', { name: 'Port assignment 1 port' })
+    expect(port.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(port.getAttribute('aria-describedby')).textContent).toBe('Enter a port from 1 to 65535.')
+  })
+
   test('offers installed Zen for regular and SOCKS URL routing', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi()
@@ -792,39 +1799,10 @@ describe('React application flows', () => {
     renderSettingsApp(api)
 
     await waitFor(() => expect(api.discoverBrowsers).toHaveBeenCalled())
+    await user.click(screen.getByRole('button', { name: 'Browsers' }))
 
     expect(within(screen.getByRole('combobox', { name: 'Fallback browser' })).getByRole('option', { name: 'Zen' })).toBeTruthy()
     expect(within(screen.getByRole('combobox', { name: 'SOCKS proxy browser' })).getByRole('option', { name: 'Zen' })).toBeTruthy()
-  })
-
-  test('adds an arbitrary browser with explicit engine compatibility', async () => {
-    const user = userEvent.setup()
-    const { api } = createFakeApi()
-    api.discoverBrowsers.mockResolvedValue([
-      { id: 'google-chrome', displayName: 'Google Chrome', engine: 'chromium', supportsProxyLaunch: true },
-    ])
-    renderSettingsApp(api)
-
-    await screen.findByRole('heading', { name: 'URL routing' })
-    await user.click(screen.getByRole('button', { name: 'Add custom browser' }))
-    await user.type(screen.getByRole('textbox', { name: 'Custom browser 1 name' }), 'Kagi Browser')
-    await user.click(screen.getByRole('button', { name: 'Browse for custom browser 1' }))
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Custom browser 1 engine' }), 'chromium')
-
-    expect(api.chooseBrowserApplication).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('textbox', { name: 'Custom browser 1 application path' }).value).toBe('/Applications/Kagi Browser.app')
-    expect(within(screen.getByRole('combobox', { name: 'Fallback browser' })).getByRole('option', { name: 'Kagi Browser' })).toBeTruthy()
-
-    await user.click(screen.getByRole('button', { name: 'Save URL routing' }))
-    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
-      customBrowsers: [
-        expect.objectContaining({
-          displayName: 'Kagi Browser',
-          launchReference: '/Applications/Kagi Browser.app',
-          engine: 'chromium',
-        }),
-      ],
-    })))
   })
 
   test('shows a timed destination chooser for opened URLs', async () => {
@@ -844,6 +1822,7 @@ describe('React application flows', () => {
         timeoutMilliseconds: 5000,
         choices: [
           { id: 'browser:safari', kind: 'browser', label: 'Safari', detail: 'Regular browser', browserId: 'safari' },
+          { id: 'browser:work', kind: 'command', label: 'Work browser', detail: 'Custom browser', browserId: 'work', icon: 'icon:briefcase' },
           { id: 'proxy:server-socks:staging:google-chrome', kind: 'proxy', label: 'Google Chrome through Staging', detail: 'SOCKS5 proxy', serverId: 'staging', serverName: 'Staging', configurationId: 'server-socks:staging', browserId: 'google-chrome' },
         ],
       })
@@ -853,6 +1832,8 @@ describe('React application flows', () => {
     expect(within(dialog).getByText('http://localhost:3000/dashboard')).toBeTruthy()
     expect(within(dialog).getByText('Opening Safari in 5s')).toBeTruthy()
     const proxyChoice = within(dialog).getByRole('option', { name: 'Open in Google Chrome through Staging' })
+    const customChoice = within(dialog).getByRole('option', { name: 'Open in Work browser' })
+    expect(customChoice.querySelector('.lucide-briefcase')).toBeTruthy()
     expect(proxyChoice.textContent).toContain('🚀')
     expect(proxyChoice.style.getPropertyValue('--browser-primary')).toBe('#22C55E')
     await user.click(proxyChoice)
@@ -861,6 +1842,74 @@ describe('React application flows', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose where to open this link' })).toBeNull())
     expect(api.setURLRouteWindowMode).toHaveBeenCalledWith(true)
     expect(api.hideApplicationWindow).toHaveBeenCalled()
+  })
+
+  test('dismisses an open URL chooser when browser routing preferences change', async () => {
+    const { api, state } = createFakeApi()
+    renderApp(api)
+    await waitFor(() => expect(api.urlRouteChoiceListener).toBeTypeOf('function'))
+    await waitFor(() => expect(api.preferencesChangedListener).toBeTypeOf('function'))
+
+    act(() => {
+      api.urlRouteChoiceListener({
+        id: 'route-stale',
+        url: 'https://example.com',
+        defaultChoiceId: 'browser:chrome',
+        timeoutMilliseconds: 5000,
+        choices: [
+          { id: 'browser:chrome', kind: 'browser', label: 'Chrome', browserId: 'chrome' },
+        ],
+      })
+    })
+    await screen.findByRole('dialog', { name: 'Choose where to open this link' })
+
+    state.preferences.disabledBrowserIds = ['chrome']
+    act(() => api.preferencesChangedListener(clone(state.preferences)))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose where to open this link' })).toBeNull())
+    expect(api.dismissURLRoute).toHaveBeenCalledWith('route-stale')
+    expect(api.hideApplicationWindow).toHaveBeenCalled()
+  })
+
+  test('dismisses a delayed pending URL route invalidated by browser preferences', async () => {
+    let resolvePendingRoute
+    let backendPendingRoute = null
+    const pendingRoutePromise = new Promise((resolve) => { resolvePendingRoute = resolve })
+    const { api, state } = createFakeApi()
+    api.pendingURLRoute
+      .mockImplementationOnce(() => pendingRoutePromise)
+      .mockImplementation(async () => backendPendingRoute)
+    api.dismissURLRoute.mockImplementation(async (requestId) => {
+      if (backendPendingRoute?.id === requestId) backendPendingRoute = null
+    })
+    const firstWindow = renderApp(api)
+    await waitFor(() => expect(api.preferencesChangedListener).toBeTypeOf('function'))
+
+    state.preferences.disabledBrowserIds = ['chrome']
+    act(() => api.preferencesChangedListener(clone(state.preferences)))
+
+    const staleRoute = {
+      id: 'route-delayed',
+      url: 'https://example.com',
+      defaultChoiceId: 'browser:chrome',
+      timeoutMilliseconds: 5000,
+      choices: [
+        { id: 'browser:chrome', kind: 'browser', label: 'Chrome', browserId: 'chrome' },
+      ],
+    }
+    await act(async () => {
+      backendPendingRoute = staleRoute
+      resolvePendingRoute(staleRoute)
+      await pendingRoutePromise
+    })
+
+    expect(screen.queryByRole('dialog', { name: 'Choose where to open this link' })).toBeNull()
+    expect(api.dismissURLRoute).toHaveBeenCalledWith('route-delayed')
+    firstWindow.unmount()
+
+    renderApp(api)
+    await waitFor(() => expect(api.pendingURLRoute).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('dialog', { name: 'Choose where to open this link' })).toBeNull()
   })
 
   test('customizes a running proxy browser with a persistent icon and color', async () => {
@@ -939,6 +1988,103 @@ describe('React application flows', () => {
     expect(nextOptions[1].getAttribute('aria-selected')).toBe('true')
     expect(nextOptions[1].textContent).toContain('Chrome two')
     expect(api.listRunningBrowsers).toHaveBeenCalledTimes(2)
+  })
+
+  test('closes an open browser switcher when browser preferences change', async () => {
+    const browser = { id: 'browser:101', pid: 101, browserId: 'google-chrome', browserName: 'Chrome', kind: 'regular' }
+    const { api, state } = createFakeApi({ runningBrowsers: [browser] })
+    renderApp(api)
+    await waitFor(() => expect(api.browserSwitcherListener).toBeTypeOf('function'))
+    await waitFor(() => expect(api.preferencesChangedListener).toBeTypeOf('function'))
+
+    await act(async () => api.browserSwitcherListener({ direction: 'forward', sessionId: 'stale-browser' }))
+    await screen.findByRole('option', { name: /Chrome/ })
+
+    state.preferences.disabledBrowserIds = ['google-chrome']
+    act(() => api.preferencesChangedListener(clone(state.preferences)))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Switch browser' })).toBeNull())
+    act(() => api.browserSwitcherCommitListener({ sessionId: 'stale-browser' }))
+    expect(api.activateRunningBrowser).not.toHaveBeenCalled()
+    expect(api.hideApplicationWindow).toHaveBeenCalled()
+  })
+
+  test('clears and reloads tunnel browser choices when browser preferences change', async () => {
+    const user = userEvent.setup()
+    const socksTunnel = {
+      ...managedBrowserProxy,
+      id: 'tunnel-socks-1',
+      label: 'Team proxy',
+    }
+    const connected = {
+      ...stoppedSession,
+      configurationId: socksTunnel.id,
+      status: 'connected',
+      boundPort: socksTunnel.socksPort,
+    }
+    const chrome = { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true }
+    const zen = { id: 'zen', displayName: 'Zen', supportsProxyLaunch: true }
+    const { api, state } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [socksTunnel] }],
+      sessions: [connected],
+    })
+    api.discoverBrowsers
+      .mockResolvedValueOnce([chrome])
+      .mockResolvedValueOnce([zen])
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
+    await user.click((await screen.findByText('Team proxy')).closest('button'))
+    expect(await screen.findByRole('option', { name: 'Google Chrome' })).toBeTruthy()
+    await waitFor(() => expect(api.preferencesChangedListener).toBeTypeOf('function'))
+
+    state.preferences.disabledBrowserIds = ['google-chrome']
+    act(() => api.preferencesChangedListener(clone(state.preferences)))
+
+    expect(screen.queryByRole('option', { name: 'Google Chrome' })).toBeNull()
+    expect(screen.getByText('Finding browsers…')).toBeTruthy()
+    expect(await screen.findByRole('option', { name: 'Zen' })).toBeTruthy()
+    expect(api.discoverBrowsers).toHaveBeenCalledTimes(2)
+  })
+
+  test('ignores tunnel browser discovery started before browser preferences changed', async () => {
+    const user = userEvent.setup()
+    let resolveStaleBrowsers
+    const staleBrowsers = new Promise((resolve) => { resolveStaleBrowsers = resolve })
+    const socksTunnel = {
+      ...managedBrowserProxy,
+      id: 'tunnel-socks-race',
+      label: 'Race-safe proxy',
+    }
+    const connected = {
+      ...stoppedSession,
+      configurationId: socksTunnel.id,
+      status: 'connected',
+      boundPort: socksTunnel.socksPort,
+    }
+    const { api, state } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [socksTunnel] }],
+      sessions: [connected],
+    })
+    api.discoverBrowsers
+      .mockImplementationOnce(() => staleBrowsers)
+      .mockResolvedValueOnce([{ id: 'zen', displayName: 'Zen', supportsProxyLaunch: true }])
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Open Production bastion details' }))
+    await user.click((await screen.findByText('Race-safe proxy')).closest('button'))
+    await waitFor(() => expect(api.discoverBrowsers).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(api.preferencesChangedListener).toBeTypeOf('function'))
+
+    state.preferences.disabledBrowserIds = ['google-chrome']
+    act(() => api.preferencesChangedListener(clone(state.preferences)))
+
+    expect(await screen.findByRole('option', { name: 'Zen' })).toBeTruthy()
+    await act(async () => {
+      resolveStaleBrowsers([{ id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true }])
+      await staleBrowsers
+    })
+    expect(screen.queryByRole('option', { name: 'Google Chrome' })).toBeNull()
   })
 
   test('queues shortcut directions and commit received while browsers are loading', async () => {

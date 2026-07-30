@@ -1,9 +1,15 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
+
+	preferencesdomain "ssh-man/internal/domain/preferences"
 )
 
 func TestRunMigrationsUpgradesLegacyBrowserSwitcherDefaults(t *testing.T) {
@@ -186,6 +192,158 @@ func TestRunMigrationsAddsCustomBrowsersDefaultToLegacySchema(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsSeparatesNewBrowserDataFromPreviousReaderColumns(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+	if _, err := db.Exec(`
+		ALTER TABLE user_preferences
+			ADD COLUMN custom_browsers_json TEXT NOT NULL DEFAULT '[]';
+		ALTER TABLE user_preferences
+			ADD COLUMN url_rules_json TEXT NOT NULL DEFAULT '[]';
+		UPDATE user_preferences
+		SET custom_browsers_json = ?,
+		    url_rules_json = ?
+		WHERE id = 1
+	`, `[
+		{"id":"legacy-kagi","displayName":"Kagi Browser","launchReference":"/Applications/Kagi Browser.app","engine":"chromium"},
+		{"id":"command-work","displayName":"Work Browser","command":"open -a \"Safari\" \"<URL>\"","icon":"icon:briefcase"}
+	]`, `[
+		{"id":"literal-bracket","matchMode":"contains","pattern":"[work]","action":"browser","browserId":"command-work","openDirect":true}
+	]`); err != nil {
+		t.Fatalf("seed previous browser storage: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	var legacyBrowsersJSON, commandBrowsersJSON, legacyRulesJSON, browserRulesJSON string
+	if err := db.QueryRow(`
+		SELECT custom_browsers_json, command_browsers_json,
+		       url_rules_json, browser_routing_rules_json
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&legacyBrowsersJSON, &commandBrowsersJSON, &legacyRulesJSON, &browserRulesJSON); err != nil {
+		t.Fatalf("load migrated browser storage: %v", err)
+	}
+
+	var legacyBrowsers []preferencesdomain.CustomBrowser
+	if err := json.Unmarshal([]byte(legacyBrowsersJSON), &legacyBrowsers); err != nil {
+		t.Fatalf("decode migrated legacy browsers: %v", err)
+	}
+	if len(legacyBrowsers) != 1 || legacyBrowsers[0].ID != "legacy-kagi" || legacyBrowsers[0].Command != "" {
+		t.Fatalf("migrated legacy browsers = %#v", legacyBrowsers)
+	}
+	var commandBrowsers []preferencesdomain.CustomBrowser
+	if err := json.Unmarshal([]byte(commandBrowsersJSON), &commandBrowsers); err != nil {
+		t.Fatalf("decode migrated command browsers: %v", err)
+	}
+	if len(commandBrowsers) != 1 || commandBrowsers[0].ID != "command-work" {
+		t.Fatalf("migrated command browsers = %#v", commandBrowsers)
+	}
+
+	var legacyRules []struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.Unmarshal([]byte(legacyRulesJSON), &legacyRules); err != nil {
+		t.Fatalf("decode migrated legacy rules: %v", err)
+	}
+	if len(legacyRules) != 1 {
+		t.Fatalf("migrated legacy rules = %#v", legacyRules)
+	}
+	if _, err := regexp.Compile(legacyRules[0].Pattern); err != nil {
+		t.Fatalf("migrated compatibility pattern %q is not valid regex: %v", legacyRules[0].Pattern, err)
+	}
+	var browserRules []preferencesdomain.URLRule
+	if err := json.Unmarshal([]byte(browserRulesJSON), &browserRules); err != nil {
+		t.Fatalf("decode migrated browser rules: %v", err)
+	}
+	if len(browserRules) != 1 || browserRules[0].MatchMode != preferencesdomain.URLRuleMatchContains || !browserRules[0].OpenDirect {
+		t.Fatalf("migrated browser rules = %#v", browserRules)
+	}
+}
+
+func TestRunMigrationsPreservesMalformedBrowserPreferencesForRecovery(t *testing.T) {
+	validCustomBrowsers := `[
+		{"id":"command-work","displayName":"Work Browser","command":"open -a \"Safari\" \"<URL>\"","icon":"icon:briefcase"}
+	]`
+	validURLRules := `[
+		{"id":"literal-work","matchMode":"contains","pattern":"[work]","action":"browser","browserId":"command-work","openDirect":true}
+	]`
+	tests := []struct {
+		name                 string
+		customBrowsersJSON   string
+		urlRulesJSON         string
+		wantCommandMigrated  bool
+		wantURLRulesMigrated bool
+		wantLoadError        string
+	}{
+		{
+			name:                 "malformed custom browsers",
+			customBrowsersJSON:   "{",
+			urlRulesJSON:         validURLRules,
+			wantURLRulesMigrated: true,
+			wantLoadError:        "load custom browsers",
+		},
+		{
+			name:                "malformed URL rules",
+			customBrowsersJSON:  validCustomBrowsers,
+			urlRulesJSON:        "{",
+			wantCommandMigrated: true,
+			wantLoadError:       "load URL rules",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := openUnmigratedDatabase(t)
+			createLegacyPreferences(t, db, false, "")
+			if _, err := db.Exec(`
+				ALTER TABLE user_preferences
+					ADD COLUMN custom_browsers_json TEXT NOT NULL DEFAULT '[]';
+				ALTER TABLE user_preferences
+					ADD COLUMN url_rules_json TEXT NOT NULL DEFAULT '[]';
+				UPDATE user_preferences
+				SET custom_browsers_json = ?,
+				    url_rules_json = ?
+				WHERE id = 1
+			`, test.customBrowsersJSON, test.urlRulesJSON); err != nil {
+				t.Fatalf("seed browser preferences: %v", err)
+			}
+
+			if err := RunMigrations(db); err != nil {
+				t.Fatalf("run migrations: %v", err)
+			}
+
+			var legacyCustomBrowsers, legacyURLRules string
+			var commandBrowsers, browserRoutingRules sql.NullString
+			if err := db.QueryRow(`
+				SELECT custom_browsers_json, command_browsers_json,
+				       url_rules_json, browser_routing_rules_json
+				FROM user_preferences
+				WHERE id = 1
+			`).Scan(&legacyCustomBrowsers, &commandBrowsers, &legacyURLRules, &browserRoutingRules); err != nil {
+				t.Fatalf("load migrated browser preferences: %v", err)
+			}
+			if test.wantCommandMigrated != commandBrowsers.Valid {
+				t.Fatalf("command browser migration valid = %t, want %t", commandBrowsers.Valid, test.wantCommandMigrated)
+			}
+			if test.wantURLRulesMigrated != browserRoutingRules.Valid {
+				t.Fatalf("browser rule migration valid = %t, want %t", browserRoutingRules.Valid, test.wantURLRulesMigrated)
+			}
+			if !test.wantCommandMigrated && legacyCustomBrowsers != test.customBrowsersJSON {
+				t.Fatalf("legacy custom browsers = %q, want preserved malformed input %q", legacyCustomBrowsers, test.customBrowsersJSON)
+			}
+			if !test.wantURLRulesMigrated && legacyURLRules != test.urlRulesJSON {
+				t.Fatalf("legacy URL rules = %q, want preserved malformed input %q", legacyURLRules, test.urlRulesJSON)
+			}
+			if _, err := NewPreferencesStore(db).Load(context.Background()); err == nil || !strings.Contains(err.Error(), test.wantLoadError) {
+				t.Fatalf("preference load error = %v, want recoverable %q error", err, test.wantLoadError)
+			}
+		})
+	}
+}
+
 func TestRunMigrationsAddsServerSOCKSPortToLegacySchema(t *testing.T) {
 	db := openUnmigratedDatabase(t)
 	if _, err := db.Exec(`
@@ -239,6 +397,26 @@ func TestRunMigrationsAddsURLPortAssignments(t *testing.T) {
 	}
 	if assignments != "[]" {
 		t.Fatalf("migrated assignments = %q, want []", assignments)
+	}
+}
+
+func TestRunMigrationsAddsDisabledBrowserIDs(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	var disabled string
+	if err := db.QueryRow(`
+		SELECT disabled_browser_ids_json
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&disabled); err != nil {
+		t.Fatalf("load migrated disabled browser ids: %v", err)
+	}
+	if disabled != "[]" {
+		t.Fatalf("migrated disabled browser ids = %q, want []", disabled)
 	}
 }
 
