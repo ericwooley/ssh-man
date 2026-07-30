@@ -319,11 +319,11 @@ winget uninstall --exact --id EricWooley.SSHMan.Experimental
 winget install --exact --id EricWooley.SSHMan --source winget
 ```
 
-Uninstall the current channel before switching so shortcuts and HTTP/HTTPS
-handler registration move together. Both packages keep the same SSH Man
-configuration. The stable package changes only when an experimental release is
-explicitly promoted. New versions become available after the WinGet Community
-Repository processes their submitted manifests.
+Uninstall the current channel before switching because side-by-side installs
+are not supported. Both packages keep the same SSH Man configuration. The
+stable package changes only when an experimental release is explicitly
+promoted. New versions become available after the WinGet Community Repository
+processes their submitted manifests.
 
 ### Build from source
 

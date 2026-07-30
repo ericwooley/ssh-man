@@ -98,9 +98,6 @@ installer_manifest = <<~YAML
     - interactive
     - silent
   UpgradeBehavior: install
-  Protocols:
-    - http
-    - https
   Installers:
     - Architecture: x64
       InstallerUrl: #{installer_url}

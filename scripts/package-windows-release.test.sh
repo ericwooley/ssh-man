@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGER="$ROOT_DIR/scripts/package-windows-release.sh"
 INSTALLER_TEMPLATE="$ROOT_DIR/build/windows/installer/project.nsi"
+LIFECYCLE_TEST="$ROOT_DIR/scripts/test-windows-installer-lifecycle.ps1"
+RELEASE_WORKFLOW="$ROOT_DIR/.github/workflows/release.yml"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ssh-man-windows-package-test.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -19,6 +21,15 @@ assert_contains() {
 
   grep -Fq -- "$expected" "$file_path" ||
     fail "expected $file_path to contain: $expected"
+}
+
+assert_not_contains() {
+  local file_path="$1"
+  local unexpected="$2"
+
+  if grep -Fq -- "$unexpected" "$file_path"; then
+    fail "expected $file_path not to contain: $unexpected"
+  fi
 }
 
 fixture_root="$TEST_ROOT/project"
@@ -130,5 +141,19 @@ assert_contains "$INSTALLER_TEMPLATE" '!define STABLE_PRODUCT_CODE "tech.moonpix
 assert_contains "$INSTALLER_TEMPLATE" '!define EXPERIMENTAL_PRODUCT_CODE "tech.moonpixels.ssh-man.experimental"'
 assert_contains "$INSTALLER_TEMPLATE" 'SSH_MAN_CHANNEL'
 assert_contains "$INSTALLER_TEMPLATE" 'SSH_MAN_VERSION'
+assert_contains "$INSTALLER_TEMPLATE" 'File "/oname=${PRODUCT_EXECUTABLE}.new"'
+assert_contains "$INSTALLER_TEMPLATE" 'Rename "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.old"'
+assert_contains "$INSTALLER_TEMPLATE" 'IfErrors binaryInstallFailed'
+assert_contains "$INSTALLER_TEMPLATE" 'SetErrorLevel 1'
+assert_not_contains "$INSTALLER_TEMPLATE" '!insertmacro wails.files'
+assert_not_contains "$INSTALLER_TEMPLATE" '!insertmacro wails.associateCustomProtocols'
+assert_not_contains "$INSTALLER_TEMPLATE" '!insertmacro wails.unassociateCustomProtocols'
+
+assert_contains "$RELEASE_WORKFLOW" 'test-windows-installers:'
+assert_contains "$RELEASE_WORKFLOW" 'pwsh ./scripts/test-windows-installer-lifecycle.ps1'
+assert_contains "$RELEASE_WORKFLOW" '- test-windows-installers'
+assert_contains "$LIFECYCLE_TEST" 'function Test-InstallerChannel'
+assert_contains "$LIFECYCLE_TEST" 'Silent upgrade changed the installed executable after reporting failure.'
+assert_contains "$LIFECYCLE_TEST" 'Installer lifecycle tests passed.'
 
 printf 'Windows release packaging tests passed.\n'

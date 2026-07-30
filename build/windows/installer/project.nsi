@@ -74,13 +74,50 @@ Section
   !insertmacro wails.webview2runtime
 
   SetOutPath $INSTDIR
-  !insertmacro wails.files
 
+  Delete "$INSTDIR\${PRODUCT_EXECUTABLE}.new"
+  ClearErrors
+  File "/oname=${PRODUCT_EXECUTABLE}.new" "${ARG_WAILS_AMD64_BINARY}"
+  IfErrors binaryInstallFailed
+
+  IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}.old" 0 binaryCheckExisting
+  ClearErrors
+  Delete "$INSTDIR\${PRODUCT_EXECUTABLE}.old"
+  IfErrors binaryInstallFailed
+
+binaryCheckExisting:
+  IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" 0 binaryPromote
+  ClearErrors
+  Rename "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.old"
+  IfErrors binaryInstallFailed
+
+binaryPromote:
+  ClearErrors
+  Rename "$INSTDIR\${PRODUCT_EXECUTABLE}.new" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+  IfErrors binaryRestoreExisting
+  Delete /REBOOTOK "$INSTDIR\${PRODUCT_EXECUTABLE}.old"
+  Goto binaryInstalled
+
+binaryRestoreExisting:
+  Rename "$INSTDIR\${PRODUCT_EXECUTABLE}.old" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+
+binaryInstallFailed:
+  Delete "$INSTDIR\${PRODUCT_EXECUTABLE}.new"
+  IfSilent binarySetFailure binaryShowFailure
+
+binaryShowFailure:
+  MessageBox MB_ICONSTOP|MB_OK \
+    "SSH Man could not be updated. Close SSH Man and run the installer again."
+
+binarySetFailure:
+  SetErrorLevel 1
+  Abort
+
+binaryInstalled:
   CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
   CreateShortcut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
   !insertmacro wails.associateFiles
-  !insertmacro wails.associateCustomProtocols
   !insertmacro wails.writeUninstaller
 SectionEnd
 
@@ -94,6 +131,5 @@ Section "uninstall"
   Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
 
   !insertmacro wails.unassociateFiles
-  !insertmacro wails.unassociateCustomProtocols
   !insertmacro wails.deleteUninstaller
 SectionEnd

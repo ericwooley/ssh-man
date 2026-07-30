@@ -70,6 +70,7 @@ assert_contains "$stable_installer" 'InstallerUrl: https://github.com/ericwooley
 assert_contains "$stable_installer" "InstallerSha256: $stable_sha"
 assert_contains "$stable_installer" 'ProductCode: tech.moonpixels.ssh-man'
 assert_contains "$stable_installer" 'DisplayName: SSH Man'
+assert_not_contains "$stable_installer" 'Protocols:'
 
 experimental_sha="$(printf 'b%.0s' {1..64})"
 experimental_dir="$TEST_ROOT/experimental"
@@ -90,6 +91,7 @@ assert_contains "$experimental_installer" 'InstallerUrl: https://github.com/eric
 assert_contains "$experimental_installer" "InstallerSha256: $experimental_sha"
 assert_contains "$experimental_installer" 'ProductCode: tech.moonpixels.ssh-man.experimental'
 assert_contains "$experimental_installer" 'DisplayName: SSH Man Experimental'
+assert_not_contains "$experimental_installer" 'Protocols:'
 
 assert_rejected "unknown-channel" nightly 2.3.4 "$stable_sha"
 assert_rejected "invalid-version" stable v2.3.4 "$stable_sha"
@@ -115,5 +117,7 @@ assert_contains "$promotion_workflow" 'ruby ./scripts/render-winget-manifests.rb
 assert_contains "$promotion_workflow" 'WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}'
 assert_contains "$promotion_workflow" '24042bd37915805615e6cf969ac57c6439124c3fe85823327f5f3fb24bd9ffea'
 assert_not_contains "$promotion_workflow" '--token $env:WINGET_CREATE_GITHUB_TOKEN'
+
+assert_not_contains "$ROOT_DIR/README.md" 'handler registration move together'
 
 printf 'WinGet manifest tests passed.\n'
