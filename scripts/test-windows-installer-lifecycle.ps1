@@ -107,7 +107,7 @@ function Test-InstallerChannel {
 
     $beforeUpgradeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $executablePath).Hash
     $applicationProcess = Start-Process -FilePath $executablePath -PassThru
-    $upgradeExitCode = $null
+    $binaryLock = $null
 
     try {
         Start-Sleep -Seconds 5
@@ -115,45 +115,53 @@ function Test-InstallerChannel {
             throw "$ProductName exited before the running-application upgrade test."
         }
 
-        Write-Host "Running silent upgrade while $ProductName is open"
+        Set-ItemProperty -LiteralPath $registryPath -Name 'DisplayVersion' -Value '0.0.0-test-locked'
+        $binaryLock = [System.IO.File]::Open(
+            $executablePath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+        )
+
+        Write-Host "Requiring a safe silent-upgrade failure while $ProductName is locked"
         $upgradeExitCode = Invoke-ProcessWithTimeout `
             -FilePath $installerPath `
             -ArgumentList @('/S')
 
-        if ($upgradeExitCode -notin @(0, 1)) {
-            throw "Running-application upgrade exited with unexpected code $upgradeExitCode."
+        if ($upgradeExitCode -ne 1) {
+            throw "Locked-binary upgrade exited with code $upgradeExitCode instead of 1."
         }
 
-        Assert-InstalledState `
-            -ExecutablePath $executablePath `
-            -RegistryPath $registryPath `
-            -ExpectedDisplayName $ProductName
+        $afterUpgradeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $executablePath).Hash
+        if ($afterUpgradeHash -ne $beforeUpgradeHash) {
+            throw 'Silent upgrade changed the installed executable after reporting failure.'
+        }
 
-        if ($upgradeExitCode -eq 1) {
-            $afterUpgradeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $executablePath).Hash
-            if ($afterUpgradeHash -ne $beforeUpgradeHash) {
-                throw 'Silent upgrade changed the installed executable after reporting failure.'
-            }
-            if (Test-Path -LiteralPath $stagedExecutablePath) {
-                throw "Failed silent upgrade left a staged executable: $stagedExecutablePath"
-            }
+        $lockedRegistryEntry = Get-ItemProperty -LiteralPath $registryPath
+        if ($lockedRegistryEntry.DisplayVersion -ne '0.0.0-test-locked') {
+            throw 'Silent upgrade changed uninstall metadata after reporting failure.'
+        }
+
+        if (Test-Path -LiteralPath $stagedExecutablePath) {
+            throw "Failed silent upgrade left a staged executable: $stagedExecutablePath"
         }
     }
     finally {
+        if ($null -ne $binaryLock) {
+            $binaryLock.Dispose()
+        }
         if (-not $applicationProcess.HasExited) {
             Stop-Process -Id $applicationProcess.Id -Force
             $applicationProcess.WaitForExit()
         }
     }
 
-    if ($upgradeExitCode -eq 1) {
-        Write-Host "Retrying silent upgrade after closing $ProductName"
-        $retryExitCode = Invoke-ProcessWithTimeout `
-            -FilePath $installerPath `
-            -ArgumentList @('/S')
-        if ($retryExitCode -ne 0) {
-            throw "Silent upgrade retry exited with code $retryExitCode."
-        }
+    Write-Host "Retrying silent upgrade after closing $ProductName"
+    $retryExitCode = Invoke-ProcessWithTimeout `
+        -FilePath $installerPath `
+        -ArgumentList @('/S')
+    if ($retryExitCode -ne 0) {
+        throw "Silent upgrade retry exited with code $retryExitCode."
     }
 
     Assert-InstalledState `

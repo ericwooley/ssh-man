@@ -119,5 +119,6 @@ assert_contains "$promotion_workflow" '24042bd37915805615e6cf969ac57c6439124c3fe
 assert_not_contains "$promotion_workflow" '--token $env:WINGET_CREATE_GITHUB_TOKEN'
 
 assert_not_contains "$ROOT_DIR/README.md" 'handler registration move together'
+assert_contains "$ROOT_DIR/README.md" 'Keep one SSH Man channel installed at a time'
 
 printf 'WinGet manifest tests passed.\n'

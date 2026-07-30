@@ -153,6 +153,9 @@ assert_contains "$RELEASE_WORKFLOW" 'test-windows-installers:'
 assert_contains "$RELEASE_WORKFLOW" 'pwsh ./scripts/test-windows-installer-lifecycle.ps1'
 assert_contains "$RELEASE_WORKFLOW" '- test-windows-installers'
 assert_contains "$LIFECYCLE_TEST" 'function Test-InstallerChannel'
+assert_contains "$LIFECYCLE_TEST" '[System.IO.FileShare]::Read'
+assert_contains "$LIFECYCLE_TEST" "Set-ItemProperty -LiteralPath \$registryPath -Name 'DisplayVersion' -Value '0.0.0-test-locked'"
+assert_contains "$LIFECYCLE_TEST" 'if ($upgradeExitCode -ne 1)'
 assert_contains "$LIFECYCLE_TEST" 'Silent upgrade changed the installed executable after reporting failure.'
 assert_contains "$LIFECYCLE_TEST" 'Installer lifecycle tests passed.'
 
