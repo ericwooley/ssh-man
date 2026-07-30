@@ -7,9 +7,14 @@
   "frontend:dev:watcher": "node ../scripts/pnpm.cjs run dev",
   "frontend:dir": "frontend",
   "author": {
-    "name": "OpenCode"
+    "name": "Eric Wooley"
   },
   "info": {
+    "companyName": "Eric Wooley",
+    "productName": "SSH Man",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright Eric Wooley",
+    "comments": "SSH connection manager",
     "protocols": [
       {
         "scheme": "http",

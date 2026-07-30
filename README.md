@@ -283,11 +283,54 @@ Server and tunnel deletion require `--yes`; `app quit` requires it when tunnels 
 
 ## Windows
 
-Windows is supported through a native PowerShell clone-and-build workflow. The
-desktop build uses CGO for SQLite, so a Windows-targeting MinGW-w64 GCC compiler
-is required in addition to Go.
+Use WinGet for the standard Windows install path. A native PowerShell
+clone-and-build workflow remains available for development.
 
-### Requirements
+### WinGet install
+
+Install the latest official release:
+
+```powershell
+winget install --exact --id EricWooley.SSHMan --source winget
+```
+
+Upgrade the stable channel with:
+
+```powershell
+winget upgrade --exact --id EricWooley.SSHMan --source winget
+```
+
+### Experimental releases
+
+The experimental channel follows qualifying releases from `main`. Switch from
+the stable package with:
+
+```powershell
+winget uninstall --exact --id EricWooley.SSHMan
+winget install --exact --id EricWooley.SSHMan.Experimental --source winget
+```
+
+Upgrade that channel with
+`winget upgrade --exact --id EricWooley.SSHMan.Experimental --source winget`.
+To return to the official release:
+
+```powershell
+winget uninstall --exact --id EricWooley.SSHMan.Experimental
+winget install --exact --id EricWooley.SSHMan --source winget
+```
+
+Uninstall the current channel before switching so shortcuts and HTTP/HTTPS
+handler registration move together. Both packages keep the same SSH Man
+configuration. The stable package changes only when an experimental release is
+explicitly promoted. New versions become available after the WinGet Community
+Repository processes their submitted manifests.
+
+### Build from source
+
+The desktop build uses CGO for SQLite, so a Windows-targeting MinGW-w64 GCC
+compiler is required in addition to Go.
+
+#### Requirements
 
 - 64-bit Windows 10 or Windows 11
 - Git
@@ -356,7 +399,7 @@ gcc -dumpmachine
 `x86_64-w64-mingw32` target. When using the global pnpm fallback, run
 `pnpm --version` instead of `corepack pnpm --version`.
 
-### Build and run
+#### Build and run
 
 ```powershell
 git clone https://github.com/ericwooley/ssh-man.git
@@ -516,9 +559,20 @@ Install the repository's Git hooks once after cloning:
 
 The `commit-msg` hook and CI require [Conventional Commits](https://www.conventionalcommits.org/). Use `fix:` or `perf:` for a patch release, `feat:` for a minor release, and add `!` after the type or a `BREAKING CHANGE:` footer for a major release. Scoped forms such as `feat(browser): ...` are supported. Other allowed types (`build`, `chore`, `ci`, `docs`, `refactor`, `revert`, `style`, and `test`) do not create a release by themselves.
 
-Every push to `main` checks the non-merge commits since the latest plain semantic-version tag. When at least one commit requires a release, GitHub Actions calculates the next version, builds and tests the macOS app, creates the corresponding `x.y.z` experimental GitHub release, attaches the DMG, and updates `ssh-man@experimental`. Documentation- or maintenance-only merges complete without publishing a new version.
+Every push to `main` checks the non-merge commits since the latest plain
+semantic-version tag. When at least one commit requires a release, GitHub
+Actions calculates the next version, builds and tests the macOS app, cross-builds
+the Windows application, creates separate stable and experimental Windows
+installers, and publishes the corresponding `x.y.z` experimental GitHub
+release. The workflow attaches the DMG and both Windows installers, updates
+`ssh-man@experimental`, and submits
+`EricWooley.SSHMan.Experimental` to the WinGet Community Repository.
+Documentation- or maintenance-only merges complete without publishing a new
+version.
 
-To make a tested release the default Homebrew install, run **Actions → Promote Release → Run workflow** from `main` and enter its plain version, such as `1.7.0`. The equivalent command is:
+To make a tested release the default Homebrew and WinGet install, run
+**Actions → Promote Release → Run workflow** from `main` and enter its plain
+version, such as `1.7.0`. The equivalent command is:
 
 ```bash
 gh workflow run promote-release.yml \
@@ -526,7 +580,10 @@ gh workflow run promote-release.yml \
   -f version=1.7.0
 ```
 
-Promotion verifies that the tag belongs to `main` and that its signed DMG exists, reuses that artifact for the stable `ssh-man` cask, and marks the GitHub release as the latest official release.
+Promotion verifies that the tag belongs to `main` and that its DMG and Windows
+installers exist, reuses those artifacts for the stable Homebrew cask and
+`EricWooley.SSHMan` WinGet package, and marks the GitHub release as the latest
+official release.
 
 ### Release credentials
 
@@ -537,7 +594,19 @@ The privileged release job reads the Homebrew and Apple signing credentials from
 - repository permission **Contents: Read and write**; no other write permissions
 - the shortest practical expiration, such as 90 days or less
 
-In the `ssh-man` repository, create an environment named `release`, allow deployments from the `main` branch, and add the token under **Environment secrets** with the exact name `TAP_GITHUB_TOKEN`. Add these Apple environment secrets alongside it:
+For WinGet submissions, create a classic GitHub personal access token from the
+account that will submit to `microsoft/winget-pkgs`. Grant only the
+`public_repo` scope and store it in the `release` environment as
+`WINGET_CREATE_GITHUB_TOKEN`. WinGetCreate uses this token to maintain the
+account's public `winget-pkgs` fork and open manifest pull requests. The account
+may be asked to accept the Microsoft Contributor License Agreement on its first
+submission.
+
+In the `ssh-man` repository, create an environment named `release`, allow
+deployments from the `main` branch, and add the tokens under **Environment
+secrets** with the exact names `TAP_GITHUB_TOKEN` and
+`WINGET_CREATE_GITHUB_TOKEN`. Add these Apple environment secrets alongside
+them:
 
 | Secret | Value |
 | --- | --- |
@@ -547,7 +616,14 @@ In the `ssh-man` repository, create an environment named `release`, allow deploy
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated for the Apple notary service |
 | `APPLE_TEAM_ID` | Team ID that issued the Developer ID Application certificate |
 
-The build and test job runs without credentials. Only the final protected experimental-release job imports the certificate into a temporary keychain, validates the notarization credentials, signs the app and DMG, submits the DMG to Apple, staples and verifies the ticket, publishes the GitHub release, and updates Homebrew. The promotion job reuses that signed artifact and the protected Homebrew token. The temporary certificate and keychain are removed at the end of the experimental-release job.
+The build and test jobs run without credentials. Only the final protected
+experimental-release job imports the certificate into a temporary keychain,
+validates the notarization credentials, signs the app and DMG, submits the DMG
+to Apple, staples and verifies the ticket, publishes the GitHub release, and
+updates Homebrew. A separate protected job submits the experimental WinGet
+manifest. The promotion workflow reuses the published artifacts and protected
+tokens for the stable Homebrew and WinGet packages. The temporary certificate
+and keychain are removed at the end of the experimental-release job.
 
 Rotate credentials before they expire or are revoked: install replacements first, update the environment secrets, verify a release, and then revoke the old credentials. Prefer a GitHub App installed only on `homebrew-apps` with **Contents: Read and write** if the workflow is updated to mint a short-lived installation token at runtime; do not store an installation token as a long-lived secret.
 
@@ -589,8 +665,9 @@ tests/      integration and smoke coverage
 
 - macOS: supported via Homebrew cask and local source build
 - Linux: supported via local source build
-- Windows: supported via local PowerShell source build
+- Windows: supported via stable and experimental WinGet packages, plus a local PowerShell source build
 - Homebrew tap: `ericwooley/homebrew-apps`
+- WinGet packages: `EricWooley.SSHMan` and `EricWooley.SSHMan.Experimental`
 
 ## License
 
