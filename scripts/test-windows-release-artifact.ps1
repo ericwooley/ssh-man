@@ -8,7 +8,10 @@ param(
     [string]$ExecutablePath,
 
     [ValidateRange(1, 120)]
-    [int]$TimeoutSeconds = 30
+    [int]$TimeoutSeconds = 30,
+
+    [ValidateRange(1, 60)]
+    [int]$DesktopStartupSeconds = 10
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,6 +62,23 @@ finally {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     }
     $process.Dispose()
+}
+
+$desktopProcess = Start-Process `
+    -FilePath $resolvedExecutable `
+    -PassThru
+
+try {
+    if ($desktopProcess.WaitForExit($DesktopStartupSeconds * 1000)) {
+        throw "Windows desktop application exited during its startup smoke check with code $($desktopProcess.ExitCode)."
+    }
+}
+finally {
+    if (-not $desktopProcess.HasExited) {
+        Stop-Process -Id $desktopProcess.Id -Force -ErrorAction SilentlyContinue
+        $null = $desktopProcess.WaitForExit(5000)
+    }
+    $desktopProcess.Dispose()
 }
 
 Write-Host 'Windows release artifact validation passed.'

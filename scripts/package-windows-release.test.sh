@@ -47,6 +47,9 @@ fake_bin="$TEST_ROOT/bin"
 mkdir -p "$fixture_root/scripts" "$fake_bin"
 cp "$PACKAGER" "$fixture_root/scripts/package-windows-release.sh"
 cp "$ROOT_DIR/wails.json" "$fixture_root/wails.json"
+original_wails_config_sha="$(
+  shasum -a 256 "$fixture_root/wails.json" | awk '{print $1}'
+)"
 
 cat >"$fake_bin/go" <<'FAKE_GO'
 #!/usr/bin/env bash
@@ -121,6 +124,8 @@ restored_product_version="$(
 )"
 [ "$restored_product_version" = "1.0.0" ] ||
   fail "packager did not restore the original Wails product version"
+[ "$(shasum -a 256 "$fixture_root/wails.json" | awk '{print $1}')" = "$original_wails_config_sha" ] ||
+  fail "packager did not restore the exact Wails configuration after a successful build"
 
 failed_build_log="$TEST_ROOT/failed-build.log"
 if (
@@ -143,6 +148,8 @@ restored_after_failure="$(
 )"
 [ "$restored_after_failure" = "1.0.0" ] ||
   fail "packager did not restore Wails configuration after a build failure"
+[ "$(shasum -a 256 "$fixture_root/wails.json" | awk '{print $1}')" = "$original_wails_config_sha" ] ||
+  fail "packager did not restore the exact Wails configuration after a failed build"
 
 invalid_log="$TEST_ROOT/invalid.log"
 if (
@@ -179,6 +186,8 @@ grep -Fq 'dist/ssh-man-windows-amd64.exe' <<<"$publish_step" ||
 assert_contains "$ARTIFACT_VALIDATOR" '[System.Diagnostics.FileVersionInfo]::GetVersionInfo'
 assert_contains "$ARTIFACT_VALIDATOR" "Start-Process"
 assert_contains "$ARTIFACT_VALIDATOR" "'--help'"
+assert_contains "$ARTIFACT_VALIDATOR" 'DesktopStartupSeconds'
+assert_contains "$ARTIFACT_VALIDATOR" 'desktop application exited during its startup smoke check'
 assert_contains "$ARTIFACT_VALIDATOR" 'Windows release artifact validation passed.'
 
 assert_contains "$PROMOTION_WORKFLOW" 'ssh-man-windows-amd64.exe'
