@@ -283,47 +283,15 @@ Server and tunnel deletion require `--yes`; `app quit` requires it when tunnels 
 
 ## Windows
 
-Use WinGet for the standard Windows install path. A native PowerShell
-clone-and-build workflow remains available for development.
+Download `ssh-man-windows-amd64.exe` from the
+[GitHub Releases](https://github.com/ericwooley/ssh-man/releases) page. It is a
+portable executable, so you can move it to a folder of your choice and run it
+directly without an installer. To upgrade, download the executable from the
+new release and replace the previous copy after quitting SSH Man.
 
-### WinGet install
-
-Install the latest official release:
-
-```powershell
-winget install --exact --id EricWooley.SSHMan --source winget
-```
-
-Upgrade the stable channel with:
-
-```powershell
-winget upgrade --exact --id EricWooley.SSHMan --source winget
-```
-
-### Experimental releases
-
-The experimental channel follows qualifying releases from `main`. Switch from
-the stable package with:
-
-```powershell
-winget uninstall --exact --id EricWooley.SSHMan
-winget install --exact --id EricWooley.SSHMan.Experimental --source winget
-```
-
-Upgrade that channel with
-`winget upgrade --exact --id EricWooley.SSHMan.Experimental --source winget`.
-To return to the official release:
-
-```powershell
-winget uninstall --exact --id EricWooley.SSHMan.Experimental
-winget install --exact --id EricWooley.SSHMan --source winget
-```
-
-Keep one SSH Man channel installed at a time: uninstall the current channel
-before installing the other channel. Both packages keep the same SSH Man
-configuration. The stable package changes only when an experimental release is
-explicitly promoted. New versions become available after the WinGet Community
-Repository processes their submitted manifests.
+The portable build requires the Microsoft Edge WebView2 Evergreen Runtime. If
+it is not already available on the computer, install it before launching SSH
+Man.
 
 ### Build from source
 
@@ -562,17 +530,15 @@ The `commit-msg` hook and CI require [Conventional Commits](https://www.conventi
 Every push to `main` checks the non-merge commits since the latest plain
 semantic-version tag. When at least one commit requires a release, GitHub
 Actions calculates the next version, builds and tests the macOS app, cross-builds
-the Windows application, creates separate stable and experimental Windows
-installers, and publishes the corresponding `x.y.z` experimental GitHub
-release. The workflow attaches the DMG and both Windows installers, updates
-`ssh-man@experimental`, and submits
-`EricWooley.SSHMan.Experimental` to the WinGet Community Repository.
+the Windows application, and publishes the corresponding `x.y.z` experimental
+GitHub release. The workflow attaches the DMG and the portable
+`ssh-man-windows-amd64.exe`, then updates `ssh-man@experimental`.
 Documentation- or maintenance-only merges complete without publishing a new
 version.
 
-To make a tested release the default Homebrew and WinGet install, run
-**Actions → Promote Release → Run workflow** from `main` and enter its plain
-version, such as `1.7.0`. The equivalent command is:
+To make a tested release the default Homebrew install, run **Actions → Promote
+Release → Run workflow** from `main` and enter its plain version, such as
+`1.7.0`. The equivalent command is:
 
 ```bash
 gh workflow run promote-release.yml \
@@ -581,9 +547,8 @@ gh workflow run promote-release.yml \
 ```
 
 Promotion verifies that the tag belongs to `main` and that its DMG and Windows
-installers exist, reuses those artifacts for the stable Homebrew cask and
-`EricWooley.SSHMan` WinGet package, and marks the GitHub release as the latest
-official release.
+executable exist, reuses the DMG for the stable Homebrew cask, and marks the
+GitHub release as the latest official release.
 
 ### Release credentials
 
@@ -594,19 +559,10 @@ The privileged release job reads the Homebrew and Apple signing credentials from
 - repository permission **Contents: Read and write**; no other write permissions
 - the shortest practical expiration, such as 90 days or less
 
-For WinGet submissions, create a classic GitHub personal access token from the
-account that will submit to `microsoft/winget-pkgs`. Grant only the
-`public_repo` scope and store it in the `release` environment as
-`WINGET_CREATE_GITHUB_TOKEN`. WinGetCreate uses this token to maintain the
-account's public `winget-pkgs` fork and open manifest pull requests. The account
-may be asked to accept the Microsoft Contributor License Agreement on its first
-submission.
-
 In the `ssh-man` repository, create an environment named `release`, allow
-deployments from the `main` branch, and add the tokens under **Environment
-secrets** with the exact names `TAP_GITHUB_TOKEN` and
-`WINGET_CREATE_GITHUB_TOKEN`. Add these Apple environment secrets alongside
-them:
+deployments from the `main` branch, and add the token under **Environment
+secrets** with the exact name `TAP_GITHUB_TOKEN`. Add these Apple environment
+secrets alongside it:
 
 | Secret | Value |
 | --- | --- |
@@ -620,10 +576,9 @@ The build and test jobs run without credentials. Only the final protected
 experimental-release job imports the certificate into a temporary keychain,
 validates the notarization credentials, signs the app and DMG, submits the DMG
 to Apple, staples and verifies the ticket, publishes the GitHub release, and
-updates Homebrew. A separate protected job submits the experimental WinGet
-manifest. The promotion workflow reuses the published artifacts and protected
-tokens for the stable Homebrew and WinGet packages. The temporary certificate
-and keychain are removed at the end of the experimental-release job.
+updates Homebrew. The promotion workflow reuses the published DMG and protected
+Homebrew token. The temporary certificate and keychain are removed at the end
+of the experimental-release job.
 
 Rotate credentials before they expire or are revoked: install replacements first, update the environment secrets, verify a release, and then revoke the old credentials. Prefer a GitHub App installed only on `homebrew-apps` with **Contents: Read and write** if the workflow is updated to mint a short-lived installation token at runtime; do not store an installation token as a long-lived secret.
 
@@ -665,9 +620,8 @@ tests/      integration and smoke coverage
 
 - macOS: supported via Homebrew cask and local source build
 - Linux: supported via local source build
-- Windows: supported via stable and experimental WinGet packages, plus a local PowerShell source build
+- Windows: supported via a portable release executable and local PowerShell source build
 - Homebrew tap: `ericwooley/homebrew-apps`
-- WinGet packages: `EricWooley.SSHMan` and `EricWooley.SSHMan.Experimental`
 
 ## License
 
