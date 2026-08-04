@@ -52,4 +52,7 @@ build/*
 !build/darwin/
 !build/darwin/Info.plist
 !build/darwin/Info.dev.plist
+!build/windows/
+build/windows/*
+!build/windows/info.json
 frontend/package.json.md5

@@ -8,6 +8,7 @@ RELEASE_WORKFLOW="$ROOT_DIR/.github/workflows/release.yml"
 PROMOTION_WORKFLOW="$ROOT_DIR/.github/workflows/promote-release.yml"
 VALIDATION_SCRIPT="$ROOT_DIR/scripts/validate.sh"
 ARTIFACT_VALIDATOR="$ROOT_DIR/scripts/test-windows-release-artifact.ps1"
+WINDOWS_VERSION_INFO="$ROOT_DIR/build/windows/info.json"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ssh-man-windows-package-test.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -188,12 +189,22 @@ assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileMajorPart'
 assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileMinorPart'
 assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileBuildPart'
 assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FilePrivatePart'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.ProductMajorPart'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.ProductMinorPart'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.ProductBuildPart'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.ProductPrivatePart'
 assert_not_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileVersion'
 assert_contains "$ARTIFACT_VALIDATOR" "Start-Process"
 assert_contains "$ARTIFACT_VALIDATOR" "'--help'"
 assert_contains "$ARTIFACT_VALIDATOR" 'DesktopStartupSeconds'
 assert_contains "$ARTIFACT_VALIDATOR" 'desktop application exited during its startup smoke check'
 assert_contains "$ARTIFACT_VALIDATOR" 'Windows release artifact validation passed.'
+
+assert_contains "$WINDOWS_VERSION_INFO" '"file_version": "{{.Info.ProductVersion}}"'
+assert_contains "$WINDOWS_VERSION_INFO" '"product_version": "{{.Info.ProductVersion}}"'
+assert_contains "$WINDOWS_VERSION_INFO" '"0409": {'
+assert_not_contains "$WINDOWS_VERSION_INFO" '"0000": {'
+assert_contains "$WINDOWS_VERSION_INFO" '"ProductVersion": "{{.Info.ProductVersion}}"'
 
 assert_contains "$PROMOTION_WORKFLOW" 'ssh-man-windows-amd64.exe'
 assert_not_contains "$PROMOTION_WORKFLOW" 'installer.exe'

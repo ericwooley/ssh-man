@@ -46,6 +46,17 @@ $fixedFileVersion = @(
 if ($fixedFileVersion -ne "$Version.0") {
     throw "Fixed file version is '$fixedFileVersion', expected '$Version.0'."
 }
+
+$fixedProductVersion = @(
+    $versionInfo.ProductMajorPart
+    $versionInfo.ProductMinorPart
+    $versionInfo.ProductBuildPart
+    $versionInfo.ProductPrivatePart
+) -join '.'
+if ($fixedProductVersion -ne "$Version.0") {
+    throw "Fixed product version is '$fixedProductVersion', expected '$Version.0'."
+}
+
 if ($versionInfo.ProductVersion -notin $acceptedVersions) {
     throw "ProductVersion is '$($versionInfo.ProductVersion)', expected '$Version'."
 }
