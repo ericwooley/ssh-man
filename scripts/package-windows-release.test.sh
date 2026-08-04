@@ -204,6 +204,7 @@ assert_contains "$WINDOWS_VERSION_INFO" '"file_version": "{{.Info.ProductVersion
 assert_contains "$WINDOWS_VERSION_INFO" '"product_version": "{{.Info.ProductVersion}}"'
 assert_contains "$WINDOWS_VERSION_INFO" '"0000": {'
 assert_not_contains "$WINDOWS_VERSION_INFO" '"0409": {'
+assert_contains "$WINDOWS_VERSION_INFO" '"FileVersion": "{{.Info.ProductVersion}}"'
 assert_contains "$WINDOWS_VERSION_INFO" '"ProductVersion": "{{.Info.ProductVersion}}"'
 
 assert_contains "$PROMOTION_WORKFLOW" 'ssh-man-windows-amd64.exe'
