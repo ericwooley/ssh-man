@@ -14,6 +14,7 @@ import {
 const defaultPreferences = {
   theme: 'dark',
   lastSelectedServerId: '',
+  automaticUpdates: true,
   browserSwitcherShortcut: 'Alt+X',
   browserSwitcherBackwardShortcut: 'Alt+Z',
   browserAppearances: {},
@@ -29,6 +30,7 @@ const unavailableDiagnostics = {
   appDataPath: '',
   databasePath: '',
   version: '',
+  automaticUpdatesSupported: false,
 }
 
 function normalizePreferences(preferences = {}) {
@@ -661,6 +663,10 @@ export function useSshMan(api = defaultApi, options = {}) {
     await savePreferencesQuietly((current) => ({ ...current, theme }))
   }, [preferences, savePreferencesQuietly])
 
+  const setAutomaticUpdates = useCallback(async (enabled) => {
+    return savePreferencesQuietly((current) => ({ ...current, automaticUpdates: Boolean(enabled) }))
+  }, [savePreferencesQuietly])
+
   const setBrowserSwitcherShortcut = useCallback(async (shortcut) => {
     return savePreferencesQuietly((current) => ({ ...current, browserSwitcherShortcut: shortcut }))
   }, [savePreferencesQuietly])
@@ -961,6 +967,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     selectBrowser,
     launchBrowser,
     toggleTheme,
+    setAutomaticUpdates,
     setBrowserSwitcherShortcut,
     setBrowserSwitcherBackwardShortcut,
     setBrowserAppearance,

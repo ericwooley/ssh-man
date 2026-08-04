@@ -106,6 +106,7 @@ type URLPortAssignment struct {
 type UserPreference struct {
 	Theme                           Theme                        `json:"theme"`
 	LastSelectedServerID            string                       `json:"lastSelectedServerId,omitempty"`
+	AutomaticUpdates                bool                         `json:"automaticUpdates"`
 	BrowserSwitcherShortcut         string                       `json:"browserSwitcherShortcut"`
 	BrowserSwitcherBackwardShortcut string                       `json:"browserSwitcherBackwardShortcut"`
 	BrowserAppearances              map[string]BrowserAppearance `json:"browserAppearances"`
@@ -121,6 +122,7 @@ type UserPreference struct {
 func Default() UserPreference {
 	return UserPreference{
 		Theme:                           ThemeDark,
+		AutomaticUpdates:                true,
 		BrowserSwitcherShortcut:         keyboardshortcut.DefaultBrowserSwitcher,
 		BrowserSwitcherBackwardShortcut: keyboardshortcut.DefaultBrowserSwitcherBackward,
 		BrowserAppearances:              map[string]BrowserAppearance{},

@@ -46,6 +46,27 @@ func TestRunMigrationsAddsBrowserSwitcherDefaultsToPreShortcutSchema(t *testing.
 	assertStoredBrowserSwitcherShortcuts(t, db, "Alt+X", "Alt+Z")
 }
 
+func TestRunMigrationsEnablesAutomaticUpdatesForLegacyPreferences(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	var enabled bool
+	if err := db.QueryRow(`
+		SELECT automatic_updates_enabled
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&enabled); err != nil {
+		t.Fatalf("load automatic update preference: %v", err)
+	}
+	if !enabled {
+		t.Fatal("automatic updates should default to enabled for existing users")
+	}
+}
+
 func TestRunMigrationsDoesNotOverwriteSavedBrowserSwitcherShortcuts(t *testing.T) {
 	db := openUnmigratedDatabase(t)
 	createLegacyPreferences(t, db, true, "Alt+]")

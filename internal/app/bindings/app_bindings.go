@@ -9,6 +9,7 @@ import (
 
 	"ssh-man/internal/app/bootstrap"
 	appwindow "ssh-man/internal/app/window"
+	"ssh-man/internal/appupdate"
 	"ssh-man/internal/buildinfo"
 	configdomain "ssh-man/internal/domain/config"
 	preferencesdomain "ssh-man/internal/domain/preferences"
@@ -25,6 +26,7 @@ type AppBindings struct {
 	showBrowserSwitcher   func() bool
 	savePreferences       func(preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
 	saveBrowserAppearance func(string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)
+	preferencesSaved      func(preferencesdomain.UserPreference)
 	setDefaultBrowser     func() (defaultbrowser.Status, error)
 }
 
@@ -44,6 +46,10 @@ func (a *AppBindings) SetBrowserAppearanceSaver(saver func(string, preferencesdo
 	a.saveBrowserAppearance = saver
 }
 
+func (a *AppBindings) SetPreferencesSavedObserver(observer func(preferencesdomain.UserPreference)) {
+	a.preferencesSaved = observer
+}
+
 func (a *AppBindings) SetDefaultBrowserSetter(setter func() (defaultbrowser.Status, error)) {
 	a.setDefaultBrowser = setter
 }
@@ -54,9 +60,10 @@ type ServerWithConfigurations struct {
 }
 
 type Diagnostics struct {
-	AppDataPath  string `json:"appDataPath"`
-	DatabasePath string `json:"databasePath"`
-	Version      string `json:"version"`
+	AppDataPath               string `json:"appDataPath"`
+	DatabasePath              string `json:"databasePath"`
+	Version                   string `json:"version"`
+	AutomaticUpdatesSupported bool   `json:"automaticUpdatesSupported"`
 }
 
 type SSHKeyOption struct {
@@ -149,9 +156,10 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 		Sessions:    []any{},
 		SSHKeys:     discoverSSHKeyOptions(),
 		Diagnostics: Diagnostics{
-			AppDataPath:  a.app.ConfigDir,
-			DatabasePath: a.app.DatabasePath,
-			Version:      a.displayVersion,
+			AppDataPath:               a.app.ConfigDir,
+			DatabasePath:              a.app.DatabasePath,
+			Version:                   a.displayVersion,
+			AutomaticUpdatesSupported: appupdate.Supported(),
 		},
 		CurrentUsername: currentUsername,
 	}

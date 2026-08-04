@@ -65,7 +65,11 @@ func (a *AppBindings) SavePreferences(input preferencesdomain.UserPreference) (p
 		return preferencesdomain.UserPreference{}, err
 	}
 	if a.savePreferences != nil {
-		return a.savePreferences(input)
+		saved, err := a.savePreferences(input)
+		if err == nil {
+			a.notifyPreferencesSaved(saved)
+		}
+		return saved, err
 	}
 
 	var previous preferencesdomain.UserPreference
@@ -107,7 +111,14 @@ func (a *AppBindings) SavePreferences(input preferencesdomain.UserPreference) (p
 		}
 		return preferencesdomain.UserPreference{}, a.storageError("The preference could not be saved", saveErr)
 	}
+	a.notifyPreferencesSaved(pref)
 	return pref, nil
+}
+
+func (a *AppBindings) notifyPreferencesSaved(pref preferencesdomain.UserPreference) {
+	if a.preferencesSaved != nil {
+		a.preferencesSaved(pref)
+	}
 }
 
 func (a *AppBindings) SaveBrowserAppearance(appearanceKey string, input preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error) {

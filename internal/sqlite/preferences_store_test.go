@@ -49,6 +49,26 @@ func TestPreferencesStoreDefaultsBrowserSwitcherShortcuts(t *testing.T) {
 	if loaded.BrowserAppearances == nil || len(loaded.BrowserAppearances) != 0 {
 		t.Fatalf("default browser appearances = %#v, want non-nil empty map", loaded.BrowserAppearances)
 	}
+	if !loaded.AutomaticUpdates {
+		t.Fatal("automatic updates should default to enabled")
+	}
+}
+
+func TestPreferencesStorePersistsAutomaticUpdatesOptOut(t *testing.T) {
+	store := NewPreferencesStore(openTestDatabase(t))
+	pref := preferencesdomain.Default()
+	pref.AutomaticUpdates = false
+
+	if err := store.Save(context.Background(), pref); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	loaded, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("load preferences: %v", err)
+	}
+	if loaded.AutomaticUpdates {
+		t.Fatal("automatic update opt-out was not persisted")
+	}
 }
 
 func TestPreferencesStorePersistsBrowserAppearances(t *testing.T) {

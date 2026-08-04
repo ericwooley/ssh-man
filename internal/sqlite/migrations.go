@@ -106,6 +106,13 @@ func RunMigrations(db *sql.DB) error {
 	); err != nil {
 		return err
 	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"automatic_updates_enabled",
+		`ALTER TABLE user_preferences ADD COLUMN automatic_updates_enabled INTEGER NOT NULL DEFAULT 1;`,
+	); err != nil {
+		return err
+	}
 	backwardAdded, err := ensureUserPreferencesColumn(
 		tx,
 		"browser_switcher_backward_shortcut",

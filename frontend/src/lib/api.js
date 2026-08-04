@@ -32,6 +32,7 @@ const memoryState = {
   preferences: {
     theme: 'dark',
     lastSelectedServerId: '',
+    automaticUpdates: true,
     browserSwitcherShortcut: 'Alt+X',
     browserSwitcherBackwardShortcut: 'Alt+Z',
     browserAppearances: {},
@@ -90,6 +91,7 @@ export async function loadInitialState() {
       appDataPath: '~/.config/ssh-man',
       databasePath: '~/.config/ssh-man/ssh-man.db',
       version: 'Dev build',
+      automaticUpdatesSupported: false,
     },
     recoverable: false,
     message: '',

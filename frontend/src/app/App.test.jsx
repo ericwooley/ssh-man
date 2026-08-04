@@ -80,6 +80,7 @@ function createFakeApi({
   currentUsername = 'eric',
   runningBrowsers = [],
   version = 'Dev build',
+  automaticUpdatesSupported = true,
 } = {}) {
   const state = {
     servers: clone(servers),
@@ -88,6 +89,7 @@ function createFakeApi({
     preferences: {
       theme: 'dark',
       lastSelectedServerId: '',
+      automaticUpdates: true,
       browserSwitcherShortcut: 'Alt+X',
       browserSwitcherBackwardShortcut: 'Alt+Z',
       browserAppearances: {},
@@ -112,6 +114,7 @@ function createFakeApi({
         appDataPath: '/tmp/ssh-man',
         databasePath: '/tmp/ssh-man/ssh-man.db',
         version,
+        automaticUpdatesSupported,
       },
       currentUsername,
       recoverable: false,
@@ -513,6 +516,30 @@ describe('React application flows', () => {
     await user.click(await screen.findByRole('button', { name: 'App health' }))
     expect(await screen.findByText('App version')).toBeTruthy()
     expect(screen.getAllByText('1.2.3')).not.toHaveLength(0)
+  })
+
+  test('lets users turn off automatic updates', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Install updates automatically' })
+    expect(toggle.checked).toBe(true)
+
+    await user.click(toggle)
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      automaticUpdates: false,
+    })))
+    expect(toggle.checked).toBe(false)
+  })
+
+  test('hides automatic updates when the platform does not support them', async () => {
+    const { api } = createFakeApi({ automaticUpdatesSupported: false })
+    renderSettingsApp(api)
+
+    await screen.findByRole('heading', { name: 'General' })
+    expect(screen.queryByRole('checkbox', { name: 'Install updates automatically' })).toBeNull()
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -124,48 +125,93 @@ func TestServerRejectsLegacyProtocolPreferenceWrites(t *testing.T) {
 	}
 }
 
-func TestServerAcceptsLegacyProtocolStateRequests(t *testing.T) {
+func TestServerRejectsProtocolV2PreferenceWritesWithoutAutomaticUpdates(t *testing.T) {
 	t.Parallel()
 
-	stateCalled := false
+	saveCalled := false
 	server := NewServer("", Backend{
-		State: func(context.Context) (State, error) {
-			stateCalled = true
-			return State{Message: "compatible"}, nil
+		SavePreferences: func(context.Context, preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
+			saveCalled = true
+			return preferencesdomain.Default(), nil
 		},
 	})
-	body, err := json.Marshal(Request{
-		ProtocolVersion: 1,
-		Command:         "state",
-	})
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
+	body := []byte(`{
+		"protocolVersion": 2,
+		"command": "preferences.save",
+		"preferences": {
+			"theme": "light"
+		}
+	}`)
 
 	request := httptest.NewRequest(http.MethodPost, "/v1/command", bytes.NewReader(body))
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("response status = %d, body = %s, want %d", response.Code, response.Body.String(), http.StatusOK)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("response status = %d, body = %s, want %d", response.Code, response.Body.String(), http.StatusConflict)
 	}
-	if !stateCalled {
-		t.Fatal("legacy state request did not reach the backend")
+	if saveCalled {
+		t.Fatal("protocol-v2 preference write reached the backend")
 	}
 
 	var payload Response
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if payload.ProtocolVersion != 1 {
-		t.Fatalf("response protocol version = %d, want 1", payload.ProtocolVersion)
+	if payload.ProtocolVersion != ProtocolVersion {
+		t.Fatalf("response protocol version = %d, want %d", payload.ProtocolVersion, ProtocolVersion)
 	}
-	var state State
-	if err := json.Unmarshal(payload.Data, &state); err != nil {
-		t.Fatalf("Unmarshal(state) error = %v", err)
+	if payload.Error == nil || payload.Error.Code != "protocol_mismatch" {
+		t.Fatalf("response error = %#v, want protocol_mismatch", payload.Error)
 	}
-	if state.Message != "compatible" {
-		t.Fatalf("state message = %q, want compatible", state.Message)
+}
+
+func TestServerAcceptsLegacyProtocolStateRequests(t *testing.T) {
+	t.Parallel()
+
+	for _, protocolVersion := range []int{1, 2} {
+		t.Run(fmt.Sprintf("protocol %d", protocolVersion), func(t *testing.T) {
+			stateCalled := false
+			server := NewServer("", Backend{
+				State: func(context.Context) (State, error) {
+					stateCalled = true
+					return State{Message: "compatible"}, nil
+				},
+			})
+			body, err := json.Marshal(Request{
+				ProtocolVersion: protocolVersion,
+				Command:         "state",
+			})
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+
+			request := httptest.NewRequest(http.MethodPost, "/v1/command", bytes.NewReader(body))
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("response status = %d, body = %s, want %d", response.Code, response.Body.String(), http.StatusOK)
+			}
+			if !stateCalled {
+				t.Fatal("legacy state request did not reach the backend")
+			}
+
+			var payload Response
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if payload.ProtocolVersion != protocolVersion {
+				t.Fatalf("response protocol version = %d, want %d", payload.ProtocolVersion, protocolVersion)
+			}
+			var state State
+			if err := json.Unmarshal(payload.Data, &state); err != nil {
+				t.Fatalf("Unmarshal(state) error = %v", err)
+			}
+			if state.Message != "compatible" {
+				t.Fatalf("state message = %q, want compatible", state.Message)
+			}
+		})
 	}
 }
 

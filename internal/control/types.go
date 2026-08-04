@@ -12,7 +12,7 @@ import (
 	"ssh-man/internal/platform/defaultbrowser"
 )
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 type ServerRecord struct {
 	Server         serverdomain.Server                    `json:"server"`

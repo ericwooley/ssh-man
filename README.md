@@ -228,6 +228,8 @@ Both channels contain signed and notarized builds. The stable `ssh-man` cask cha
 brew upgrade --cask ssh-man
 ```
 
+Official macOS builds check for the latest stable release when SSH Man starts. A newer signed release downloads in the background and installs after you quit, so active tunnels are not interrupted. Turn this off at any time under **Settings → Software updates → Install updates automatically**. Local development builds do not check for updates, and experimental builds are never downgraded to the current stable release.
+
 ### macOS notes
 
 - Launching `ssh-man` adds its terminal icon to the menu bar instead of opening a normal Dock window. Click the icon to show or hide the compact controls.
