@@ -37,8 +37,14 @@ if ($firstByte -ne 0x4d -or $secondByte -ne 0x5a) {
 
 $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($resolvedExecutable)
 $acceptedVersions = @($Version, "$Version.0")
-if ($versionInfo.FileVersion -notin $acceptedVersions) {
-    throw "FileVersion is '$($versionInfo.FileVersion)', expected '$Version'."
+$fixedFileVersion = @(
+    $versionInfo.FileMajorPart
+    $versionInfo.FileMinorPart
+    $versionInfo.FileBuildPart
+    $versionInfo.FilePrivatePart
+) -join '.'
+if ($fixedFileVersion -ne "$Version.0") {
+    throw "Fixed file version is '$fixedFileVersion', expected '$Version.0'."
 }
 if ($versionInfo.ProductVersion -notin $acceptedVersions) {
     throw "ProductVersion is '$($versionInfo.ProductVersion)', expected '$Version'."

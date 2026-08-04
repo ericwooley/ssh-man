@@ -184,6 +184,11 @@ grep -Fq 'dist/ssh-man-windows-amd64.exe' <<<"$publish_step" ||
   fail "release publishing step does not attach the Windows executable"
 
 assert_contains "$ARTIFACT_VALIDATOR" '[System.Diagnostics.FileVersionInfo]::GetVersionInfo'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileMajorPart'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileMinorPart'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileBuildPart'
+assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FilePrivatePart'
+assert_not_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileVersion'
 assert_contains "$ARTIFACT_VALIDATOR" "Start-Process"
 assert_contains "$ARTIFACT_VALIDATOR" "'--help'"
 assert_contains "$ARTIFACT_VALIDATOR" 'DesktopStartupSeconds'
