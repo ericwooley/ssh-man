@@ -44,6 +44,7 @@ const (
 	browserSwitcherCancelEventName = "browser-switcher:cancel"
 	urlRouteChoiceEventName        = "url-routing:choice"
 	preferencesChangedEventName    = "preferences:changed"
+	appUpdateStatusEventName       = "app-update:status"
 	urlRoutingStartupWait          = 12 * time.Second
 	urlRouteChooserWidth           = 520
 	urlRouteChooserHeight          = 600
@@ -344,16 +345,23 @@ func Run(assets fs.FS) (runErr error) {
 		return err
 	}
 	updateManager := appupdate.NewManager(buildinfo.Version, application.ConfigDir)
-	if preferences, preferencesErr := application.PreferencesService.Load(context.Background()); preferencesErr != nil {
-		log.Printf("load automatic update preference: %v", preferencesErr)
-	} else {
-		updateManager.Start(preferences.AutomaticUpdates)
-	}
 
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
+	app.SetUpdateStatusGetter(updateManager.Status)
+	app.SetUpdateInstaller(updateManager.Install)
+	updateManager.SetStatusObserver(func(status appupdate.Status) {
+		if ctx, contextErr := window.Context(); contextErr == nil {
+			wailsruntime.EventsEmit(ctx, appUpdateStatusEventName, status)
+		}
+	})
+	if preferences, preferencesErr := application.PreferencesService.Load(context.Background()); preferencesErr != nil {
+		log.Printf("load automatic update preference: %v", preferencesErr)
+	} else {
+		updateManager.Configure(preferences.AutomaticUpdates, preferences.UseExperimentalChannel)
+	}
 	app.SetPreferencesSavedObserver(func(preferences preferencesdomain.UserPreference) {
-		updateManager.SetEnabled(preferences.AutomaticUpdates)
+		updateManager.Configure(preferences.AutomaticUpdates, preferences.UseExperimentalChannel)
 	})
 	explorerManager := explorerwindow.NewManager()
 	explorerLauncher := bindings.NewExplorerLauncherBindingsWithDependencies(application.ServerService, explorerManager.Launch)

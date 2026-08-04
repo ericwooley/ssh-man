@@ -71,6 +71,23 @@ func TestPreferencesStorePersistsAutomaticUpdatesOptOut(t *testing.T) {
 	}
 }
 
+func TestPreferencesStorePersistsExperimentalChannel(t *testing.T) {
+	store := NewPreferencesStore(openTestDatabase(t))
+	pref := preferencesdomain.Default()
+	pref.UseExperimentalChannel = true
+
+	if err := store.Save(context.Background(), pref); err != nil {
+		t.Fatalf("save preferences: %v", err)
+	}
+	loaded, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("load preferences: %v", err)
+	}
+	if !loaded.UseExperimentalChannel {
+		t.Fatal("experimental update channel was not persisted")
+	}
+}
+
 func TestPreferencesStorePersistsBrowserAppearances(t *testing.T) {
 	db := openTestDatabase(t)
 	store := NewPreferencesStore(db)

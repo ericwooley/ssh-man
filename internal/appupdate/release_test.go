@@ -105,6 +105,38 @@ func TestPlanUpdateRejectsUnverifiedOrPrereleaseAssets(t *testing.T) {
 	}
 }
 
+func TestPlanExperimentalUpdateSelectsNewestRelease(t *testing.T) {
+	releases := []releaseResponse{
+		{
+			TagName:    "1.5.0",
+			Prerelease: true,
+			Assets: []releaseAsset{{
+				Name:        "ssh-man.dmg",
+				Size:        42,
+				Digest:      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				DownloadURL: "https://github.com/ericwooley/ssh-man/releases/download/1.5.0/ssh-man.dmg",
+			}},
+		},
+		{
+			TagName: "1.4.0",
+			Assets: []releaseAsset{{
+				Name:        "ssh-man.dmg",
+				Size:        42,
+				Digest:      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				DownloadURL: "https://github.com/ericwooley/ssh-man/releases/download/1.4.0/ssh-man.dmg",
+			}},
+		},
+	}
+
+	plan, err := planExperimentalUpdate("1.3.0", releases)
+	if err != nil {
+		t.Fatalf("plan experimental update: %v", err)
+	}
+	if plan == nil || plan.Version != "1.5.0" {
+		t.Fatalf("plan = %#v, want experimental version 1.5.0", plan)
+	}
+}
+
 func TestClientChecksLatestOfficialReleaseEndpoint(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -131,11 +163,47 @@ func TestClientChecksLatestOfficialReleaseEndpoint(t *testing.T) {
 		latestReleaseURL: server.URL,
 		allowDownloadURL: func(rawURL string) bool { return strings.HasPrefix(rawURL, server.URL) },
 	}
-	plan, err := client.check(context.Background(), "1.9.9")
+	plan, err := client.check(context.Background(), "1.9.9", false)
 	if err != nil {
 		t.Fatalf("check latest release: %v", err)
 	}
 	if plan == nil || plan.Version != "2.0.0" {
+		t.Fatalf("plan = %#v", plan)
+	}
+}
+
+func TestClientChecksExperimentalReleaseEndpoint(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/releases" {
+			t.Errorf("request path = %q, want /releases", request.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `[{
+			"tag_name":"2.1.0",
+			"draft":false,
+			"prerelease":true,
+			"assets":[{
+				"name":"ssh-man.dmg",
+				"size":42,
+				"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"browser_download_url":%q
+			}]
+		}]`, server.URL+"/ssh-man.dmg")
+	}))
+	t.Cleanup(server.Close)
+
+	client := &Client{
+		httpClient:       server.Client(),
+		latestReleaseURL: server.URL + "/latest",
+		releasesURL:      server.URL + "/releases",
+		allowDownloadURL: func(rawURL string) bool { return strings.HasPrefix(rawURL, server.URL) },
+	}
+	plan, err := client.check(context.Background(), "1.9.9", true)
+	if err != nil {
+		t.Fatalf("check experimental release: %v", err)
+	}
+	if plan == nil || plan.Version != "2.1.0" {
 		t.Fatalf("plan = %#v", plan)
 	}
 }
