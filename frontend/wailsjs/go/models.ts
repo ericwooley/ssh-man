@@ -36,6 +36,7 @@ export namespace bindings {
 	    appDataPath: string;
 	    databasePath: string;
 	    version: string;
+	    automaticUpdatesSupported: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new Diagnostics(source);
@@ -46,6 +47,7 @@ export namespace bindings {
 	        this.appDataPath = source["appDataPath"];
 	        this.databasePath = source["databasePath"];
 	        this.version = source["version"];
+	        this.automaticUpdatesSupported = source["automaticUpdatesSupported"];
 	    }
 	}
 	export class ExplorerInitialState {

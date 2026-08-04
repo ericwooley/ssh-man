@@ -168,6 +168,9 @@ func supportsRequestProtocol(request Request) bool {
 	if request.ProtocolVersion == ProtocolVersion {
 		return true
 	}
+	if request.ProtocolVersion == 2 {
+		return request.Command != "preferences.save"
+	}
 	if request.ProtocolVersion != 1 {
 		return false
 	}

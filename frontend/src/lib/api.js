@@ -91,6 +91,7 @@ export async function loadInitialState() {
       appDataPath: '~/.config/ssh-man',
       databasePath: '~/.config/ssh-man/ssh-man.db',
       version: 'Dev build',
+      automaticUpdatesSupported: false,
     },
     recoverable: false,
     message: '',

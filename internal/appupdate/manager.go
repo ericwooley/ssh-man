@@ -30,6 +30,7 @@ type Manager struct {
 	mu      sync.Mutex
 	enabled bool
 	cancel  context.CancelFunc
+	runID   uint64
 	staged  *stagedUpdate
 	wait    sync.WaitGroup
 }
@@ -56,6 +57,8 @@ func (m *Manager) SetEnabled(enabled bool) {
 	m.enabled = enabled
 	if !enabled {
 		cancel := m.cancel
+		m.cancel = nil
+		m.runID++
 		staged := m.staged
 		m.staged = nil
 		m.mu.Unlock()
@@ -82,12 +85,21 @@ func (m *Manager) SetEnabled(enabled bool) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	m.runID++
+	runID := m.runID
 	m.cancel = cancel
 	m.wait.Add(1)
 	m.mu.Unlock()
 
 	go func() {
 		defer m.wait.Done()
+		defer func() {
+			m.mu.Lock()
+			if m.runID == runID {
+				m.cancel = nil
+			}
+			m.mu.Unlock()
+		}()
 		plan, err := m.client.check(ctx, m.currentVersion)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -107,10 +119,10 @@ func (m *Manager) SetEnabled(enabled bool) {
 		}
 
 		m.mu.Lock()
-		if !m.enabled {
+		if !m.enabled || m.runID != runID {
 			m.mu.Unlock()
 			if cleanupErr := m.installer.cleanup(staged); cleanupErr != nil {
-				log.Printf("remove disabled automatic update: %v", cleanupErr)
+				log.Printf("remove cancelled or superseded automatic update: %v", cleanupErr)
 			}
 			return
 		}
@@ -118,6 +130,11 @@ func (m *Manager) SetEnabled(enabled bool) {
 		m.mu.Unlock()
 		log.Printf("automatic update %s is verified and will install after SSH Man quits", plan.Version)
 	}()
+}
+
+// Supported reports whether this platform can verify and install application updates.
+func Supported() bool {
+	return newPlatformInstaller().supported()
 }
 
 func (m *Manager) StopAndPrepare(enabled bool, parentPID int) error {

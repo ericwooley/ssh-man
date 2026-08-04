@@ -80,6 +80,7 @@ function createFakeApi({
   currentUsername = 'eric',
   runningBrowsers = [],
   version = 'Dev build',
+  automaticUpdatesSupported = true,
 } = {}) {
   const state = {
     servers: clone(servers),
@@ -113,6 +114,7 @@ function createFakeApi({
         appDataPath: '/tmp/ssh-man',
         databasePath: '/tmp/ssh-man/ssh-man.db',
         version,
+        automaticUpdatesSupported,
       },
       currentUsername,
       recoverable: false,
@@ -530,6 +532,14 @@ describe('React application flows', () => {
       automaticUpdates: false,
     })))
     expect(toggle.checked).toBe(false)
+  })
+
+  test('hides automatic updates when the platform does not support them', async () => {
+    const { api } = createFakeApi({ automaticUpdatesSupported: false })
+    renderSettingsApp(api)
+
+    await screen.findByRole('heading', { name: 'General' })
+    expect(screen.queryByRole('checkbox', { name: 'Install updates automatically' })).toBeNull()
   })
 
   test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {

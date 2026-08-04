@@ -30,6 +30,7 @@ const unavailableDiagnostics = {
   appDataPath: '',
   databasePath: '',
   version: '',
+  automaticUpdatesSupported: false,
 }
 
 function normalizePreferences(preferences = {}) {

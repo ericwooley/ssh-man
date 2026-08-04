@@ -68,4 +68,7 @@ func TestLoadInitialStateIncludesInjectedBuildVersion(t *testing.T) {
 	if !strings.Contains(string(encoded), `"version":"1.2.3"`) {
 		t.Fatalf("diagnostics JSON = %s, want version field", encoded)
 	}
+	if !strings.Contains(string(encoded), `"automaticUpdatesSupported":`) {
+		t.Fatalf("diagnostics JSON = %s, want automaticUpdatesSupported field", encoded)
+	}
 }

@@ -2,8 +2,16 @@ package appupdate
 
 import (
 	"context"
+	"net/http"
 	"testing"
+	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 type recordingInstaller struct {
 	prepared bool
@@ -61,6 +69,45 @@ func TestSetEnabledImmediatelyDiscardsStagedUpdate(t *testing.T) {
 	}
 	if manager.staged != nil {
 		t.Fatalf("staged update = %#v, want nil", manager.staged)
+	}
+}
+
+func TestSetEnabledRestartsCheckAfterDisableAndReenable(t *testing.T) {
+	attempts := make(chan struct{}, 2)
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				attempts <- struct{}{}
+				<-request.Context().Done()
+				return nil, request.Context().Err()
+			}),
+		},
+		latestReleaseURL: "https://example.com/latest",
+	}
+	manager := &Manager{
+		currentVersion: "1.0.0",
+		client:         client,
+		installer:      &recordingInstaller{},
+	}
+	defer func() {
+		manager.SetEnabled(false)
+		manager.wait.Wait()
+	}()
+
+	manager.SetEnabled(true)
+	select {
+	case <-attempts:
+	case <-time.After(time.Second):
+		t.Fatal("initial automatic update check did not start")
+	}
+
+	manager.SetEnabled(false)
+	manager.SetEnabled(true)
+
+	select {
+	case <-attempts:
+	case <-time.After(time.Second):
+		t.Fatal("automatic update check did not restart after re-enabling")
 	}
 }
 
