@@ -568,23 +568,6 @@ svg {
   transition: border-color 150ms ease, background 150ms ease;
 }
 
-.server-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px;
-}
-
-.server-row__manage {
-  align-self: stretch;
-  width: 56px;
-  min-width: 56px;
-  height: auto;
-  border: 0;
-  border-left: 1px solid var(--border);
-  border-radius: 0;
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
 .server-row:hover,
 .tunnel-row:hover,
 .activity-row:hover {
