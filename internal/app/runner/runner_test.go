@@ -23,13 +23,16 @@ import (
 
 type fakeWindowRuntime struct {
 	showCalls int
+	quitCalls int
 }
 
 func (*fakeWindowRuntime) Hide(context.Context) {}
 func (f *fakeWindowRuntime) Show(context.Context) {
 	f.showCalls++
 }
-func (*fakeWindowRuntime) Quit(context.Context) {}
+func (f *fakeWindowRuntime) Quit(context.Context) {
+	f.quitCalls++
+}
 
 type fakeMenuBar struct {
 	showResult bool
@@ -530,6 +533,37 @@ func TestSecondInstanceUsesNativeMenuBarWhenAvailable(t *testing.T) {
 	}
 	if runtime.showCalls != 0 {
 		t.Fatalf("window show calls = %d, want native menu-bar show only", runtime.showCalls)
+	}
+}
+
+func TestMenuBarCallbacksShowAndQuitWindow(t *testing.T) {
+	windowRuntime := &fakeWindowRuntime{}
+	window := appwindow.NewWithRuntime(windowRuntime)
+	window.SetContext(context.Background())
+	browserSwitchEvents := newBrowserSwitchEventDispatcher(func(browserSwitchEvent) {})
+	t.Cleanup(browserSwitchEvents.Close)
+
+	var callbacks menubar.Callbacks
+	bar := &fakeMenuBar{}
+	got := createMenuBar(func(gotCallbacks menubar.Callbacks) menubar.Service {
+		callbacks = gotCallbacks
+		return bar
+	}, window, browserSwitchEvents)
+	if got != bar {
+		t.Fatal("createMenuBar() returned a different service")
+	}
+
+	callbacks.Show()
+	if windowRuntime.showCalls != 1 {
+		t.Fatalf("window show calls = %d, want 1", windowRuntime.showCalls)
+	}
+
+	callbacks.Quit()
+	if bar.stopCalls != 1 {
+		t.Fatalf("menu-bar stop calls = %d, want 1", bar.stopCalls)
+	}
+	if windowRuntime.quitCalls != 1 {
+		t.Fatalf("window quit calls = %d, want 1", windowRuntime.quitCalls)
 	}
 }
 

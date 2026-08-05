@@ -58,6 +58,8 @@ type menuBar interface {
 	Stop()
 }
 
+type menuBarFactory func(menubar.Callbacks) menubar.Service
+
 type browserSwitchEventKind uint8
 
 const (
@@ -335,6 +337,44 @@ func showApplication(bar menuBar, window *appwindow.Controller) error {
 	return nil
 }
 
+func createMenuBar(
+	factory menuBarFactory,
+	window *appwindow.Controller,
+	browserSwitchEvents *browserSwitchEventDispatcher,
+) menuBar {
+	var bar menuBar
+	bar = factory(menubar.Callbacks{
+		Show: window.ShowWhenReady,
+		Quit: func() {
+			bar.Stop()
+			if err := window.Quit(); err != nil {
+				log.Printf("quit from menu bar: %v", err)
+			}
+		},
+		SwitchBrowsers: func(direction menubar.BrowserSwitchDirection, sessionID uint64) {
+			if !bar.ShowBrowserSwitcher() {
+				bar.CancelBrowserSwitchSession()
+				return
+			}
+			if !browserSwitchEvents.Dispatch(direction, sessionID) {
+				log.Printf("browser switcher event queue is unavailable")
+				bar.CancelBrowserSwitchSession()
+			}
+		},
+		CommitBrowserSwitch: func(sessionID uint64) {
+			if !browserSwitchEvents.Commit(sessionID) {
+				log.Printf("browser switcher commit event queue is unavailable")
+			}
+		},
+		CancelBrowserSwitch: func(sessionID uint64) {
+			if !browserSwitchEvents.Cancel(sessionID) {
+				log.Printf("browser switcher cancel event queue is unavailable")
+			}
+		},
+	})
+	return bar
+}
+
 func Run(assets fs.FS) (runErr error) {
 	if handled, err := maybeRunBindingsGeneration(assets); handled {
 		return err
@@ -380,35 +420,7 @@ func Run(assets fs.FS) (runErr error) {
 		}
 	})
 
-	var bar menuBar
-	bar = menubar.New(menubar.Callbacks{
-		Quit: func() {
-			bar.Stop()
-			if err := window.Quit(); err != nil {
-				log.Printf("quit from menu bar: %v", err)
-			}
-		},
-		SwitchBrowsers: func(direction menubar.BrowserSwitchDirection, sessionID uint64) {
-			if !bar.ShowBrowserSwitcher() {
-				bar.CancelBrowserSwitchSession()
-				return
-			}
-			if !browserSwitchEvents.Dispatch(direction, sessionID) {
-				log.Printf("browser switcher event queue is unavailable")
-				bar.CancelBrowserSwitchSession()
-			}
-		},
-		CommitBrowserSwitch: func(sessionID uint64) {
-			if !browserSwitchEvents.Commit(sessionID) {
-				log.Printf("browser switcher commit event queue is unavailable")
-			}
-		},
-		CancelBrowserSwitch: func(sessionID uint64) {
-			if !browserSwitchEvents.Cancel(sessionID) {
-				log.Printf("browser switcher cancel event queue is unavailable")
-			}
-		},
-	})
+	bar := createMenuBar(menubar.New, window, browserSwitchEvents)
 	app.SetBrowserShortcutsRegistrar(bar.SetBrowserShortcuts)
 	app.SetBrowserSwitcherPresenter(bar.ShowBrowserSwitcher)
 	show := func() error {
@@ -534,8 +546,8 @@ func newOptionsWithURLHandler(assets fs.FS, app *bindings.AppBindings, explorerL
 			}
 		},
 		OnBeforeClose: func(context.Context) bool {
-			// Wails releases its native window before OnShutdown. Remove the
-			// status-item targets while the AppKit objects are still valid.
+			// Wails releases its native window before OnShutdown. Remove native
+			// tray targets while their platform window objects remain valid.
 			bar.Stop()
 			return false
 		},
