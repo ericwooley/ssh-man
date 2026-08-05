@@ -93,6 +93,15 @@ func (c *Controller) Show() error {
 	return nil
 }
 
+func (c *Controller) QuitRequested() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.quitRequested
+}
+
 // ShowWhenReady shows immediately once Wails has supplied its lifecycle
 // context, or remembers the request when a second app launch arrives early.
 func (c *Controller) ShowWhenReady() {

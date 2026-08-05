@@ -55,6 +55,7 @@ type menuBar interface {
 	ShowBrowserSwitcher() bool
 	CancelBrowserSwitchSession()
 	SetBrowserShortcuts(string, string) error
+	ShouldHideWindowOnClose() bool
 	Stop()
 }
 
@@ -337,6 +338,18 @@ func showApplication(bar menuBar, window *appwindow.Controller) error {
 	return nil
 }
 
+func handleApplicationClose(bar menuBar, window *appwindow.Controller) bool {
+	if bar != nil && bar.ShouldHideWindowOnClose() && !window.QuitRequested() {
+		if err := window.Hide(); err == nil {
+			return true
+		}
+	}
+	if bar != nil {
+		bar.Stop()
+	}
+	return false
+}
+
 func createMenuBar(
 	factory menuBarFactory,
 	window *appwindow.Controller,
@@ -546,10 +559,7 @@ func newOptionsWithURLHandler(assets fs.FS, app *bindings.AppBindings, explorerL
 			}
 		},
 		OnBeforeClose: func(context.Context) bool {
-			// Wails releases its native window before OnShutdown. Remove native
-			// tray targets while their platform window objects remain valid.
-			bar.Stop()
-			return false
+			return handleApplicationClose(bar, window)
 		},
 		OnShutdown: func(ctx context.Context) {
 			if err := lifecycle.Shutdown(ctx); err != nil {

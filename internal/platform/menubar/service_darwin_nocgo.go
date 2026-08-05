@@ -28,4 +28,8 @@ func (unavailableDarwinService) SetBrowserShortcuts(string, string) error {
 	return errors.New("macOS global shortcuts require cgo")
 }
 
+func (unavailableDarwinService) ShouldHideWindowOnClose() bool {
+	return false
+}
+
 func (unavailableDarwinService) Stop() {}

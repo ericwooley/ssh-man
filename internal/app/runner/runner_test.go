@@ -22,11 +22,14 @@ import (
 )
 
 type fakeWindowRuntime struct {
+	hideCalls int
 	showCalls int
 	quitCalls int
 }
 
-func (*fakeWindowRuntime) Hide(context.Context) {}
+func (f *fakeWindowRuntime) Hide(context.Context) {
+	f.hideCalls++
+}
 func (f *fakeWindowRuntime) Show(context.Context) {
 	f.showCalls++
 }
@@ -35,12 +38,13 @@ func (f *fakeWindowRuntime) Quit(context.Context) {
 }
 
 type fakeMenuBar struct {
-	showResult bool
-	startErr   error
-	showCalls  int
-	startCalls int
-	stopCalls  int
-	events     *[]string
+	showResult  bool
+	startErr    error
+	showCalls   int
+	startCalls  int
+	stopCalls   int
+	hideOnClose bool
+	events      *[]string
 }
 
 func (f *fakeMenuBar) Start() error {
@@ -60,6 +64,9 @@ func (f *fakeMenuBar) CancelBrowserSwitchSession() {}
 
 func (f *fakeMenuBar) SetBrowserShortcuts(string, string) error {
 	return nil
+}
+func (f *fakeMenuBar) ShouldHideWindowOnClose() bool {
+	return f.hideOnClose
 }
 func (f *fakeMenuBar) Stop() {
 	f.stopCalls++
@@ -598,6 +605,63 @@ func TestDomReadyShowsFallbackWindowWhenMenuBarStartFails(t *testing.T) {
 	}
 	if runtime.showCalls != 1 {
 		t.Fatalf("fallback window show calls = %d, want 1", runtime.showCalls)
+	}
+}
+
+func TestApplicationCloseHidesWindowWhileMenuBarIsAvailable(t *testing.T) {
+	windowRuntime := &fakeWindowRuntime{}
+	window := appwindow.NewWithRuntime(windowRuntime)
+	window.SetContext(context.Background())
+	bar := &fakeMenuBar{hideOnClose: true}
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, bar, testLifecycle(bar))
+
+	if !got.OnBeforeClose(context.Background()) {
+		t.Fatal("OnBeforeClose() allowed close while the menu bar was available")
+	}
+	if windowRuntime.hideCalls != 1 {
+		t.Fatalf("window hide calls = %d, want 1", windowRuntime.hideCalls)
+	}
+	if bar.stopCalls != 0 {
+		t.Fatalf("menu-bar stop calls = %d, want 0", bar.stopCalls)
+	}
+}
+
+func TestApplicationCloseProceedsWhenMenuBarIsUnavailable(t *testing.T) {
+	windowRuntime := &fakeWindowRuntime{}
+	window := appwindow.NewWithRuntime(windowRuntime)
+	window.SetContext(context.Background())
+	bar := &fakeMenuBar{}
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, bar, testLifecycle(bar))
+
+	if got.OnBeforeClose(context.Background()) {
+		t.Fatal("OnBeforeClose() blocked the fallback window close")
+	}
+	if windowRuntime.hideCalls != 0 {
+		t.Fatalf("window hide calls = %d, want 0", windowRuntime.hideCalls)
+	}
+	if bar.stopCalls != 1 {
+		t.Fatalf("menu-bar stop calls = %d, want 1", bar.stopCalls)
+	}
+}
+
+func TestExplicitQuitProceedsWhileMenuBarIsAvailable(t *testing.T) {
+	windowRuntime := &fakeWindowRuntime{}
+	window := appwindow.NewWithRuntime(windowRuntime)
+	window.SetContext(context.Background())
+	bar := &fakeMenuBar{hideOnClose: true}
+	got := newOptions(nil, &bindings.AppBindings{}, testLauncher(), testSettingsLauncher(), testCommandLauncher(), window, bar, testLifecycle(bar))
+
+	if err := window.Quit(); err != nil {
+		t.Fatalf("Quit() error = %v", err)
+	}
+	if got.OnBeforeClose(context.Background()) {
+		t.Fatal("OnBeforeClose() blocked an explicit quit")
+	}
+	if windowRuntime.hideCalls != 0 {
+		t.Fatalf("window hide calls = %d, want 0", windowRuntime.hideCalls)
+	}
+	if bar.stopCalls != 1 {
+		t.Fatalf("menu-bar stop calls = %d, want 1", bar.stopCalls)
 	}
 }
 

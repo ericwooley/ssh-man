@@ -79,6 +79,9 @@ func TestControllerRoutesOperationsThroughInjectedRuntime(t *testing.T) {
 	ctx := context.WithValue(context.Background(), struct{}{}, "lifecycle")
 	controller.SetContext(ctx)
 
+	if controller.QuitRequested() {
+		t.Fatal("QuitRequested() = true before Quit()")
+	}
 	if err := controller.Hide(); err != nil {
 		t.Fatalf("Hide() error = %v", err)
 	}
@@ -87,6 +90,9 @@ func TestControllerRoutesOperationsThroughInjectedRuntime(t *testing.T) {
 	}
 	if err := controller.Quit(); err != nil {
 		t.Fatalf("Quit() error = %v", err)
+	}
+	if !controller.QuitRequested() {
+		t.Fatal("QuitRequested() = false after Quit()")
 	}
 
 	hidden, shown, quit, _ := runtime.snapshot()

@@ -8,6 +8,6 @@ func applyPlatformWindowOptions(app *options.App) {
 	app.Frameless = false
 	app.DisableResize = false
 	app.StartHidden = true
-	app.HideWindowOnClose = true
+	app.HideWindowOnClose = false
 	app.AlwaysOnTop = false
 }

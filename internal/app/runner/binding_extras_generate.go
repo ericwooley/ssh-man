@@ -22,6 +22,7 @@ func (bindingsMenuBar) ShowBrowserSwitcher() bool {
 }
 func (bindingsMenuBar) CancelBrowserSwitchSession()              {}
 func (bindingsMenuBar) SetBrowserShortcuts(string, string) error { return nil }
+func (bindingsMenuBar) ShouldHideWindowOnClose() bool            { return false }
 func (bindingsMenuBar) Stop()                                    {}
 
 func additionalBindingsForGeneration() []interface{} {

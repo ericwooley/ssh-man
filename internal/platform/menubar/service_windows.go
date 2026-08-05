@@ -108,6 +108,12 @@ func (s *windowsService) SetBrowserShortcuts(string, string) error {
 	return nil
 }
 
+func (s *windowsService) ShouldHideWindowOnClose() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.started
+}
+
 func (s *windowsService) Stop() {
 	s.mu.Lock()
 	if !s.started {

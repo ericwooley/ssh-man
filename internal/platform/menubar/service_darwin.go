@@ -187,6 +187,10 @@ func (s *darwinService) Show() bool {
 	return started && C.SSHManMenuBarShow() != 0
 }
 
+func (s *darwinService) ShouldHideWindowOnClose() bool {
+	return false
+}
+
 func (s *darwinService) Stop() {
 	s.mu.Lock()
 	if !s.started {

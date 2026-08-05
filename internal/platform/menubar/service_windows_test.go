@@ -45,6 +45,9 @@ func TestWindowsServiceRoutesTrayActions(t *testing.T) {
 	if service.Show() {
 		t.Fatal("Show() = true before Start()")
 	}
+	if service.ShouldHideWindowOnClose() {
+		t.Fatal("ShouldHideWindowOnClose() = true before Start()")
+	}
 	if err := service.Start(); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -53,6 +56,9 @@ func TestWindowsServiceRoutesTrayActions(t *testing.T) {
 	}
 	if tray.starts != 1 {
 		t.Fatalf("tray starts = %d, want 1", tray.starts)
+	}
+	if !service.ShouldHideWindowOnClose() {
+		t.Fatal("ShouldHideWindowOnClose() = false after Start()")
 	}
 	if !bytes.Equal(tray.icon, []byte("icon")) {
 		t.Fatalf("tray icon = %q, want icon", tray.icon)
@@ -77,6 +83,9 @@ func TestWindowsServiceRoutesTrayActions(t *testing.T) {
 	}
 	if service.Show() {
 		t.Fatal("Show() = true after Stop()")
+	}
+	if service.ShouldHideWindowOnClose() {
+		t.Fatal("ShouldHideWindowOnClose() = true after Stop()")
 	}
 }
 

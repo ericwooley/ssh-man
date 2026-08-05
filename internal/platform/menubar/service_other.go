@@ -26,4 +26,8 @@ func (unsupportedService) SetBrowserShortcuts(string, string) error {
 	return nil
 }
 
+func (unsupportedService) ShouldHideWindowOnClose() bool {
+	return false
+}
+
 func (unsupportedService) Stop() {}

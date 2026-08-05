@@ -8,6 +8,7 @@ type Service interface {
 	ShowBrowserSwitcher() bool
 	CancelBrowserSwitchSession()
 	SetBrowserShortcuts(forward string, backward string) error
+	ShouldHideWindowOnClose() bool
 	Stop()
 }
 
