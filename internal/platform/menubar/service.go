@@ -19,6 +19,7 @@ const (
 )
 
 type Callbacks struct {
+	Show                func()
 	Quit                func()
 	SwitchBrowsers      func(BrowserSwitchDirection, uint64)
 	CommitBrowserSwitch func(uint64)

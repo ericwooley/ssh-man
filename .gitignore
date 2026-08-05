@@ -48,6 +48,7 @@ go.work
 
 # End of https://www.toptal.com/developers/gitignore/api/go
 build/*
+!build/assets.go
 !build/appicon.png
 !build/darwin/
 !build/darwin/Info.plist
