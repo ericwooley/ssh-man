@@ -8,6 +8,7 @@ import (
 	"errors"
 	"image/png"
 	"os"
+	"strings"
 	"testing"
 
 	buildassets "ssh-man/build"
@@ -164,6 +165,14 @@ func TestInstallWindowsTrayIconReportsNativeLoadFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(iconPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("temporary icon remains after installation: %v", err)
+	}
+}
+
+func TestFyneWindowsTrayStartReportsNativeIconLoadFailure(t *testing.T) {
+	tray := &fyneWindowsTray{}
+	err := tray.Start([]byte("not an icon"), windowsTrayCallbacks{})
+	if err == nil || !strings.Contains(err.Error(), "load Windows tray icon") {
+		t.Fatalf("Start() error = %v, want native icon load error", err)
 	}
 }
 
