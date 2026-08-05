@@ -1,15 +1,21 @@
 package remoteport
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	serverdomain "ssh-man/internal/domain/server"
 )
@@ -25,6 +31,7 @@ type Forward struct {
 	RemotePort int    `json:"remotePort"`
 	LocalPort  int    `json:"localPort"`
 	RemoteHost string `json:"remoteHost"`
+	AccessHost string `json:"accessHost"`
 }
 
 type runningForward struct {
@@ -39,6 +46,11 @@ type Forwarder struct {
 	client   RemoteClient
 	forwards map[int]runningForward
 }
+
+const (
+	maxForwardPreambleBytes = 64 << 10
+	forwardAccessTimeout    = 5 * time.Second
+)
 
 func NewForwarder(server serverdomain.Server) *Forwarder {
 	return NewForwarderWithDialer(server, func(ctx context.Context, server serverdomain.Server, passphrase string) (RemoteClient, error) {
@@ -86,6 +98,11 @@ func (forwarder *Forwarder) Open(ctx context.Context, passphrase string, remoteP
 		LocalPort:  tcpAddress.Port,
 		RemoteHost: remoteHostForAddresses(addresses),
 	}
+	result.AccessHost, err = newForwardAccessHost()
+	if err != nil {
+		_ = listener.Close()
+		return Forward{}, err
+	}
 	forwarder.forwards[remotePort] = runningForward{result: result, listener: listener}
 	go forwarder.accept(listener, result)
 	return result, nil
@@ -102,6 +119,12 @@ func (forwarder *Forwarder) accept(listener net.Listener, forward Forward) {
 }
 
 func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
+	preamble, err := authorizeForwardConnection(localConnection, forward.AccessHost)
+	if err != nil {
+		_ = localConnection.Close()
+		return
+	}
+
 	forwarder.mu.Lock()
 	client := forwarder.client
 	forwarder.mu.Unlock()
@@ -112,6 +135,11 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	remoteConnection, err := client.Dial("tcp", net.JoinHostPort(forward.RemoteHost, strconv.Itoa(forward.RemotePort)))
 	if err != nil {
 		_ = localConnection.Close()
+		return
+	}
+	if _, err := remoteConnection.Write(preamble); err != nil {
+		_ = localConnection.Close()
+		_ = remoteConnection.Close()
 		return
 	}
 
@@ -126,6 +154,58 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	_ = localConnection.Close()
 	_ = remoteConnection.Close()
 	<-done
+}
+
+func (forwarder *Forwarder) DialRemote(
+	ctx context.Context,
+	passphrase string,
+	remotePort int,
+	addresses []string,
+) (net.Conn, error) {
+	if remotePort < 1 || remotePort > 65535 {
+		return nil, fmt.Errorf("remote port must be between 1 and 65535")
+	}
+
+	forwarder.mu.Lock()
+	if forwarder.client == nil {
+		client, err := forwarder.dial(ctx, forwarder.server, passphrase)
+		if err != nil {
+			forwarder.mu.Unlock()
+			return nil, fmt.Errorf("connect before accessing port: %w", err)
+		}
+		forwarder.client = client
+	}
+	client := forwarder.client
+	forwarder.mu.Unlock()
+
+	type dialResult struct {
+		connection net.Conn
+		err        error
+	}
+	result := make(chan dialResult, 1)
+	go func() {
+		connection, err := client.Dial("tcp", net.JoinHostPort(
+			remoteHostForAddresses(addresses),
+			strconv.Itoa(remotePort),
+		))
+		result <- dialResult{connection: connection, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		go func() {
+			completed := <-result
+			if completed.connection != nil {
+				_ = completed.connection.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	case completed := <-result:
+		if completed.err != nil {
+			return nil, fmt.Errorf("access remote port %d: %w", remotePort, completed.err)
+		}
+		return completed.connection, nil
+	}
 }
 
 func (forwarder *Forwarder) Close() error {
@@ -181,4 +261,151 @@ func remoteHostForAddresses(addresses []string) string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+func newForwardAccessHost() (string, error) {
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return "", fmt.Errorf("create local forward access host: %w", err)
+	}
+	return "ssh-man-" + hex.EncodeToString(token[:]) + ".localhost", nil
+}
+
+func authorizeForwardConnection(connection net.Conn, accessHost string) ([]byte, error) {
+	if err := connection.SetReadDeadline(time.Now().Add(forwardAccessTimeout)); err != nil {
+		return nil, err
+	}
+	defer connection.SetReadDeadline(time.Time{})
+
+	prefix := make([]byte, 5)
+	if _, err := io.ReadFull(connection, prefix); err != nil {
+		return nil, err
+	}
+	if prefix[0] == 0x16 {
+		recordLength := int(prefix[3])<<8 | int(prefix[4])
+		if recordLength < 1 || recordLength+len(prefix) > maxForwardPreambleBytes {
+			return nil, fmt.Errorf("TLS client hello exceeded the access preamble limit")
+		}
+		preamble := append([]byte(nil), prefix...)
+		payload := make([]byte, recordLength)
+		if _, err := io.ReadFull(connection, payload); err != nil {
+			return nil, err
+		}
+		preamble = append(preamble, payload...)
+		serverName, err := tlsClientHelloServerName(preamble)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(serverName, accessHost) {
+			return nil, fmt.Errorf("TLS client hello did not match the local access host")
+		}
+		return preamble, nil
+	}
+
+	preamble := append([]byte(nil), prefix...)
+	for !bytes.Contains(preamble, []byte("\r\n\r\n")) {
+		if len(preamble) >= maxForwardPreambleBytes {
+			return nil, fmt.Errorf("HTTP request exceeded the access preamble limit")
+		}
+		next := make([]byte, 1024)
+		count, err := connection.Read(next)
+		if count > 0 {
+			preamble = append(preamble, next[:count]...)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(preamble)))
+	if err != nil {
+		return nil, fmt.Errorf("read local HTTP request: %w", err)
+	}
+	if !strings.EqualFold(requestHostName(request.Host), accessHost) {
+		return nil, fmt.Errorf("HTTP request did not match the local access host")
+	}
+	return preamble, nil
+}
+
+func requestHostName(value string) string {
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		return host
+	}
+	return strings.Trim(value, "[]")
+}
+
+func tlsClientHelloServerName(record []byte) (string, error) {
+	if len(record) < 9 || record[0] != 0x16 || record[5] != 0x01 {
+		return "", fmt.Errorf("connection did not contain a TLS client hello")
+	}
+	recordLength := int(record[3])<<8 | int(record[4])
+	if recordLength+5 > len(record) {
+		return "", fmt.Errorf("TLS client hello record was incomplete")
+	}
+	helloLength := int(record[6])<<16 | int(record[7])<<8 | int(record[8])
+	if helloLength+9 > len(record) {
+		return "", fmt.Errorf("TLS client hello message was incomplete")
+	}
+
+	index := 9 + 2 + 32
+	if index >= len(record) {
+		return "", fmt.Errorf("TLS client hello omitted the session identifier")
+	}
+	index += 1 + int(record[index])
+	if index+2 > len(record) {
+		return "", fmt.Errorf("TLS client hello omitted cipher suites")
+	}
+	cipherLength := int(record[index])<<8 | int(record[index+1])
+	index += 2 + cipherLength
+	if index >= len(record) {
+		return "", fmt.Errorf("TLS client hello omitted compression methods")
+	}
+	index += 1 + int(record[index])
+	if index+2 > len(record) {
+		return "", fmt.Errorf("TLS client hello omitted extensions")
+	}
+	extensionsLength := int(record[index])<<8 | int(record[index+1])
+	index += 2
+	extensionsEnd := index + extensionsLength
+	if extensionsEnd > len(record) {
+		return "", fmt.Errorf("TLS client hello extensions were incomplete")
+	}
+
+	for index+4 <= extensionsEnd {
+		extensionType := int(record[index])<<8 | int(record[index+1])
+		extensionLength := int(record[index+2])<<8 | int(record[index+3])
+		index += 4
+		if index+extensionLength > extensionsEnd {
+			return "", fmt.Errorf("TLS client hello extension was incomplete")
+		}
+		if extensionType == 0 {
+			return serverNameFromExtension(record[index : index+extensionLength])
+		}
+		index += extensionLength
+	}
+	return "", fmt.Errorf("TLS client hello omitted a server name")
+}
+
+func serverNameFromExtension(extension []byte) (string, error) {
+	if len(extension) < 2 {
+		return "", fmt.Errorf("TLS server name extension was incomplete")
+	}
+	listLength := int(extension[0])<<8 | int(extension[1])
+	if listLength+2 > len(extension) {
+		return "", fmt.Errorf("TLS server name list was incomplete")
+	}
+	index := 2
+	end := 2 + listLength
+	for index+3 <= end {
+		nameType := extension[index]
+		nameLength := int(extension[index+1])<<8 | int(extension[index+2])
+		index += 3
+		if index+nameLength > end {
+			return "", fmt.Errorf("TLS server name was incomplete")
+		}
+		if nameType == 0 {
+			return string(extension[index : index+nameLength]), nil
+		}
+		index += nameLength
+	}
+	return "", fmt.Errorf("TLS server name extension omitted a host name")
 }

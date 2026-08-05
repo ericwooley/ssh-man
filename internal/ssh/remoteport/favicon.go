@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	portlinkdomain "ssh-man/internal/domain/portlink"
+
 	"golang.org/x/net/html"
 )
 
@@ -32,7 +34,24 @@ var faviconMediaTypes = map[string]bool{
 	"image/x-icon":             true,
 }
 
+type DialContextFunc func(context.Context, string, string) (net.Conn, error)
+
 func FindFavicon(ctx context.Context, rawBaseURL string) (string, error) {
+	return findFavicon(ctx, rawBaseURL, nil)
+}
+
+func FindFaviconWithDialer(
+	ctx context.Context,
+	rawBaseURL string,
+	dialContext DialContextFunc,
+) (string, error) {
+	if dialContext == nil {
+		return "", fmt.Errorf("favicon lookup requires a remote dialer")
+	}
+	return findFavicon(ctx, rawBaseURL, dialContext)
+}
+
+func findFavicon(ctx context.Context, rawBaseURL string, dialContext DialContextFunc) (string, error) {
 	baseURL, err := url.Parse(rawBaseURL)
 	if err != nil {
 		return "", fmt.Errorf("parse service URL: %w", err)
@@ -45,7 +64,7 @@ func FindFavicon(ctx context.Context, rawBaseURL string) (string, error) {
 	baseURL.RawQuery = ""
 	baseURL.Fragment = ""
 
-	client := newFaviconClient(baseURL)
+	client := newFaviconClient(baseURL, dialContext)
 	page, pageURL, err := fetchFaviconResource(ctx, client, baseURL, faviconPageLimit)
 	if err != nil {
 		return "", fmt.Errorf("load service page: %w", err)
@@ -74,7 +93,12 @@ func FindFavicon(ctx context.Context, rawBaseURL string) (string, error) {
 			candidateErrors = append(candidateErrors, mediaErr)
 			continue
 		}
-		return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+		dataURL := "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data)
+		if len(dataURL) > portlinkdomain.MaxFaviconDataURLBytes {
+			candidateErrors = append(candidateErrors, fmt.Errorf("favicon data exceeded the storage size limit"))
+			continue
+		}
+		return dataURL, nil
 	}
 
 	if len(candidateErrors) > 0 {
@@ -90,9 +114,10 @@ func validateFaviconBaseURL(baseURL *url.URL) error {
 	if baseURL.User != nil {
 		return fmt.Errorf("favicon lookup does not accept URL credentials")
 	}
-	ip := net.ParseIP(baseURL.Hostname())
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("favicon lookup requires a loopback service URL")
+	hostName := strings.ToLower(baseURL.Hostname())
+	ip := net.ParseIP(hostName)
+	if (ip == nil || !ip.IsLoopback()) && !strings.HasSuffix(hostName, ".localhost") {
+		return fmt.Errorf("favicon lookup requires a local service URL")
 	}
 	if baseURL.Port() == "" {
 		return fmt.Errorf("favicon lookup requires a service port")
@@ -100,10 +125,14 @@ func validateFaviconBaseURL(baseURL *url.URL) error {
 	return nil
 }
 
-func newFaviconClient(origin *url.URL) *http.Client {
+func newFaviconClient(origin *url.URL, dialContext DialContextFunc) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// SSH authenticates the remote host. The loopback URL cannot match the remote TLS certificate.
+	// SSH authenticates the remote host. The local service name cannot match the remote TLS certificate.
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402
+	if dialContext != nil {
+		transport.Proxy = nil
+		transport.DialContext = dialContext
+	}
 	return &http.Client{
 		Transport: transport,
 		Timeout:   faviconTimeout,

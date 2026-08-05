@@ -112,7 +112,7 @@ func TestLinkValidateRejectsUnsafeOrOversizedValues(t *testing.T) {
 		{name: "scheme", edit: func(link *Link) { link.Scheme = "file" }, want: "scheme"},
 		{name: "favicon type", edit: func(link *Link) { link.FaviconDataURL = "data:text/html;base64,eA==" }, want: "favicon"},
 		{name: "favicon size", edit: func(link *Link) {
-			link.FaviconDataURL = "data:image/png;base64," + strings.Repeat("a", maxFaviconDataURLBytes)
+			link.FaviconDataURL = "data:image/png;base64," + strings.Repeat("a", MaxFaviconDataURLBytes)
 		}, want: "favicon"},
 		{name: "name size", edit: func(link *Link) { link.Name = strings.Repeat("a", maxNameBytes+1) }, want: "name"},
 	}

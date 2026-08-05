@@ -14,8 +14,8 @@ const (
 	SchemeHTTP  Scheme = "http"
 	SchemeHTTPS Scheme = "https"
 
+	MaxFaviconDataURLBytes = 256 * 1024
 	maxNameBytes           = 120
-	maxFaviconDataURLBytes = 256 * 1024
 )
 
 var ErrNotFound = errors.New("saved port link not found")
@@ -55,7 +55,7 @@ func (link Link) Validate() error {
 	if link.FaviconDataURL == "" {
 		return nil
 	}
-	if len(link.FaviconDataURL) > maxFaviconDataURLBytes {
+	if len(link.FaviconDataURL) > MaxFaviconDataURLBytes {
 		return fmt.Errorf("favicon data is too large")
 	}
 	allowedPrefix := false

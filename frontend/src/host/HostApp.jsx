@@ -67,6 +67,7 @@ export default function HostApp({ api = defaultApi }) {
   const [saving, setSaving] = useState(false)
   const [findingFavicon, setFindingFavicon] = useState(false)
   const startedRef = useRef(false)
+  const editButtonRefs = useRef(new Map())
 
   const discover = useCallback(async (secret = '') => {
     setPhase('discovering')
@@ -95,6 +96,9 @@ export default function HostApp({ api = defaultApi }) {
         const state = await api.initialState()
         setServer(state.server)
         setLinks(state.links || [])
+        const theme = state.theme === 'light' ? 'light' : 'dark'
+        document.documentElement.dataset.theme = theme
+        document.documentElement.style.colorScheme = theme
         document.title = `${state.server.name} — SSH Man`
         await discover('')
       } catch (nextError) {
@@ -130,6 +134,13 @@ export default function HostApp({ api = defaultApi }) {
     setNotice('')
   }
 
+  function closeEditor(port) {
+    setEditing(null)
+    window.setTimeout(() => {
+      editButtonRefs.current.get(port)?.focus()
+    }, 0)
+  }
+
   async function saveLink(event) {
     event.preventDefault()
     const name = String(editing?.name || '').trim()
@@ -142,7 +153,7 @@ export default function HostApp({ api = defaultApi }) {
     try {
       const saved = await api.savePortLink({ ...editing, name })
       setLinks((current) => current.filter((link) => link.port !== saved.port).concat(saved))
-      setEditing(null)
+      closeEditor(saved.port)
       setNotice(`${saved.name} saved.`)
     } catch (nextError) {
       setError(nextError.message || 'The port name could not be saved.')
@@ -157,8 +168,9 @@ export default function HostApp({ api = defaultApi }) {
     setError('')
     try {
       await api.deletePortLink(editing.id)
+      const deletedPort = editing.port
       setLinks((current) => current.filter((link) => link.id !== editing.id))
-      setEditing(null)
+      closeEditor(deletedPort)
       setNotice('Saved link removed.')
     } catch (nextError) {
       setError(nextError.message || 'The saved link could not be removed.')
@@ -272,7 +284,7 @@ export default function HostApp({ api = defaultApi }) {
                   <span className="eyebrow">Port {editing.port}</span>
                   <h2>{editing.id ? 'Edit saved link' : 'Name this port'}</h2>
                 </div>
-                <IconButton label="Close link editor" disabled={saving || findingFavicon} onClick={() => setEditing(null)}>
+                <IconButton label="Close link editor" disabled={saving || findingFavicon} onClick={() => closeEditor(editing.port)}>
                   <X aria-hidden="true" />
                 </IconButton>
               </div>
@@ -366,6 +378,13 @@ export default function HostApp({ api = defaultApi }) {
                     </button>
                     <IconButton
                       label={record.link ? `Edit ${link.name}` : `Name port ${record.port}`}
+                      ref={(node) => {
+                        if (node) {
+                          editButtonRefs.current.set(record.port, node)
+                        } else {
+                          editButtonRefs.current.delete(record.port)
+                        }
+                      }}
                       onClick={() => editRecord(record)}
                     >
                       <Pencil aria-hidden="true" />

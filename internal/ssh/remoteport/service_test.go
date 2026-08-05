@@ -150,3 +150,49 @@ func TestRunSSHClientCommandStopsStalledCommandReply(t *testing.T) {
 		t.Fatalf("command-start error = %v, want context deadline", err)
 	}
 }
+
+type writingSession struct {
+	stdout    io.Writer
+	stderr    io.Writer
+	useStderr bool
+}
+
+func (session *writingSession) Start(string) error {
+	output := session.stdout
+	if session.useStderr {
+		output = session.stderr
+	}
+	_, _ = output.Write(make([]byte, 2<<20))
+	return nil
+}
+
+func (*writingSession) Wait() error {
+	return nil
+}
+
+func (*writingSession) Close() error {
+	return nil
+}
+
+func TestRunSSHClientCommandRejectsUnboundedRemoteOutput(t *testing.T) {
+	for _, useStderr := range []bool{false, true} {
+		stream := "stdout"
+		if useStderr {
+			stream = "stderr"
+		}
+		t.Run(stream, func(t *testing.T) {
+			client := newBlockingClient()
+			_, err := runSSHClientCommand(
+				context.Background(),
+				client,
+				func(stdout, stderr io.Writer) (commandSession, error) {
+					return &writingSession{stdout: stdout, stderr: stderr, useStderr: useStderr}, nil
+				},
+				discoveryCommand,
+			)
+			if !errors.Is(err, errDiscoveryOutputLimit) {
+				t.Fatalf("output error = %v, want local limit error", err)
+			}
+		})
+	}
+}

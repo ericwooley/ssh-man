@@ -2,10 +2,14 @@ package remoteport
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	serverdomain "ssh-man/internal/domain/server"
 )
@@ -47,21 +51,152 @@ func TestForwarderOpensReusableLoopbackForward(t *testing.T) {
 	if first != second || first.LocalPort < 1 || first.RemoteHost != "127.0.0.1" {
 		t.Fatalf("forwards = %#v and %#v", first, second)
 	}
+	if !strings.HasPrefix(first.AccessHost, "ssh-man-") || !strings.HasSuffix(first.AccessHost, ".localhost") {
+		t.Fatalf("access host = %q", first.AccessHost)
+	}
+	other, err := forwarder.Open(context.Background(), "", 8080, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.AccessHost == first.AccessHost {
+		t.Fatalf("ports shared access host %q", first.AccessHost)
+	}
 
 	connection, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(first.LocalPort)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer connection.Close()
-	if _, err := connection.Write([]byte("hello")); err != nil {
+	request := "GET / HTTP/1.1\r\nHost: " + net.JoinHostPort(first.AccessHost, strconv.Itoa(first.LocalPort)) + "\r\n\r\n"
+	if _, err := connection.Write([]byte(request)); err != nil {
 		t.Fatal(err)
 	}
-	reply := make([]byte, 5)
+	reply := make([]byte, len(request))
 	if _, err := io.ReadFull(connection, reply); err != nil {
 		t.Fatal(err)
 	}
-	if string(reply) != "hello" {
+	if string(reply) != request {
 		t.Fatalf("forward reply = %q", reply)
+	}
+}
+
+type countingRemoteClient struct {
+	dialCount atomic.Int32
+}
+
+func (client *countingRemoteClient) Dial(string, string) (net.Conn, error) {
+	client.dialCount.Add(1)
+	local, remote := net.Pipe()
+	go func() {
+		defer remote.Close()
+		_, _ = io.Copy(remote, remote)
+	}()
+	return local, nil
+}
+
+func (*countingRemoteClient) Close() error {
+	return nil
+}
+
+func TestForwarderRejectsRequestsWithoutItsAccessHost(t *testing.T) {
+	remote := &countingRemoteClient{}
+	forwarder := NewForwarderWithDialer(
+		serverdomain.Server{ID: "server-1"},
+		func(context.Context, serverdomain.Server, string) (RemoteClient, error) {
+			return remote, nil
+		},
+	)
+	t.Cleanup(func() {
+		_ = forwarder.Close()
+	})
+	forward, err := forwarder.Open(context.Background(), "", 3000, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	connection, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(forward.LocalPort)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	_ = connection.SetDeadline(time.Now().Add(time.Second))
+	if _, err := connection.Write([]byte("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	var reply [1]byte
+	if _, err := connection.Read(reply[:]); err == nil {
+		t.Fatal("expected the unauthorized connection to close")
+	}
+	if remote.dialCount.Load() != 0 {
+		t.Fatalf("remote dial count = %d", remote.dialCount.Load())
+	}
+}
+
+func TestForwardAccessAcceptsMatchingTLSServerName(t *testing.T) {
+	clientConnection, serverConnection := net.Pipe()
+	t.Cleanup(func() {
+		_ = clientConnection.Close()
+		_ = serverConnection.Close()
+	})
+	const accessHost = "ssh-man-test.localhost"
+	go func() {
+		client := tls.Client(clientConnection, &tls.Config{
+			ServerName:         accessHost,
+			InsecureSkipVerify: true, // The test reads only the client hello.
+		})
+		_ = client.Handshake()
+	}()
+
+	preamble, err := authorizeForwardConnection(serverConnection, accessHost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preamble) < 6 || preamble[0] != 0x16 {
+		t.Fatalf("TLS preamble = %x", preamble)
+	}
+}
+
+func TestForwardAccessRejectsAnotherTLSServerName(t *testing.T) {
+	clientConnection, serverConnection := net.Pipe()
+	t.Cleanup(func() {
+		_ = clientConnection.Close()
+		_ = serverConnection.Close()
+	})
+	go func() {
+		client := tls.Client(clientConnection, &tls.Config{
+			ServerName:         "another-service.localhost",
+			InsecureSkipVerify: true, // The test reads only the client hello.
+		})
+		_ = client.Handshake()
+	}()
+
+	if _, err := authorizeForwardConnection(serverConnection, "ssh-man-test.localhost"); err == nil {
+		t.Fatal("expected a TLS access-host error")
+	}
+}
+
+func TestForwarderDialsRemoteWithoutOpeningListener(t *testing.T) {
+	remote := &countingRemoteClient{}
+	forwarder := NewForwarderWithDialer(
+		serverdomain.Server{ID: "server-1"},
+		func(context.Context, serverdomain.Server, string) (RemoteClient, error) {
+			return remote, nil
+		},
+	)
+	t.Cleanup(func() {
+		_ = forwarder.Close()
+	})
+
+	connection, err := forwarder.DialRemote(context.Background(), "", 3000, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = connection.Close()
+	if remote.dialCount.Load() != 1 {
+		t.Fatalf("remote dial count = %d", remote.dialCount.Load())
+	}
+	if len(forwarder.forwards) != 0 {
+		t.Fatalf("persistent forwards = %d", len(forwarder.forwards))
 	}
 }
 

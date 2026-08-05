@@ -118,6 +118,7 @@ export namespace bindings {
 	export class HostInitialState {
 	    server: server.Server;
 	    links: portlink.Link[];
+	    theme: string;
 
 	    static createFrom(source: any = {}) {
 	        return new HostInitialState(source);
@@ -127,6 +128,7 @@ export namespace bindings {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.server = this.convertValues(source["server"], server.Server);
 	        this.links = this.convertValues(source["links"], portlink.Link);
+	        this.theme = source["theme"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

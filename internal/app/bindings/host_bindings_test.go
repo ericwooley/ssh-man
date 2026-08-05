@@ -3,11 +3,13 @@ package bindings
 import (
 	"context"
 	"errors"
+	"net"
 	"reflect"
 	"testing"
 
 	appwindow "ssh-man/internal/app/window"
 	portlinkdomain "ssh-man/internal/domain/portlink"
+	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
 	"ssh-man/internal/ssh/auth"
 	"ssh-man/internal/ssh/remoteport"
@@ -54,12 +56,42 @@ func (fake *fakePortLinkService) Delete(_ context.Context, id string) error {
 type fakePortForwarder struct {
 	gotPort      int
 	gotAddresses []string
+	openCalls    int
+	directCalls  int
+}
+
+type fakeHostPreferences struct {
+	preference preferencesdomain.UserPreference
+}
+
+func (fake fakeHostPreferences) Load(context.Context) (preferencesdomain.UserPreference, error) {
+	return fake.preference, nil
 }
 
 func (fake *fakePortForwarder) Open(_ context.Context, _ string, port int, addresses []string) (remoteport.Forward, error) {
+	fake.openCalls++
 	fake.gotPort = port
 	fake.gotAddresses = addresses
-	return remoteport.Forward{RemotePort: port, LocalPort: 43123, RemoteHost: "127.0.0.1"}, nil
+	return remoteport.Forward{
+		RemotePort: port,
+		LocalPort:  43123,
+		RemoteHost: "127.0.0.1",
+		AccessHost: "ssh-man-test.localhost",
+	}, nil
+}
+
+func (fake *fakePortForwarder) DialRemote(
+	_ context.Context,
+	_ string,
+	port int,
+	addresses []string,
+) (net.Conn, error) {
+	fake.directCalls++
+	fake.gotPort = port
+	fake.gotAddresses = addresses
+	client, server := net.Pipe()
+	_ = server.Close()
+	return client, nil
 }
 
 func (*fakePortForwarder) Close() error {
@@ -93,7 +125,7 @@ func TestHostBindingsDiscoversAndOpensOnlyCurrentPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opened.URL != "http://127.0.0.1:43123" || forwarder.gotPort != 3000 {
+	if opened.URL != "http://ssh-man-test.localhost:43123" || forwarder.gotPort != 3000 {
 		t.Fatalf("opened = %#v, forwarder = %#v", opened, forwarder)
 	}
 	if !reflect.DeepEqual(forwarder.gotAddresses, []string{"0.0.0.0", "127.0.0.1"}) {
@@ -116,8 +148,13 @@ func TestHostBindingsFindsFaviconThroughCurrentPort(t *testing.T) {
 		}}},
 		&fakePortForwarder{},
 		nil,
-		func(_ context.Context, rawURL string) (string, error) {
+		func(ctx context.Context, rawURL string, dial remoteport.DialContextFunc) (string, error) {
 			gotURL = rawURL
+			connection, dialErr := dial(ctx, "tcp", "ignored")
+			if dialErr != nil {
+				return "", dialErr
+			}
+			_ = connection.Close()
 			return "data:image/png;base64,aWNvbg==", nil
 		},
 	)
@@ -129,11 +166,17 @@ func TestHostBindingsFindsFaviconThroughCurrentPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotURL != "http://127.0.0.1:43123" {
+	if gotURL != "http://ssh-man-0de4f0f103511cd1.localhost:3000" {
 		t.Fatalf("favicon URL = %q", gotURL)
 	}
 	if result.FaviconDataURL != "data:image/png;base64,aWNvbg==" {
 		t.Fatalf("favicon result = %#v", result)
+	}
+	if binding.forwarder.(*fakePortForwarder).openCalls != 0 {
+		t.Fatal("favicon lookup opened a persistent local forward")
+	}
+	if binding.forwarder.(*fakePortForwarder).directCalls != 1 {
+		t.Fatal("favicon lookup did not use one direct remote connection")
 	}
 	if _, err := binding.FindPortFavicon(8080, "http"); err == nil {
 		t.Fatal("expected an undiscovered-port error")
@@ -217,6 +260,30 @@ func TestHostBindingsInitialStateIncludesSavedLinks(t *testing.T) {
 	}
 	if len(state.Links) != 1 || state.Links[0].ID != want.ID {
 		t.Fatalf("initial state = %#v", state)
+	}
+}
+
+func TestHostBindingsInitialStateIncludesSavedTheme(t *testing.T) {
+	for _, theme := range []preferencesdomain.Theme{preferencesdomain.ThemeLight, preferencesdomain.ThemeDark} {
+		t.Run(string(theme), func(t *testing.T) {
+			binding := newHostBindingsWithDependencies(
+				serverdomain.Server{ID: "server-1"},
+				appwindow.New(),
+				&fakePortLinkService{},
+				fakePortDiscoverer{},
+				&fakePortForwarder{},
+				nil,
+			)
+			binding.preferences = fakeHostPreferences{preference: preferencesdomain.UserPreference{Theme: theme}}
+
+			state, err := binding.InitialState()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Theme != theme {
+				t.Fatalf("theme = %q, want %q", state.Theme, theme)
+			}
+		})
 	}
 }
 

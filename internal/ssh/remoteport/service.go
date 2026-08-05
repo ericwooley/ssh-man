@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	serverdomain "ssh-man/internal/domain/server"
@@ -24,7 +25,10 @@ const (
 
 	defaultSSHConnectTimeout = 10 * time.Second
 	defaultDiscoveryTimeout  = 15 * time.Second
+	maxDiscoveryOutputBytes  = 1 << 20
 )
+
+var errDiscoveryOutputLimit = errors.New("remote port output exceeded the local size limit")
 
 const discoveryCommand = `if command -v ss >/dev/null 2>&1; then ss -H -lnt | awk '{print $4}' | head -n 4096; elif command -v netstat >/dev/null 2>&1; then netstat -an 2>/dev/null | awk '$1 ~ /^tcp/ && $NF == "LISTEN" {print $4}' | head -n 4096; else printf 'Neither ss nor netstat is available.\n' >&2; exit 127; fi`
 
@@ -145,6 +149,62 @@ type commandSession interface {
 
 type sessionFactory func(io.Writer, io.Writer) (commandSession, error)
 
+type boundedCommandOutput struct {
+	mu       sync.Mutex
+	buffer   bytes.Buffer
+	limit    int
+	exceeded chan struct{}
+	once     sync.Once
+}
+
+func newBoundedCommandOutput(limit int) *boundedCommandOutput {
+	return &boundedCommandOutput{
+		limit:    limit,
+		exceeded: make(chan struct{}),
+	}
+}
+
+func (output *boundedCommandOutput) Write(data []byte) (int, error) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+
+	remaining := output.limit - output.buffer.Len()
+	if remaining > 0 {
+		writeCount := len(data)
+		if writeCount > remaining {
+			writeCount = remaining
+		}
+		_, _ = output.buffer.Write(data[:writeCount])
+	}
+	if len(data) > remaining {
+		output.once.Do(func() {
+			close(output.exceeded)
+		})
+	}
+	return len(data), nil
+}
+
+func (output *boundedCommandOutput) Bytes() []byte {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return append([]byte(nil), output.buffer.Bytes()...)
+}
+
+func (output *boundedCommandOutput) String() string {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.buffer.String()
+}
+
+func (output *boundedCommandOutput) Exceeded() bool {
+	select {
+	case <-output.exceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 func runSSHCommand(ctx context.Context, server serverdomain.Server, passphrase, command string) ([]byte, error) {
 	client, err := dialSSHClient(ctx, server, passphrase)
 	if err != nil {
@@ -207,8 +267,8 @@ func runSSHClientCommand(ctx context.Context, client io.Closer, newSession sessi
 		<-watcherDone
 	}()
 
-	var output bytes.Buffer
-	session, err := newSession(&output, &output)
+	output := newBoundedCommandOutput(maxDiscoveryOutputBytes)
+	session, err := newSession(output, output)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -223,11 +283,27 @@ func runSSHClientCommand(ctx context.Context, client io.Closer, newSession sessi
 		}
 		return nil, fmt.Errorf("start remote port command: %w", err)
 	}
-	if err := session.Wait(); err != nil {
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- session.Wait()
+	}()
+
+	var waitErr error
+	select {
+	case waitErr = <-waitDone:
+	case <-output.exceeded:
+		_ = session.Close()
+		_ = client.Close()
+		return nil, errDiscoveryOutputLimit
+	}
+	if output.Exceeded() {
+		return nil, errDiscoveryOutputLimit
+	}
+	if waitErr != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("run remote port command: %w: %s", err, strings.TrimSpace(output.String()))
+		return nil, fmt.Errorf("run remote port command: %w: %s", waitErr, strings.TrimSpace(output.String()))
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

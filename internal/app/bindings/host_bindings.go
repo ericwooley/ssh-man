@@ -2,6 +2,8 @@ package bindings
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +16,7 @@ import (
 	"ssh-man/internal/app/bootstrap"
 	appwindow "ssh-man/internal/app/window"
 	portlinkdomain "ssh-man/internal/domain/portlink"
+	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
 	"ssh-man/internal/ssh/auth"
 	"ssh-man/internal/ssh/remoteport"
@@ -31,16 +34,22 @@ type portLinkService interface {
 	Delete(context.Context, string) error
 }
 
+type hostPreferenceService interface {
+	Load(context.Context) (preferencesdomain.UserPreference, error)
+}
+
 type portForwarder interface {
 	Open(context.Context, string, int, []string) (remoteport.Forward, error)
+	DialRemote(context.Context, string, int, []string) (net.Conn, error)
 	Close() error
 }
 
-type faviconFinder func(context.Context, string) (string, error)
+type faviconFinder func(context.Context, string, remoteport.DialContextFunc) (string, error)
 
 type HostInitialState struct {
-	Server serverdomain.Server   `json:"server"`
-	Links  []portlinkdomain.Link `json:"links"`
+	Server serverdomain.Server     `json:"server"`
+	Links  []portlinkdomain.Link   `json:"links"`
+	Theme  preferencesdomain.Theme `json:"theme"`
 }
 
 type HostPortDiscoveryResult struct {
@@ -64,13 +73,14 @@ type HostBindings struct {
 	discoverer  portDiscoverer
 	forwarder   portForwarder
 	findFavicon faviconFinder
+	preferences hostPreferenceService
 	shutdown    func(context.Context) error
 	passphrase  string
 	available   map[int][]string
 }
 
 func NewHostBindings(app *bootstrap.Application, server serverdomain.Server, window *appwindow.Controller) *HostBindings {
-	return newHostBindingsWithDependencies(
+	bindings := newHostBindingsWithDependencies(
 		server,
 		window,
 		app.PortLinkService,
@@ -78,6 +88,8 @@ func NewHostBindings(app *bootstrap.Application, server serverdomain.Server, win
 		remoteport.NewForwarder(server),
 		app.Shutdown,
 	)
+	bindings.preferences = app.PreferencesService
+	return bindings
 }
 
 func newHostBindingsWithDependencies(
@@ -92,7 +104,7 @@ func newHostBindingsWithDependencies(
 	if window == nil {
 		window = appwindow.New()
 	}
-	findFavicon := remoteport.FindFavicon
+	findFavicon := remoteport.FindFaviconWithDialer
 	if len(faviconFinders) > 0 && faviconFinders[0] != nil {
 		findFavicon = faviconFinders[0]
 	}
@@ -120,7 +132,15 @@ func (bindings *HostBindings) InitialState() (HostInitialState, error) {
 	if items == nil {
 		items = []portlinkdomain.Link{}
 	}
-	return HostInitialState{Server: bindings.server, Links: items}, nil
+	theme := preferencesdomain.ThemeDark
+	if bindings.preferences != nil {
+		preference, preferenceErr := bindings.preferences.Load(context.Background())
+		if preferenceErr != nil {
+			return HostInitialState{}, fmt.Errorf("load host window theme: %w", preferenceErr)
+		}
+		theme = preference.Theme
+	}
+	return HostInitialState{Server: bindings.server, Links: items, Theme: theme}, nil
 }
 
 func (bindings *HostBindings) DiscoverPorts(passphrase string) (HostPortDiscoveryResult, error) {
@@ -179,9 +199,17 @@ func (bindings *HostBindings) DeletePortLink(id string) error {
 func (bindings *HostBindings) OpenPort(port int, scheme string) (HostOpenPortResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hostOpenTimeout)
 	defer cancel()
-	target, err := bindings.openPortURL(ctx, port, scheme)
+	scheme, passphrase, addresses, err := bindings.portAccess(port, scheme)
 	if err != nil {
 		return HostOpenPortResult{}, err
+	}
+	forward, err := bindings.forwarder.Open(ctx, passphrase, port, addresses)
+	if err != nil {
+		return HostOpenPortResult{}, err
+	}
+	target := &url.URL{
+		Scheme: scheme,
+		Host:   net.JoinHostPort(forward.AccessHost, strconv.Itoa(forward.LocalPort)),
 	}
 	return HostOpenPortResult{URL: target.String()}, nil
 }
@@ -189,21 +217,28 @@ func (bindings *HostBindings) OpenPort(port int, scheme string) (HostOpenPortRes
 func (bindings *HostBindings) FindPortFavicon(port int, scheme string) (HostFaviconResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hostOpenTimeout)
 	defer cancel()
-	target, err := bindings.openPortURL(ctx, port, scheme)
+	scheme, passphrase, addresses, err := bindings.portAccess(port, scheme)
 	if err != nil {
 		return HostFaviconResult{}, err
 	}
-	dataURL, err := bindings.findFavicon(ctx, target.String())
+	target := &url.URL{
+		Scheme: scheme,
+		Host:   net.JoinHostPort(hostServiceName(bindings.server.ID, port), strconv.Itoa(port)),
+	}
+	dialContext := func(dialCtx context.Context, _, _ string) (net.Conn, error) {
+		return bindings.forwarder.DialRemote(dialCtx, passphrase, port, addresses)
+	}
+	dataURL, err := bindings.findFavicon(ctx, target.String(), dialContext)
 	if err != nil {
 		return HostFaviconResult{}, fmt.Errorf("find favicon for port %d: %w", port, err)
 	}
 	return HostFaviconResult{FaviconDataURL: dataURL}, nil
 }
 
-func (bindings *HostBindings) openPortURL(ctx context.Context, port int, scheme string) (*url.URL, error) {
+func (bindings *HostBindings) portAccess(port int, scheme string) (string, string, []string, error) {
 	scheme = strings.ToLower(strings.TrimSpace(scheme))
 	if scheme != string(portlinkdomain.SchemeHTTP) && scheme != string(portlinkdomain.SchemeHTTPS) {
-		return nil, fmt.Errorf("port link scheme must be http or https")
+		return "", "", nil, fmt.Errorf("port link scheme must be http or https")
 	}
 
 	bindings.mu.Lock()
@@ -212,17 +247,14 @@ func (bindings *HostBindings) openPortURL(ctx context.Context, port int, scheme 
 	passphrase := bindings.passphrase
 	bindings.mu.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("refresh available ports before opening port %d", port)
+		return "", "", nil, fmt.Errorf("refresh available ports before opening port %d", port)
 	}
+	return scheme, passphrase, addresses, nil
+}
 
-	forward, err := bindings.forwarder.Open(ctx, passphrase, port, addresses)
-	if err != nil {
-		return nil, err
-	}
-	return &url.URL{
-		Scheme: scheme,
-		Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(forward.LocalPort)),
-	}, nil
+func hostServiceName(serverID string, port int) string {
+	sum := sha256.Sum256([]byte(serverID + "\x00" + strconv.Itoa(port)))
+	return "ssh-man-" + hex.EncodeToString(sum[:8]) + ".localhost"
 }
 
 func (bindings *HostBindings) Close() error {
