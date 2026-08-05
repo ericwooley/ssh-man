@@ -171,6 +171,7 @@ func (t *fyneWindowsTray) run(
 ) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	var exitOnce sync.Once
 
 	systray.Run(func() {
 		defer func() {
@@ -194,6 +195,12 @@ func (t *fyneWindowsTray) run(
 		go listenForWindowsTrayActions(openItem.ClickedCh, quitItem.ClickedCh, callbacks, exited)
 		started <- nil
 	}, func() {
+		t.completeExit(exited, &exitOnce)
+	})
+}
+
+func (t *fyneWindowsTray) completeExit(exited chan struct{}, exitOnce *sync.Once) {
+	exitOnce.Do(func() {
 		t.mu.Lock()
 		if t.exited == exited {
 			t.running = false

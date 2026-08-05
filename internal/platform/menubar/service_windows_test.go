@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	buildassets "ssh-man/build"
@@ -182,6 +183,37 @@ func TestFyneWindowsTrayStartReportsNativeIconLoadFailure(t *testing.T) {
 	err := tray.Start([]byte("not an icon"), windowsTrayCallbacks{})
 	if err == nil || !strings.Contains(err.Error(), "load Windows tray icon") {
 		t.Fatalf("Start() error = %v, want native icon load error", err)
+	}
+}
+
+func TestFyneWindowsTrayExitCallbackIsIdempotent(t *testing.T) {
+	exited := make(chan struct{})
+	tray := &fyneWindowsTray{
+		running: true,
+		exited:  exited,
+	}
+	var exitOnce sync.Once
+	var calls sync.WaitGroup
+
+	for range 32 {
+		calls.Add(1)
+		go func() {
+			defer calls.Done()
+			tray.completeExit(exited, &exitOnce)
+		}()
+	}
+	calls.Wait()
+
+	select {
+	case <-exited:
+	default:
+		t.Fatal("exit channel remains open")
+	}
+	tray.mu.Lock()
+	running := tray.running
+	tray.mu.Unlock()
+	if running {
+		t.Fatal("tray remains running after exit")
 	}
 }
 
