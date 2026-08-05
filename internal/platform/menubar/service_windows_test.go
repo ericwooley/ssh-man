@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"image/png"
+	"os"
 	"testing"
 
 	buildassets "ssh-man/build"
@@ -145,6 +146,24 @@ func TestWindowsIconFromPNGBuildsICOResource(t *testing.T) {
 func TestWindowsIconFromPNGRejectsInvalidData(t *testing.T) {
 	if _, err := windowsIconFromPNG([]byte("not png")); err == nil {
 		t.Fatal("windowsIconFromPNG() error = nil for invalid PNG")
+	}
+}
+
+func TestInstallWindowsTrayIconReportsNativeLoadFailure(t *testing.T) {
+	wantErr := errors.New("native icon load failed")
+	var iconPath string
+	err := installWindowsTrayIcon([]byte("icon"), func(path string) error {
+		iconPath = path
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("stat temporary icon: %v", err)
+		}
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("installWindowsTrayIcon() error = %v, want %v", err, wantErr)
+	}
+	if _, err := os.Stat(iconPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary icon remains after installation: %v", err)
 	}
 }
 

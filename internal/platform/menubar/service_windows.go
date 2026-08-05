@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -172,7 +173,10 @@ func (t *fyneWindowsTray) run(
 			}
 		}()
 
-		systray.SetIcon(icon)
+		if err := installWindowsTrayIcon(icon, systray.SetIconFromFilePath); err != nil {
+			started <- err
+			return
+		}
 		systray.SetTooltip("SSH Man")
 		systray.SetOnTapped(func() {
 			dispatchWindowsTrayCallback(callbacks.Open)
@@ -234,6 +238,31 @@ func dispatchWindowsTrayCallback(callback func()) {
 	if callback != nil {
 		go callback()
 	}
+}
+
+func installWindowsTrayIcon(icon []byte, install func(string) error) error {
+	if install == nil {
+		return errors.New("Windows tray icon installer is unavailable")
+	}
+
+	file, err := os.CreateTemp("", "ssh-man-tray-*.ico")
+	if err != nil {
+		return fmt.Errorf("create Windows tray icon file: %w", err)
+	}
+	path := file.Name()
+	defer os.Remove(path)
+
+	if _, err := file.Write(icon); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("write Windows tray icon file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close Windows tray icon file: %w", err)
+	}
+	if err := install(path); err != nil {
+		return fmt.Errorf("load Windows tray icon: %w", err)
+	}
+	return nil
 }
 
 func windowsIconFromPNG(data []byte) ([]byte, error) {
