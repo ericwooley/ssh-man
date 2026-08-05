@@ -65,6 +65,7 @@ func findFavicon(ctx context.Context, rawBaseURL string, dialContext DialContext
 	baseURL.Fragment = ""
 
 	client := newFaviconClient(baseURL, dialContext)
+	defer client.CloseIdleConnections()
 	page, pageURL, err := fetchFaviconResource(ctx, client, baseURL, faviconPageLimit)
 	if err != nil {
 		return "", fmt.Errorf("load service page: %w", err)

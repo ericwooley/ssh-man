@@ -149,4 +149,25 @@ describe('HostApp', () => {
     render(<HostApp api={api} />)
     expect(await screen.findByText('No listening ports found')).toBeTruthy()
   })
+
+  test('retries the complete startup after the initial state fails', async () => {
+    const user = userEvent.setup()
+    const api = createApi({ links: [] })
+    api.initialState
+      .mockRejectedValueOnce(new Error('Temporary startup failure'))
+      .mockResolvedValueOnce({
+        server: { id: 'server-1', name: 'Production', host: 'prod.example.com', port: 22, username: 'deploy' },
+        links: [],
+        theme: 'light',
+      })
+    render(<HostApp api={api} />)
+
+    expect(await screen.findByText('Temporary startup failure')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByRole('heading', { name: 'Production' })).toBeTruthy()
+    expect(await screen.findByText('Port 3000')).toBeTruthy()
+    expect(api.initialState).toHaveBeenCalledTimes(2)
+    expect(api.discoverPorts).toHaveBeenCalledTimes(1)
+  })
 })

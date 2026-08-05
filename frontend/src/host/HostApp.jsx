@@ -88,26 +88,30 @@ export default function HostApp({ api = defaultApi }) {
     }
   }, [api])
 
+  const start = useCallback(async () => {
+    setPhase('loading')
+    setError('')
+    setNotice('')
+    try {
+      const state = await api.initialState()
+      setServer(state.server)
+      setLinks(state.links || [])
+      const theme = state.theme === 'light' ? 'light' : 'dark'
+      document.documentElement.dataset.theme = theme
+      document.documentElement.style.colorScheme = theme
+      document.title = `${state.server.name} — SSH Man`
+      await discover('')
+    } catch (nextError) {
+      setError(nextError.message || 'The host window could not start.')
+      setPhase('error')
+    }
+  }, [api, discover])
+
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true
-    async function start() {
-      try {
-        const state = await api.initialState()
-        setServer(state.server)
-        setLinks(state.links || [])
-        const theme = state.theme === 'light' ? 'light' : 'dark'
-        document.documentElement.dataset.theme = theme
-        document.documentElement.style.colorScheme = theme
-        document.title = `${state.server.name} — SSH Man`
-        await discover('')
-      } catch (nextError) {
-        setError(nextError.message || 'The host window could not start.')
-        setPhase('error')
-      }
-    }
     void start()
-  }, [api, discover])
+  }, [start])
 
   const records = useMemo(() => portRecords(ports, links), [links, ports])
 
@@ -265,7 +269,7 @@ export default function HostApp({ api = defaultApi }) {
           <span className="host-state__icon" aria-hidden="true"><CircleAlert /></span>
           <h2>Host details did not load</h2>
           <p>Check the SSH connection, then try again.</p>
-          <button className="primary-button" type="button" onClick={() => discover('')}>Try again</button>
+          <button className="primary-button" type="button" onClick={() => void start()}>Try again</button>
         </main>
       ) : (
         <main className="host-content">

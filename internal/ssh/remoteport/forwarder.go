@@ -39,6 +39,20 @@ type runningForward struct {
 	listener net.Listener
 }
 
+type clientOwnedConnection struct {
+	net.Conn
+	client    RemoteClient
+	closeOnce sync.Once
+	closeErr  error
+}
+
+func (connection *clientOwnedConnection) Close() error {
+	connection.closeOnce.Do(func() {
+		connection.closeErr = errors.Join(connection.Conn.Close(), connection.client.Close())
+	})
+	return connection.closeErr
+}
+
 type Forwarder struct {
 	mu       sync.Mutex
 	server   serverdomain.Server
@@ -73,8 +87,15 @@ func (forwarder *Forwarder) Open(ctx context.Context, passphrase string, remoteP
 
 	forwarder.mu.Lock()
 	defer forwarder.mu.Unlock()
+	remoteHost := remoteHostForAddresses(addresses)
 	if existing, ok := forwarder.forwards[remotePort]; ok {
-		return existing.result, nil
+		if existing.result.RemoteHost == remoteHost {
+			return existing.result, nil
+		}
+		if err := existing.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			return Forward{}, fmt.Errorf("replace local port access: %w", err)
+		}
+		delete(forwarder.forwards, remotePort)
 	}
 	if forwarder.client == nil {
 		client, err := forwarder.dial(ctx, forwarder.server, passphrase)
@@ -96,7 +117,7 @@ func (forwarder *Forwarder) Open(ctx context.Context, passphrase string, remoteP
 	result := Forward{
 		RemotePort: remotePort,
 		LocalPort:  tcpAddress.Port,
-		RemoteHost: remoteHostForAddresses(addresses),
+		RemoteHost: remoteHost,
 	}
 	result.AccessHost, err = newForwardAccessHost()
 	if err != nil {
@@ -166,17 +187,10 @@ func (forwarder *Forwarder) DialRemote(
 		return nil, fmt.Errorf("remote port must be between 1 and 65535")
 	}
 
-	forwarder.mu.Lock()
-	if forwarder.client == nil {
-		client, err := forwarder.dial(ctx, forwarder.server, passphrase)
-		if err != nil {
-			forwarder.mu.Unlock()
-			return nil, fmt.Errorf("connect before accessing port: %w", err)
-		}
-		forwarder.client = client
+	client, err := forwarder.dial(ctx, forwarder.server, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("connect before accessing port: %w", err)
 	}
-	client := forwarder.client
-	forwarder.mu.Unlock()
 
 	type dialResult struct {
 		connection net.Conn
@@ -193,18 +207,25 @@ func (forwarder *Forwarder) DialRemote(
 
 	select {
 	case <-ctx.Done():
-		go func() {
-			completed := <-result
+		_ = client.Close()
+		completed := <-result
+		if completed.connection != nil {
+			_ = completed.connection.Close()
+		}
+		return nil, ctx.Err()
+	case completed := <-result:
+		if ctx.Err() != nil {
 			if completed.connection != nil {
 				_ = completed.connection.Close()
 			}
-		}()
-		return nil, ctx.Err()
-	case completed := <-result:
+			_ = client.Close()
+			return nil, ctx.Err()
+		}
 		if completed.err != nil {
+			_ = client.Close()
 			return nil, fmt.Errorf("access remote port %d: %w", remotePort, completed.err)
 		}
-		return completed.connection, nil
+		return &clientOwnedConnection{Conn: completed.connection, client: client}, nil
 	}
 }
 
@@ -282,17 +303,11 @@ func authorizeForwardConnection(connection net.Conn, accessHost string) ([]byte,
 		return nil, err
 	}
 	if prefix[0] == 0x16 {
-		recordLength := int(prefix[3])<<8 | int(prefix[4])
-		if recordLength < 1 || recordLength+len(prefix) > maxForwardPreambleBytes {
-			return nil, fmt.Errorf("TLS client hello exceeded the access preamble limit")
-		}
-		preamble := append([]byte(nil), prefix...)
-		payload := make([]byte, recordLength)
-		if _, err := io.ReadFull(connection, payload); err != nil {
+		preamble, clientHello, err := readTLSClientHello(connection, prefix)
+		if err != nil {
 			return nil, err
 		}
-		preamble = append(preamble, payload...)
-		serverName, err := tlsClientHelloServerName(preamble)
+		serverName, err := tlsClientHelloServerName(clientHello)
 		if err != nil {
 			return nil, err
 		}
@@ -326,6 +341,47 @@ func authorizeForwardConnection(connection net.Conn, accessHost string) ([]byte,
 	return preamble, nil
 }
 
+func readTLSClientHello(connection net.Conn, firstHeader []byte) ([]byte, []byte, error) {
+	header := append([]byte(nil), firstHeader...)
+	var preamble []byte
+	var handshake []byte
+
+	for {
+		if len(header) != 5 || header[0] != 0x16 {
+			return nil, nil, fmt.Errorf("connection did not contain a TLS handshake record")
+		}
+		recordLength := int(header[3])<<8 | int(header[4])
+		if recordLength < 1 || len(preamble)+len(header)+recordLength > maxForwardPreambleBytes {
+			return nil, nil, fmt.Errorf("TLS client hello exceeded the access preamble limit")
+		}
+		payload := make([]byte, recordLength)
+		if _, err := io.ReadFull(connection, payload); err != nil {
+			return nil, nil, err
+		}
+		preamble = append(preamble, header...)
+		preamble = append(preamble, payload...)
+		handshake = append(handshake, payload...)
+
+		if len(handshake) >= 4 {
+			if handshake[0] != 0x01 {
+				return nil, nil, fmt.Errorf("connection did not contain a TLS client hello")
+			}
+			helloLength := int(handshake[1])<<16 | int(handshake[2])<<8 | int(handshake[3])
+			if helloLength+4 > maxForwardPreambleBytes {
+				return nil, nil, fmt.Errorf("TLS client hello exceeded the access preamble limit")
+			}
+			if len(handshake) >= helloLength+4 {
+				return preamble, handshake[:helloLength+4], nil
+			}
+		}
+
+		header = make([]byte, 5)
+		if _, err := io.ReadFull(connection, header); err != nil {
+			return nil, nil, err
+		}
+	}
+}
+
 func requestHostName(value string) string {
 	if host, _, err := net.SplitHostPort(value); err == nil {
 		return host
@@ -333,52 +389,48 @@ func requestHostName(value string) string {
 	return strings.Trim(value, "[]")
 }
 
-func tlsClientHelloServerName(record []byte) (string, error) {
-	if len(record) < 9 || record[0] != 0x16 || record[5] != 0x01 {
+func tlsClientHelloServerName(clientHello []byte) (string, error) {
+	if len(clientHello) < 4 || clientHello[0] != 0x01 {
 		return "", fmt.Errorf("connection did not contain a TLS client hello")
 	}
-	recordLength := int(record[3])<<8 | int(record[4])
-	if recordLength+5 > len(record) {
-		return "", fmt.Errorf("TLS client hello record was incomplete")
-	}
-	helloLength := int(record[6])<<16 | int(record[7])<<8 | int(record[8])
-	if helloLength+9 > len(record) {
+	helloLength := int(clientHello[1])<<16 | int(clientHello[2])<<8 | int(clientHello[3])
+	if helloLength+4 > len(clientHello) {
 		return "", fmt.Errorf("TLS client hello message was incomplete")
 	}
 
-	index := 9 + 2 + 32
-	if index >= len(record) {
+	index := 4 + 2 + 32
+	if index >= len(clientHello) {
 		return "", fmt.Errorf("TLS client hello omitted the session identifier")
 	}
-	index += 1 + int(record[index])
-	if index+2 > len(record) {
+	index += 1 + int(clientHello[index])
+	if index+2 > len(clientHello) {
 		return "", fmt.Errorf("TLS client hello omitted cipher suites")
 	}
-	cipherLength := int(record[index])<<8 | int(record[index+1])
+	cipherLength := int(clientHello[index])<<8 | int(clientHello[index+1])
 	index += 2 + cipherLength
-	if index >= len(record) {
+	if index >= len(clientHello) {
 		return "", fmt.Errorf("TLS client hello omitted compression methods")
 	}
-	index += 1 + int(record[index])
-	if index+2 > len(record) {
+	index += 1 + int(clientHello[index])
+	if index+2 > len(clientHello) {
 		return "", fmt.Errorf("TLS client hello omitted extensions")
 	}
-	extensionsLength := int(record[index])<<8 | int(record[index+1])
+	extensionsLength := int(clientHello[index])<<8 | int(clientHello[index+1])
 	index += 2
 	extensionsEnd := index + extensionsLength
-	if extensionsEnd > len(record) {
+	if extensionsEnd > len(clientHello) {
 		return "", fmt.Errorf("TLS client hello extensions were incomplete")
 	}
 
 	for index+4 <= extensionsEnd {
-		extensionType := int(record[index])<<8 | int(record[index+1])
-		extensionLength := int(record[index+2])<<8 | int(record[index+3])
+		extensionType := int(clientHello[index])<<8 | int(clientHello[index+1])
+		extensionLength := int(clientHello[index+2])<<8 | int(clientHello[index+3])
 		index += 4
 		if index+extensionLength > extensionsEnd {
 			return "", fmt.Errorf("TLS client hello extension was incomplete")
 		}
 		if extensionType == 0 {
-			return serverNameFromExtension(record[index : index+extensionLength])
+			return serverNameFromExtension(clientHello[index : index+extensionLength])
 		}
 		index += extensionLength
 	}

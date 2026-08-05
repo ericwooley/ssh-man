@@ -1,12 +1,15 @@
 package remoteport
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -80,8 +83,36 @@ func TestForwarderOpensReusableLoopbackForward(t *testing.T) {
 	}
 }
 
+func TestForwarderRecreatesForwardWhenRemoteHostChanges(t *testing.T) {
+	forwarder := NewForwarderWithDialer(
+		serverdomain.Server{ID: "server-1"},
+		func(context.Context, serverdomain.Server, string) (RemoteClient, error) {
+			return echoRemoteClient{}, nil
+		},
+	)
+	t.Cleanup(func() {
+		_ = forwarder.Close()
+	})
+
+	first, err := forwarder.Open(context.Background(), "", 3000, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := forwarder.Open(context.Background(), "", 3000, []string{"::1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RemoteHost != "::1" {
+		t.Fatalf("remote host = %q, want ::1", second.RemoteHost)
+	}
+	if second.LocalPort == first.LocalPort || second.AccessHost == first.AccessHost {
+		t.Fatalf("stale forward was reused: first = %#v, second = %#v", first, second)
+	}
+}
+
 type countingRemoteClient struct {
-	dialCount atomic.Int32
+	dialCount  atomic.Int32
+	closeCount atomic.Int32
 }
 
 func (client *countingRemoteClient) Dial(string, string) (net.Conn, error) {
@@ -94,7 +125,8 @@ func (client *countingRemoteClient) Dial(string, string) (net.Conn, error) {
 	return local, nil
 }
 
-func (*countingRemoteClient) Close() error {
+func (client *countingRemoteClient) Close() error {
+	client.closeCount.Add(1)
 	return nil
 }
 
@@ -175,6 +207,140 @@ func TestForwardAccessRejectsAnotherTLSServerName(t *testing.T) {
 	}
 }
 
+func TestForwardAccessAcceptsFragmentedTLSClientHello(t *testing.T) {
+	record := captureTLSClientHello(t, "ssh-man-test.localhost")
+	payload := record[5:]
+	if len(payload) < 20 {
+		t.Fatalf("TLS client hello payload is too short: %d", len(payload))
+	}
+	first := tlsHandshakeRecord(record[1:3], payload[:20])
+	second := tlsHandshakeRecord(record[1:3], payload[20:])
+	want := append(append([]byte(nil), first...), second...)
+
+	clientConnection, serverConnection := net.Pipe()
+	t.Cleanup(func() {
+		_ = clientConnection.Close()
+		_ = serverConnection.Close()
+	})
+	go func() {
+		_, _ = clientConnection.Write(want)
+	}()
+
+	preamble, err := authorizeForwardConnection(serverConnection, "ssh-man-test.localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(preamble, want) {
+		t.Fatalf("TLS preamble length = %d, want %d", len(preamble), len(want))
+	}
+}
+
+func captureTLSClientHello(t *testing.T, serverName string) []byte {
+	t.Helper()
+	clientConnection, serverConnection := net.Pipe()
+	handshakeDone := make(chan error, 1)
+	go func() {
+		client := tls.Client(clientConnection, &tls.Config{
+			ServerName:         serverName,
+			InsecureSkipVerify: true, // The test captures only the client hello.
+		})
+		handshakeDone <- client.Handshake()
+	}()
+
+	_ = serverConnection.SetReadDeadline(time.Now().Add(time.Second))
+	header := make([]byte, 5)
+	if _, err := io.ReadFull(serverConnection, header); err != nil {
+		t.Fatal(err)
+	}
+	length := int(header[3])<<8 | int(header[4])
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(serverConnection, payload); err != nil {
+		t.Fatal(err)
+	}
+	_ = serverConnection.Close()
+	_ = clientConnection.Close()
+	<-handshakeDone
+	return append(header, payload...)
+}
+
+func tlsHandshakeRecord(version, payload []byte) []byte {
+	record := []byte{0x16, version[0], version[1], byte(len(payload) >> 8), byte(len(payload))}
+	return append(record, payload...)
+}
+
+type blockingRemoteClient struct {
+	started   chan struct{}
+	closed    chan struct{}
+	returned  chan struct{}
+	startOnce sync.Once
+	closeOnce sync.Once
+}
+
+func newBlockingRemoteClient() *blockingRemoteClient {
+	return &blockingRemoteClient{
+		started:  make(chan struct{}),
+		closed:   make(chan struct{}),
+		returned: make(chan struct{}),
+	}
+}
+
+func (client *blockingRemoteClient) Dial(string, string) (net.Conn, error) {
+	client.startOnce.Do(func() {
+		close(client.started)
+	})
+	<-client.closed
+	close(client.returned)
+	return nil, net.ErrClosed
+}
+
+func (client *blockingRemoteClient) Close() error {
+	client.closeOnce.Do(func() {
+		close(client.closed)
+	})
+	return nil
+}
+
+func TestForwarderCanceledDirectDialClosesDedicatedClient(t *testing.T) {
+	remote := newBlockingRemoteClient()
+	forwarder := NewForwarderWithDialer(
+		serverdomain.Server{ID: "server-1"},
+		func(context.Context, serverdomain.Server, string) (RemoteClient, error) {
+			return remote, nil
+		},
+	)
+	t.Cleanup(func() {
+		_ = forwarder.Close()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := forwarder.DialRemote(ctx, "", 3000, []string{"127.0.0.1"})
+		result <- err
+	}()
+	<-remote.started
+	cancel()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("dial error = %v, want context cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled direct dial did not return")
+	}
+	select {
+	case <-remote.closed:
+	case <-time.After(time.Second):
+		t.Fatal("canceled direct dial did not close its SSH client")
+	}
+	select {
+	case <-remote.returned:
+	case <-time.After(time.Second):
+		t.Fatal("SSH channel dial did not stop after client close")
+	}
+}
+
 func TestForwarderDialsRemoteWithoutOpeningListener(t *testing.T) {
 	remote := &countingRemoteClient{}
 	forwarder := NewForwarderWithDialer(
@@ -197,6 +363,12 @@ func TestForwarderDialsRemoteWithoutOpeningListener(t *testing.T) {
 	}
 	if len(forwarder.forwards) != 0 {
 		t.Fatalf("persistent forwards = %d", len(forwarder.forwards))
+	}
+	if forwarder.client != nil {
+		t.Fatal("direct dial reused the persistent forward client")
+	}
+	if remote.closeCount.Load() != 1 {
+		t.Fatalf("direct client close count = %d", remote.closeCount.Load())
 	}
 }
 

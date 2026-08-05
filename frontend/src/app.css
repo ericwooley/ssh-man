@@ -6186,7 +6186,7 @@ kbd {
 }
 
 .host-port-copy small {
-  color: var(--text-subtle);
+  color: var(--text-muted);
 }
 
 .host-empty {
