@@ -59,7 +59,8 @@ That means you can develop on a remote machine while keeping a workflow that sti
 - Auto-reconnect interrupted tunnels and surface clear runtime state
 - Optionally connect selected tunnels automatically when SSH Man starts
 - Keep browser profiles, session history, and app data in the normal OS config directory
-- Live in the macOS menu bar and open as a compact 420 x 720 control window
+- Live in the macOS menu bar or Windows notification area
+- Open a compact 420 x 720 control window from the tray icon
 - Stay minimal: no terminal juggling, no shell-script graveyard, no memorizing flags
 
 ## Remote dev, but smoother
@@ -294,6 +295,13 @@ new release and replace the previous copy after quitting SSH Man.
 The portable build requires the Microsoft Edge WebView2 Evergreen Runtime. If
 it is not already available on the computer, install it before launching SSH
 Man.
+
+Launching SSH Man adds its icon to the Windows notification area and keeps the
+control window hidden. Select the icon or use **Open SSH Man** from its context
+menu to show the window. Closing the control window hides it without stopping
+active tunnels. Use **Quit SSH Man** from the tray context menu when you want
+to stop sessions and exit. Windows can place the icon behind the notification
+area overflow button.
 
 ### Build from source
 
