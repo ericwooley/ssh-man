@@ -139,7 +139,7 @@ func TestHostBindingsDiscoversAndOpensOnlyCurrentPorts(t *testing.T) {
 func TestHostBindingsFindsFaviconThroughCurrentPort(t *testing.T) {
 	var gotURL string
 	binding := newHostBindingsWithDependencies(
-		serverdomain.Server{ID: "server-1", Name: "Production"},
+		serverdomain.Server{ID: "server-1", Name: "Production", Host: "prod.example.com"},
 		appwindow.New(),
 		&fakePortLinkService{},
 		fakePortDiscoverer{ports: []remoteport.ListeningPort{{
@@ -166,7 +166,7 @@ func TestHostBindingsFindsFaviconThroughCurrentPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotURL != "http://ssh-man-0de4f0f103511cd1.localhost:3000" {
+	if gotURL != "http://prod.example.com:3000" {
 		t.Fatalf("favicon URL = %q", gotURL)
 	}
 	if result.FaviconDataURL != "data:image/png;base64,aWNvbg==" {

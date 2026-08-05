@@ -223,7 +223,7 @@ func (bindings *HostBindings) FindPortFavicon(port int, scheme string) (HostFavi
 	}
 	target := &url.URL{
 		Scheme: scheme,
-		Host:   net.JoinHostPort(hostServiceName(bindings.server.ID, port), strconv.Itoa(port)),
+		Host:   net.JoinHostPort(bindings.server.Host, strconv.Itoa(port)),
 	}
 	dialContext := func(dialCtx context.Context, _, _ string) (net.Conn, error) {
 		return bindings.forwarder.DialRemote(dialCtx, passphrase, port, addresses)

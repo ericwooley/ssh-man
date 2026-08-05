@@ -2,7 +2,6 @@ package remoteport
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -56,7 +55,7 @@ func findFavicon(ctx context.Context, rawBaseURL string, dialContext DialContext
 	if err != nil {
 		return "", fmt.Errorf("parse service URL: %w", err)
 	}
-	if err := validateFaviconBaseURL(baseURL); err != nil {
+	if err := validateFaviconBaseURL(baseURL, dialContext != nil); err != nil {
 		return "", err
 	}
 	baseURL.Path = "/"
@@ -108,7 +107,7 @@ func findFavicon(ctx context.Context, rawBaseURL string, dialContext DialContext
 	return "", fmt.Errorf("no favicon was found")
 }
 
-func validateFaviconBaseURL(baseURL *url.URL) error {
+func validateFaviconBaseURL(baseURL *url.URL, usesRemoteDialer bool) error {
 	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
 		return fmt.Errorf("favicon lookup requires an http or https service")
 	}
@@ -117,7 +116,10 @@ func validateFaviconBaseURL(baseURL *url.URL) error {
 	}
 	hostName := strings.ToLower(baseURL.Hostname())
 	ip := net.ParseIP(hostName)
-	if (ip == nil || !ip.IsLoopback()) && !strings.HasSuffix(hostName, ".localhost") {
+	if hostName == "" {
+		return fmt.Errorf("favicon lookup requires a service host")
+	}
+	if !usesRemoteDialer && (ip == nil || !ip.IsLoopback()) && !strings.HasSuffix(hostName, ".localhost") {
 		return fmt.Errorf("favicon lookup requires a local service URL")
 	}
 	if baseURL.Port() == "" {
@@ -128,8 +130,6 @@ func validateFaviconBaseURL(baseURL *url.URL) error {
 
 func newFaviconClient(origin *url.URL, dialContext DialContextFunc) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// SSH authenticates the remote host. The local service name cannot match the remote TLS certificate.
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402
 	if dialContext != nil {
 		transport.Proxy = nil
 		transport.DialContext = dialContext

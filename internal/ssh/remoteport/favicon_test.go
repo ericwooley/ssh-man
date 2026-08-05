@@ -70,6 +70,26 @@ func TestFindFaviconUsesConventionalFallback(t *testing.T) {
 	}
 }
 
+func TestFindFaviconRejectsAnUntrustedTLSCertificate(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/":
+			response.Header().Set("Content-Type", "text/html")
+			_, _ = response.Write([]byte(`<link rel="icon" href="/favicon.ico">`))
+		case "/favicon.ico":
+			response.Header().Set("Content-Type", "image/png")
+			_, _ = response.Write(testPNG)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	if _, err := FindFavicon(context.Background(), server.URL); err == nil {
+		t.Fatal("expected an untrusted TLS certificate error")
+	}
+}
+
 func TestFindFaviconDoesNotRequestAnotherOrigin(t *testing.T) {
 	var externalRequests atomic.Int32
 	external := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
@@ -203,7 +223,7 @@ func TestFindFaviconWithDialerUsesDirectRemoteConnections(t *testing.T) {
 
 	got, err := FindFaviconWithDialer(
 		context.Background(),
-		"http://ssh-man-test.localhost:3000",
+		"http://prod.example.com:3000",
 		dial,
 	)
 	if err != nil {
@@ -218,7 +238,7 @@ func TestFindFaviconWithDialerUsesDirectRemoteConnections(t *testing.T) {
 		t.Fatalf("requested hosts = %#v", requestedHosts)
 	}
 	for _, host := range requestedHosts {
-		if host != "ssh-man-test.localhost:3000" {
+		if host != "prod.example.com:3000" {
 			t.Fatalf("requested host = %q", host)
 		}
 	}
