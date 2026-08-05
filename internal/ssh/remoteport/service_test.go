@@ -3,8 +3,10 @@ package remoteport
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ func TestParseListeningPortsGroupsAddressesAndSortsPorts(t *testing.T) {
 	output := []byte(`
 127.0.0.1:3000
 [::]:443
+::1.8021
 0.0.0.0:3000
 *.8080
 invalid
@@ -27,6 +30,7 @@ invalid
 	want := []ListeningPort{
 		{Port: 443, Addresses: []string{"::"}, SuggestedScheme: SchemeHTTPS},
 		{Port: 3000, Addresses: []string{"0.0.0.0", "127.0.0.1"}, SuggestedScheme: SchemeHTTP},
+		{Port: 8021, Addresses: []string{"::1"}, SuggestedScheme: SchemeHTTP},
 		{Port: 8080, Addresses: []string{"*"}, SuggestedScheme: SchemeHTTP},
 	}
 
@@ -81,5 +85,68 @@ func TestHandshakeSSHClientStopsWhenContextExpires(t *testing.T) {
 	}
 	if elapsed := time.Since(startedAt); elapsed > time.Second {
 		t.Fatalf("handshake stopped after %v, want less than one second", elapsed)
+	}
+}
+
+type blockingClient struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newBlockingClient() *blockingClient {
+	return &blockingClient{closed: make(chan struct{})}
+}
+
+func (client *blockingClient) Close() error {
+	client.once.Do(func() {
+		close(client.closed)
+	})
+	return nil
+}
+
+type blockingSession struct {
+	start func() error
+}
+
+func (session *blockingSession) Start(string) error {
+	return session.start()
+}
+
+func (*blockingSession) Wait() error {
+	return nil
+}
+
+func (*blockingSession) Close() error {
+	return nil
+}
+
+func TestRunSSHClientCommandStopsStalledSessionOpen(t *testing.T) {
+	client := newBlockingClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+
+	_, err := runSSHClientCommand(ctx, client, func(io.Writer, io.Writer) (commandSession, error) {
+		<-client.closed
+		return nil, errors.New("client closed")
+	}, discoveryCommand)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("session-open error = %v, want context deadline", err)
+	}
+}
+
+func TestRunSSHClientCommandStopsStalledCommandReply(t *testing.T) {
+	client := newBlockingClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	session := &blockingSession{start: func() error {
+		<-client.closed
+		return errors.New("client closed")
+	}}
+
+	_, err := runSSHClientCommand(ctx, client, func(io.Writer, io.Writer) (commandSession, error) {
+		return session, nil
+	}, discoveryCommand)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("command-start error = %v, want context deadline", err)
 	}
 }
