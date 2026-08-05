@@ -1,7 +1,15 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import HostApp from './HostApp'
+
+function createDeferred() {
+  let resolve
+  const promise = new Promise((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}
 
 function createApi({
   discovery = {
@@ -62,6 +70,29 @@ describe('HostApp', () => {
     expect(api.openExternalURL).toHaveBeenCalledWith('http://127.0.0.1:13000')
   })
 
+  test('keeps focus on a port while it opens', async () => {
+    const user = userEvent.setup()
+    const request = createDeferred()
+    const api = createApi()
+    api.openPort.mockReturnValueOnce(request.promise)
+    render(<HostApp api={api} />)
+
+    const openButton = await screen.findByRole('button', { name: 'Open Admin' })
+    await user.click(openButton)
+    await waitFor(() => expect(api.openPort).toHaveBeenCalledWith(3000, 'http'))
+
+    expect(openButton.disabled).toBe(false)
+    expect(openButton.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(openButton)
+
+    await act(async () => {
+      request.resolve({ url: 'http://127.0.0.1:13000' })
+      await request.promise
+    })
+    await waitFor(() => expect(openButton.getAttribute('aria-disabled')).toBe('false'))
+    expect(document.activeElement).toBe(openButton)
+  })
+
   test('names an available port for later use', async () => {
     const user = userEvent.setup()
     const api = createApi({ links: [] })
@@ -97,6 +128,31 @@ describe('HostApp', () => {
     await waitFor(() => expect(api.savePortLink).toHaveBeenCalledWith(expect.objectContaining({
       faviconDataUrl: 'data:image/png;base64,aWNvbg==',
     })))
+  })
+
+  test('keeps focus on the favicon action while it searches', async () => {
+    const user = userEvent.setup()
+    const request = createDeferred()
+    const api = createApi({ links: [] })
+    api.findPortFavicon.mockReturnValueOnce(request.promise)
+    render(<HostApp api={api} />)
+    await screen.findByText('Port 3000')
+
+    await user.click(screen.getByRole('button', { name: 'Name port 3000' }))
+    const findButton = screen.getByRole('button', { name: 'Find favicon' })
+    await user.click(findButton)
+    await waitFor(() => expect(api.findPortFavicon).toHaveBeenCalledWith(3000, 'http'))
+
+    expect(findButton.disabled).toBe(false)
+    expect(findButton.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(findButton)
+
+    await act(async () => {
+      request.resolve({ faviconDataUrl: 'data:image/png;base64,aWNvbg==' })
+      await request.promise
+    })
+    await waitFor(() => expect(findButton.getAttribute('aria-disabled')).toBe('false'))
+    expect(document.activeElement).toBe(findButton)
   })
 
   test('restores focus after the link editor closes and saves', async () => {

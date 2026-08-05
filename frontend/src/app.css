@@ -98,6 +98,7 @@ input[type='checkbox'] {
 }
 
 button:disabled,
+button[aria-disabled='true'],
 select:disabled,
 input:disabled {
   cursor: not-allowed;

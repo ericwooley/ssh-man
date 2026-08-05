@@ -184,7 +184,7 @@ export default function HostApp({ api = defaultApi }) {
   }
 
   async function findFavicon() {
-    if (!editing || findingFavicon) return
+    if (!editing || saving || findingFavicon) return
     setFindingFavicon(true)
     setError('')
     setNotice('')
@@ -334,7 +334,9 @@ export default function HostApp({ api = defaultApi }) {
                 <button
                   className="secondary-button"
                   type="button"
-                  disabled={saving || findingFavicon}
+                  disabled={saving}
+                  aria-busy={findingFavicon}
+                  aria-disabled={findingFavicon}
                   onClick={findFavicon}
                 >
                   {findingFavicon ? <LoaderCircle className="spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
@@ -366,7 +368,9 @@ export default function HostApp({ api = defaultApi }) {
                       className="host-port-open"
                       type="button"
                       aria-label={`Open ${link.name}`}
-                      disabled={!record.available || Boolean(pendingPort)}
+                      aria-busy={opening}
+                      aria-disabled={Boolean(pendingPort)}
+                      disabled={!record.available}
                       onClick={() => openRecord(record)}
                     >
                       <span className="host-port-icon"><PortIcon link={record.link} /></span>
