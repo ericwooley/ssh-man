@@ -3,7 +3,9 @@
 package appupdate
 
 import (
+	"context"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -33,5 +35,24 @@ func TestRunApplyHelperRejectsBroadStagingRoot(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "staging layout") {
 		t.Fatalf("helper error = %v, want staging layout rejection", err)
+	}
+}
+
+func TestReopenApplicationUsesMacOSOpen(t *testing.T) {
+	var command string
+	var arguments []string
+	err := reopenApplication("/Applications/ssh-man.app", func(_ context.Context, name string, args ...string) ([]byte, error) {
+		command = name
+		arguments = append([]string{}, args...)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatalf("reopen application: %v", err)
+	}
+	if command != "/usr/bin/open" {
+		t.Fatalf("command = %q, want /usr/bin/open", command)
+	}
+	if !reflect.DeepEqual(arguments, []string{"/Applications/ssh-man.app"}) {
+		t.Fatalf("arguments = %#v", arguments)
 	}
 }

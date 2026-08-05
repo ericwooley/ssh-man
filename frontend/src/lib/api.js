@@ -33,6 +33,7 @@ const memoryState = {
     theme: 'dark',
     lastSelectedServerId: '',
     automaticUpdates: true,
+    useExperimentalChannel: false,
     browserSwitcherShortcut: 'Alt+X',
     browserSwitcherBackwardShortcut: 'Alt+Z',
     browserAppearances: {},
@@ -44,6 +45,10 @@ const memoryState = {
   },
   sessions: [],
   sessionHistory: [],
+  updateStatus: {
+    state: 'idle',
+    channel: 'stable',
+  },
 }
 
 function id() {
@@ -347,6 +352,13 @@ export function onPreferencesChanged(callback) {
   return () => {}
 }
 
+export function onUpdateStatusChanged(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('app-update:status', (status) => callback(status))
+  }
+  return () => {}
+}
+
 export function onSettingsCloseRequested(callback) {
   if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
     return window.runtime.EventsOn('settings:close-requested', callback)
@@ -410,6 +422,12 @@ export async function hideApplicationWindow() {
 export async function quitApplication() {
   if (hasWailsRuntime()) {
     return appBindings().Quit()
+  }
+}
+
+export async function installApplicationUpdate() {
+  if (hasWailsRuntime()) {
+    return appBindings().InstallUpdate()
   }
 }
 

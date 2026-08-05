@@ -303,8 +303,18 @@ func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPI
 	if err := os.RemoveAll(backupApp); err != nil {
 		return fmt.Errorf("remove previous app bundle: %w", err)
 	}
+	if err := reopenApplication(currentApp, runCommand); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(rootPath); err != nil {
 		return fmt.Errorf("remove update staging directory: %w", err)
+	}
+	return nil
+}
+
+func reopenApplication(appPath string, run func(context.Context, string, ...string) ([]byte, error)) error {
+	if _, err := run(context.Background(), "/usr/bin/open", appPath); err != nil {
+		return fmt.Errorf("reopen updated application: %w", err)
 	}
 	return nil
 }

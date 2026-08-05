@@ -5,6 +5,7 @@ import {
   CircleCheck,
   Info,
   LoaderCircle,
+  PackageCheck,
   PanelTopClose,
   Server,
   Settings,
@@ -58,6 +59,48 @@ export function AppHeader({ title, subtitle, onBack, onHide, children }) {
         ) : null}
       </div>
     </header>
+  )
+}
+
+export function UpdateBanner({ status, pending = false, onInstall }) {
+  const state = status?.state || 'idle'
+  const version = status?.version || ''
+  if (!version || !['available', 'downloading', 'ready', 'error'].includes(state)) return null
+
+  const ready = state === 'ready'
+  const failed = state === 'error'
+  const title = ready
+    ? `SSH Man ${version} is ready`
+    : failed
+      ? `SSH Man ${version} could not update`
+      : `Preparing SSH Man ${version}`
+  const detail = ready
+    ? 'SSH Man will reopen after the update.'
+    : failed
+      ? 'SSH Man will try again after the next launch.'
+      : 'You can keep using SSH Man.'
+
+  return (
+    <section
+      className={`update-banner${failed ? ' update-banner--danger' : ''}`}
+      role={failed ? 'alert' : 'status'}
+      aria-label="Application update"
+    >
+      <PackageCheck aria-hidden="true" />
+      <span className="update-banner__copy">
+        {status.channel === 'experimental' ? <small>Experimental update</small> : null}
+        <strong>{title}</strong>
+        <span>{detail}</span>
+      </span>
+      {ready ? (
+        <button className="primary-button update-banner__action" type="button" disabled={pending} onClick={onInstall}>
+          {pending ? <LoaderCircle className="spin" aria-hidden="true" /> : null}
+          {pending ? 'Updating…' : 'Update now'}
+        </button>
+      ) : state === 'downloading' || state === 'available' ? (
+        <LoaderCircle className="spin update-banner__loader" aria-hidden="true" />
+      ) : null}
+    </section>
   )
 }
 
