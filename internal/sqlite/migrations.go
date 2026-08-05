@@ -69,6 +69,18 @@ var schemaStatements = []string{
 	);`,
 	`CREATE INDEX IF NOT EXISTS command_history_server_started_idx
 		ON command_history(server_id, started_at DESC);`,
+	`CREATE TABLE IF NOT EXISTS port_links (
+		id TEXT PRIMARY KEY,
+		server_id TEXT NOT NULL,
+		port INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		scheme TEXT NOT NULL,
+		favicon_data_url TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		FOREIGN KEY(server_id) REFERENCES servers(id) ON DELETE CASCADE,
+		UNIQUE(server_id, port)
+	);`,
 }
 
 func RunMigrations(db *sql.DB) error {
