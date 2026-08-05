@@ -3,12 +3,14 @@ import { createRoot } from 'react-dom/client'
 import App from './app/App'
 import { hasCommandRuntime } from './lib/commandApi'
 import { hasExplorerRuntime } from './lib/explorerApi'
+import { hasHostRuntime } from './lib/hostApi'
 import { hasPreviewRuntime } from './lib/previewApi'
 import { hasSettingsRuntime } from './lib/settingsApi'
 import './app.css'
 
 const ExplorerApp = lazy(() => import('./explorer/ExplorerApp'))
 const CommandApp = lazy(() => import('./command/CommandApp'))
+const HostApp = lazy(() => import('./host/HostApp'))
 const PreviewApp = lazy(() => import('./explorer/PreviewApp'))
 
 const target = document.getElementById('app')
@@ -21,11 +23,21 @@ try {
   const commandRuntime = hasCommandRuntime()
   const previewRuntime = !commandRuntime && hasPreviewRuntime()
   const explorerRuntime = !commandRuntime && !previewRuntime && hasExplorerRuntime()
-  const settingsRuntime = !commandRuntime && !previewRuntime && !explorerRuntime && hasSettingsRuntime()
-  const RootApp = commandRuntime ? CommandApp : previewRuntime ? PreviewApp : explorerRuntime ? ExplorerApp : App
+  const hostRuntime = !commandRuntime && !previewRuntime && !explorerRuntime && hasHostRuntime()
+  const settingsRuntime = !commandRuntime && !previewRuntime && !explorerRuntime && !hostRuntime && hasSettingsRuntime()
+  const RootApp = commandRuntime
+    ? CommandApp
+    : previewRuntime
+      ? PreviewApp
+      : explorerRuntime
+        ? ExplorerApp
+        : hostRuntime
+          ? HostApp
+          : App
+  const companionRuntime = commandRuntime || previewRuntime || explorerRuntime || hostRuntime
   createRoot(target).render(
     <React.StrictMode>
-      {commandRuntime || previewRuntime || explorerRuntime
+      {companionRuntime
         ? <Suspense fallback={<div className="startup-error">Opening window…</div>}><RootApp /></Suspense>
         : <RootApp settingsWindow={settingsRuntime} />}
     </React.StrictMode>,

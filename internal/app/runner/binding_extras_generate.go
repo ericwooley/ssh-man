@@ -35,6 +35,11 @@ func additionalBindingsForGeneration() []interface{} {
 		serverdomain.Server{},
 		appwindow.New(),
 	)
+	host := bindings.NewHostBindings(
+		&bootstrap.Application{},
+		serverdomain.Server{},
+		appwindow.New(),
+	)
 	preview, _ := bindings.NewPreviewBindings(
 		&bootstrap.Application{},
 		serverdomain.Server{},
@@ -44,6 +49,7 @@ func additionalBindingsForGeneration() []interface{} {
 	return []interface{}{
 		explorer,
 		command,
+		host,
 		preview,
 		bindings.NewPreviewLauncherBindingsWithDependencies("", nil, nil, nil),
 		bindings.NewSettingsWindowBindings(),
@@ -54,10 +60,11 @@ func maybeRunBindingsGeneration(assets fs.FS) (bool, error) {
 	window := appwindow.New()
 	application := &bootstrap.Application{}
 	app := bindings.NewAppBindingsWithApplication(application, window)
-	launcher := bindings.NewExplorerLauncherBindingsWithDependencies(nil, nil)
+	explorerLauncher := bindings.NewExplorerLauncherBindingsWithDependencies(nil, nil)
+	hostLauncher := bindings.NewHostLauncherBindingsWithDependencies(nil, nil)
 	settingsLauncher := bindings.NewSettingsLauncherBindingsWithDependency(nil)
 	commandLauncher := bindings.NewCommandLauncherBindingsWithDependencies(nil, nil)
 	bar := bindingsMenuBar{}
 	lifecycle := newApplicationLifecycle(nil, bar, nil, nil, nil)
-	return true, wails.Run(newOptions(assets, app, launcher, settingsLauncher, commandLauncher, window, bar, lifecycle))
+	return true, wails.Run(newOptions(assets, app, explorerLauncher, hostLauncher, settingsLauncher, commandLauncher, window, bar, lifecycle))
 }

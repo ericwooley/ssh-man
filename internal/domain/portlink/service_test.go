@@ -247,3 +247,22 @@ func TestServiceConcurrentCreatesReturnCanonicalStoredIdentity(t *testing.T) {
 		t.Fatalf("returned creation times = %v and %v, stored = %v", first.CreatedAt, second.CreatedAt, store.item.CreatedAt)
 	}
 }
+
+func TestServiceCreatesItsOwnIdentityForNewLinks(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+
+	created, err := service.Save(context.Background(), Link{
+		ID:       "caller-supplied",
+		ServerID: "server-1",
+		Port:     3000,
+		Name:     "App",
+		Scheme:   SchemeHTTP,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || created.ID == "caller-supplied" {
+		t.Fatalf("created ID = %q, want a service-generated ID", created.ID)
+	}
+}

@@ -39,9 +39,7 @@ func (service *Service) Save(ctx context.Context, link Link) (Link, error) {
 		link.ID = existing.ID
 		link.CreatedAt = existing.CreatedAt
 	case errors.Is(err, ErrNotFound):
-		if link.ID == "" {
-			link.ID = newID()
-		}
+		link.ID = newID()
 		link.CreatedAt = time.Now().UTC()
 	default:
 		return Link{}, fmt.Errorf("load saved port link: %w", err)

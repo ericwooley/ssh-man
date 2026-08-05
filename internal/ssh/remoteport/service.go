@@ -146,6 +146,24 @@ type commandSession interface {
 type sessionFactory func(io.Writer, io.Writer) (commandSession, error)
 
 func runSSHCommand(ctx context.Context, server serverdomain.Server, passphrase, command string) ([]byte, error) {
+	client, err := dialSSHClient(ctx, server, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	return runSSHClientCommand(ctx, client, func(stdout, stderr io.Writer) (commandSession, error) {
+		session, err := client.NewSession()
+		if err != nil {
+			return nil, err
+		}
+		session.Stdout = stdout
+		session.Stderr = stderr
+		return session, nil
+	}, command)
+}
+
+func dialSSHClient(ctx context.Context, server serverdomain.Server, passphrase string) (*ssh.Client, error) {
 	authMethod, err := sshconnection.AuthMethod(server, passphrase)
 	if err != nil {
 		return nil, err
@@ -170,17 +188,7 @@ func runSSHCommand(ctx context.Context, server serverdomain.Server, passphrase, 
 		_ = rawConnection.Close()
 		return nil, fmt.Errorf("start SSH connection: %w", err)
 	}
-	defer client.Close()
-
-	return runSSHClientCommand(ctx, client, func(stdout, stderr io.Writer) (commandSession, error) {
-		session, err := client.NewSession()
-		if err != nil {
-			return nil, err
-		}
-		session.Stdout = stdout
-		session.Stderr = stderr
-		return session, nil
-	}, command)
+	return client, nil
 }
 
 func runSSHClientCommand(ctx context.Context, client io.Closer, newSession sessionFactory, command string) ([]byte, error) {
