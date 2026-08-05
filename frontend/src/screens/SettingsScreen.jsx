@@ -227,6 +227,7 @@ function GeneralSettings({
   automaticUpdatesSupported,
   onToggleTheme,
   onSetAutomaticUpdates,
+  onSetExperimentalChannel,
   onSetBrowserSwitcherShortcut,
   onSetBrowserSwitcherBackwardShortcut,
   onOpenBrowserSwitcher,
@@ -265,6 +266,19 @@ function GeneralSettings({
             <span>
               <strong>Install updates automatically</strong>
               <small>Checks for official releases at launch, verifies the download, and installs it after you quit SSH Man.</small>
+            </span>
+          </label>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              aria-label="Use experimental channel"
+              checked={Boolean(preferences.useExperimentalChannel)}
+              onChange={(event) => onSetExperimentalChannel(event.target.checked)}
+            />
+            <span className="toggle" aria-hidden="true"><span /></span>
+            <span>
+              <strong>Use experimental channel</strong>
+              <small>Get early releases before they reach the stable channel.</small>
             </span>
           </label>
         </section>
@@ -1138,6 +1152,7 @@ export function SettingsScreen({
   runtimeFresh,
   onToggleTheme,
   onSetAutomaticUpdates,
+  onSetExperimentalChannel,
   onSetBrowserSwitcherShortcut,
   onSetBrowserSwitcherBackwardShortcut,
   onOpenBrowserSwitcher,
@@ -1448,6 +1463,7 @@ export function SettingsScreen({
             automaticUpdatesSupported={diagnostics.automaticUpdatesSupported}
             onToggleTheme={onToggleTheme}
             onSetAutomaticUpdates={onSetAutomaticUpdates}
+            onSetExperimentalChannel={onSetExperimentalChannel}
             onSetBrowserSwitcherShortcut={onSetBrowserSwitcherShortcut}
             onSetBrowserSwitcherBackwardShortcut={onSetBrowserSwitcherBackwardShortcut}
             onOpenBrowserSwitcher={onOpenBrowserSwitcher}

@@ -23,6 +23,15 @@ const expectedBundleID = "tech.moonpixels.ssh-man"
 
 type darwinInstaller struct{}
 
+type applyHelperOptions struct {
+	parentPID  int
+	currentApp string
+	stagedApp  string
+	rootPath   string
+	version    string
+	relaunch   bool
+}
+
 func newPlatformInstaller() platformInstaller {
 	return darwinInstaller{}
 }
@@ -147,7 +156,7 @@ func (darwinInstaller) stage(
 	}, nil
 }
 
-func (darwinInstaller) prepare(staged *stagedUpdate, parentPID int) error {
+func (darwinInstaller) prepare(staged *stagedUpdate, parentPID int, relaunch bool) error {
 	if staged == nil {
 		return nil
 	}
@@ -165,15 +174,8 @@ func (darwinInstaller) prepare(staged *stagedUpdate, parentPID int) error {
 		return fmt.Errorf("open update install log: %w", err)
 	}
 
-	command := exec.Command(
-		executablePath,
-		applyUpdateArgument,
-		"--parent-pid", strconv.Itoa(parentPID),
-		"--current-app", staged.CurrentAppPath,
-		"--staged-app", staged.AppPath,
-		"--version", staged.Version,
-		"--root", staged.RootPath,
-	)
+	arguments := updateHelperArguments(staged, parentPID, relaunch)
+	command := exec.Command(executablePath, arguments...)
 	command.Stdout = logFile
 	command.Stderr = logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -195,7 +197,22 @@ func (darwinInstaller) cleanup(staged *stagedUpdate) error {
 	return os.RemoveAll(staged.RootPath)
 }
 
-func runApplyHelper(args []string) error {
+func updateHelperArguments(staged *stagedUpdate, parentPID int, relaunch bool) []string {
+	arguments := []string{
+		applyUpdateArgument,
+		"--parent-pid", strconv.Itoa(parentPID),
+		"--current-app", staged.CurrentAppPath,
+		"--staged-app", staged.AppPath,
+		"--version", staged.Version,
+		"--root", staged.RootPath,
+	}
+	if relaunch {
+		arguments = append(arguments, "--relaunch")
+	}
+	return arguments
+}
+
+func parseApplyHelperArguments(args []string) (applyHelperOptions, error) {
 	flags := flag.NewFlagSet("ssh-man automatic update", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	parentPID := flags.Int("parent-pid", 0, "")
@@ -203,44 +220,75 @@ func runApplyHelper(args []string) error {
 	stagedApp := flags.String("staged-app", "", "")
 	version := flags.String("version", "", "")
 	rootPath := flags.String("root", "", "")
+	relaunch := flags.Bool("relaunch", false, "")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return applyHelperOptions{}, err
 	}
 	if flags.NArg() != 0 || *parentPID <= 0 || *currentApp == "" || *stagedApp == "" || *rootPath == "" {
-		return errors.New("automatic update helper arguments are incomplete")
+		return applyHelperOptions{}, errors.New("automatic update helper arguments are incomplete")
 	}
 	if _, ok := parseVersion(*version); !ok {
-		return fmt.Errorf("automatic update helper version is invalid: %q", *version)
+		return applyHelperOptions{}, fmt.Errorf("automatic update helper version is invalid: %q", *version)
 	}
 
 	cleanRoot, err := filepath.Abs(*rootPath)
 	if err != nil {
-		return fmt.Errorf("resolve update root: %w", err)
+		return applyHelperOptions{}, fmt.Errorf("resolve update root: %w", err)
 	}
 	cleanStaged, err := filepath.Abs(*stagedApp)
 	if err != nil {
-		return fmt.Errorf("resolve staged app: %w", err)
+		return applyHelperOptions{}, fmt.Errorf("resolve staged app: %w", err)
 	}
 	if cleanStaged != filepath.Join(cleanRoot, "ssh-man.app") ||
 		filepath.Base(filepath.Dir(cleanRoot)) != "updates" ||
 		!strings.HasPrefix(filepath.Base(cleanRoot), *version+"-") {
-		return errors.New("staged app and update root do not match SSH Man's staging layout")
+		return applyHelperOptions{}, errors.New("staged app and update root do not match SSH Man's staging layout")
 	}
 	cleanCurrent, err := filepath.Abs(*currentApp)
 	if err != nil {
-		return fmt.Errorf("resolve current app: %w", err)
+		return applyHelperOptions{}, fmt.Errorf("resolve current app: %w", err)
 	}
 	if filepath.Ext(cleanCurrent) != ".app" || filepath.Ext(cleanStaged) != ".app" {
-		return errors.New("automatic update paths must point to app bundles")
+		return applyHelperOptions{}, errors.New("automatic update paths must point to app bundles")
 	}
 
-	if err := waitForProcessExit(*parentPID, 5*time.Minute); err != nil {
-		return err
-	}
-	return applyStagedUpdate(cleanCurrent, cleanStaged, cleanRoot, *version, *parentPID)
+	return applyHelperOptions{
+		parentPID:  *parentPID,
+		currentApp: cleanCurrent,
+		stagedApp:  cleanStaged,
+		rootPath:   cleanRoot,
+		version:    *version,
+		relaunch:   *relaunch,
+	}, nil
 }
 
-func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPID int) (returnErr error) {
+func runApplyHelperWithDependencies(
+	args []string,
+	wait func(int, time.Duration) error,
+	apply func(string, string, string, string, int, bool) error,
+) error {
+	options, err := parseApplyHelperArguments(args)
+	if err != nil {
+		return err
+	}
+	if err := wait(options.parentPID, 5*time.Minute); err != nil {
+		return err
+	}
+	return apply(
+		options.currentApp,
+		options.stagedApp,
+		options.rootPath,
+		options.version,
+		options.parentPID,
+		options.relaunch,
+	)
+}
+
+func runApplyHelper(args []string) error {
+	return runApplyHelperWithDependencies(args, waitForProcessExit, applyStagedUpdate)
+}
+
+func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPID int, relaunch bool) (returnErr error) {
 	parentDir := filepath.Dir(currentApp)
 	if err := unix.Access(parentDir, unix.W_OK); err != nil {
 		return fmt.Errorf("the app directory is not writable: %w", err)
@@ -303,8 +351,21 @@ func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPI
 	if err := os.RemoveAll(backupApp); err != nil {
 		return fmt.Errorf("remove previous app bundle: %w", err)
 	}
+	if err := relaunchIfRequested(relaunch, currentApp, runCommand); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(rootPath); err != nil {
 		return fmt.Errorf("remove update staging directory: %w", err)
+	}
+	return nil
+}
+
+func relaunchIfRequested(relaunch bool, appPath string, run func(context.Context, string, ...string) ([]byte, error)) error {
+	if !relaunch {
+		return nil
+	}
+	if _, err := run(context.Background(), "/usr/bin/open", appPath); err != nil {
+		return fmt.Errorf("reopen updated application: %w", err)
 	}
 	return nil
 }

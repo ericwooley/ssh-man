@@ -19,6 +19,7 @@ import (
 
 const (
 	latestReleaseURL = "https://api.github.com/repos/ericwooley/ssh-man/releases/latest"
+	releasesURL      = "https://api.github.com/repos/ericwooley/ssh-man/releases?per_page=20"
 	releaseAssetName = "ssh-man.dmg"
 	maxMetadataBytes = 1 << 20
 	maxUpdateBytes   = 250 << 20
@@ -51,6 +52,7 @@ type updatePlan struct {
 type Client struct {
 	httpClient       *http.Client
 	latestReleaseURL string
+	releasesURL      string
 	allowDownloadURL func(string) bool
 }
 
@@ -69,14 +71,19 @@ func newClient() *Client {
 			},
 		},
 		latestReleaseURL: latestReleaseURL,
+		releasesURL:      releasesURL,
 		allowDownloadURL: trustedReleaseDownloadURL,
 	}
 }
 
-func (c *Client) check(ctx context.Context, currentVersion string) (*updatePlan, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.latestReleaseURL, nil)
+func (c *Client) check(ctx context.Context, currentVersion string, experimental bool) (*updatePlan, error) {
+	requestURL := c.latestReleaseURL
+	if experimental {
+		requestURL = c.releasesURL
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create latest-release request: %w", err)
+		return nil, fmt.Errorf("create release request: %w", err)
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("User-Agent", "ssh-man/"+currentVersion)
@@ -91,10 +98,18 @@ func (c *Client) check(ctx context.Context, currentVersion string) (*updatePlan,
 		return nil, fmt.Errorf("check latest release: GitHub returned %s", response.Status)
 	}
 
-	var release releaseResponse
 	decoder := json.NewDecoder(io.LimitReader(response.Body, maxMetadataBytes+1))
+	if experimental {
+		var releases []releaseResponse
+		if err := decoder.Decode(&releases); err != nil {
+			return nil, fmt.Errorf("decode experimental releases: %w", err)
+		}
+		return planExperimentalUpdateWithURLPolicy(currentVersion, releases, c.allowDownloadURL)
+	}
+
+	var release releaseResponse
 	if err := decoder.Decode(&release); err != nil {
-		return nil, fmt.Errorf("decode latest release: %w", err)
+		return nil, fmt.Errorf("decode stable release: %w", err)
 	}
 	return planUpdateWithURLPolicy(currentVersion, release, c.allowDownloadURL)
 }
@@ -115,7 +130,40 @@ func planUpdate(currentVersion string, release releaseResponse) (*updatePlan, er
 	return planUpdateWithURLPolicy(currentVersion, release, trustedReleaseDownloadURL)
 }
 
+func planExperimentalUpdate(currentVersion string, releases []releaseResponse) (*updatePlan, error) {
+	return planExperimentalUpdateWithURLPolicy(currentVersion, releases, trustedReleaseDownloadURL)
+}
+
 func planUpdateWithURLPolicy(currentVersion string, release releaseResponse, allowURL func(string) bool) (*updatePlan, error) {
+	return planReleaseWithURLPolicy(currentVersion, release, allowURL, false)
+}
+
+func planExperimentalUpdateWithURLPolicy(currentVersion string, releases []releaseResponse, allowURL func(string) bool) (*updatePlan, error) {
+	current, ok := parseVersion(currentVersion)
+	if !ok {
+		return nil, nil
+	}
+
+	var selected *releaseResponse
+	var selectedVersion semanticVersion
+	for index := range releases {
+		release := &releases[index]
+		version, valid := parseVersion(release.TagName)
+		if !valid || release.Draft || compareVersion(version, current) <= 0 {
+			continue
+		}
+		if selected == nil || compareVersion(version, selectedVersion) > 0 {
+			selected = release
+			selectedVersion = version
+		}
+	}
+	if selected == nil {
+		return nil, nil
+	}
+	return planReleaseWithURLPolicy(currentVersion, *selected, allowURL, true)
+}
+
+func planReleaseWithURLPolicy(currentVersion string, release releaseResponse, allowURL func(string) bool, allowPrerelease bool) (*updatePlan, error) {
 	current, ok := parseVersion(currentVersion)
 	if !ok {
 		return nil, nil
@@ -127,7 +175,7 @@ func planUpdateWithURLPolicy(currentVersion string, release releaseResponse, all
 	if release.Draft {
 		return nil, errors.New("latest release is still a draft")
 	}
-	if release.Prerelease {
+	if release.Prerelease && !allowPrerelease {
 		return nil, errors.New("latest release is a prerelease")
 	}
 	if compareVersion(latest, current) <= 0 {

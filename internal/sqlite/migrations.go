@@ -113,6 +113,13 @@ func RunMigrations(db *sql.DB) error {
 	); err != nil {
 		return err
 	}
+	if _, err := ensureUserPreferencesColumn(
+		tx,
+		"use_experimental_channel",
+		`ALTER TABLE user_preferences ADD COLUMN use_experimental_channel INTEGER NOT NULL DEFAULT 0;`,
+	); err != nil {
+		return err
+	}
 	backwardAdded, err := ensureUserPreferencesColumn(
 		tx,
 		"browser_switcher_backward_shortcut",

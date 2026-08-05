@@ -6,6 +6,7 @@ import {
   EmptyState,
   LoadingScreen,
   ToastRegion,
+  UpdateBanner,
 } from '../components/AppChrome'
 import { ConfirmDialog, UnlockDialog } from '../components/Dialogs'
 import { BrowserSwitcher } from '../components/BrowserSwitcher'
@@ -549,6 +550,7 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
                 runtimeFresh={app.runtimeFresh}
                 onToggleTheme={app.toggleTheme}
                 onSetAutomaticUpdates={app.setAutomaticUpdates}
+                onSetExperimentalChannel={app.setExperimentalChannel}
                 onSetBrowserSwitcherShortcut={app.setBrowserSwitcherShortcut}
                 onSetBrowserSwitcherBackwardShortcut={app.setBrowserSwitcherBackwardShortcut}
                 onOpenBrowserSwitcher={openBrowserSwitcher}
@@ -633,6 +635,11 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
     <div className="window-shell">
       <div className="app-frame" aria-busy={app.phase === 'loading'}>
         <AppHeader title={header.title} subtitle={header.subtitle} onBack={handleBack} onHide={app.hideWindow} />
+        <UpdateBanner
+          status={app.updateStatus}
+          pending={Boolean(app.pending['install-update'])}
+          onInstall={app.installUpdate}
+        />
 
         <main className="app-content">
           {app.phase === 'loading' ? <LoadingScreen /> : null}

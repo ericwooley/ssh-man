@@ -28,6 +28,8 @@ type AppBindings struct {
 	saveBrowserAppearance func(string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)
 	preferencesSaved      func(preferencesdomain.UserPreference)
 	setDefaultBrowser     func() (defaultbrowser.Status, error)
+	updateStatus          func() appupdate.Status
+	installUpdate         func() error
 }
 
 func (a *AppBindings) SetBrowserShortcutsRegistrar(registrar func(string, string) error) {
@@ -54,6 +56,14 @@ func (a *AppBindings) SetDefaultBrowserSetter(setter func() (defaultbrowser.Stat
 	a.setDefaultBrowser = setter
 }
 
+func (a *AppBindings) SetUpdateStatusGetter(getter func() appupdate.Status) {
+	a.updateStatus = getter
+}
+
+func (a *AppBindings) SetUpdateInstaller(installer func() error) {
+	a.installUpdate = installer
+}
+
 type ServerWithConfigurations struct {
 	Server         serverdomain.Server                    `json:"server"`
 	Configurations []configdomain.ConnectionConfiguration `json:"configurations"`
@@ -78,6 +88,7 @@ type LoadInitialStateResult struct {
 	SSHKeys         []SSHKeyOption                   `json:"sshKeys"`
 	Diagnostics     Diagnostics                      `json:"diagnostics"`
 	CurrentUsername string                           `json:"currentUsername,omitempty"`
+	UpdateStatus    appupdate.Status                 `json:"updateStatus"`
 	Message         string                           `json:"message,omitempty"`
 	Recoverable     bool                             `json:"recoverable,omitempty"`
 }
@@ -138,6 +149,16 @@ func (a *AppBindings) Quit() error {
 	return a.window.Quit()
 }
 
+func (a *AppBindings) InstallUpdate() error {
+	if a.installUpdate == nil {
+		return fmt.Errorf("application updates are unavailable")
+	}
+	if err := a.installUpdate(); err != nil {
+		return err
+	}
+	return a.window.Quit()
+}
+
 func (a *AppBindings) storageError(action string, err error) error {
 	if err == nil {
 		return nil
@@ -162,6 +183,10 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 			AutomaticUpdatesSupported: appupdate.Supported(),
 		},
 		CurrentUsername: currentUsername,
+		UpdateStatus:    appupdate.Status{State: appupdate.StateIdle, Channel: appupdate.ChannelStable},
+	}
+	if a.updateStatus != nil {
+		result.UpdateStatus = a.updateStatus()
 	}
 
 	servers, err := a.app.ServerService.List(ctx)
@@ -206,6 +231,7 @@ func (a *AppBindings) LoadInitialState() (LoadInitialStateResult, error) {
 		SSHKeys:         result.SSHKeys,
 		Diagnostics:     result.Diagnostics,
 		CurrentUsername: currentUsername,
+		UpdateStatus:    result.UpdateStatus,
 		Message:         message,
 		Recoverable:     prefErr != nil,
 	}, nil

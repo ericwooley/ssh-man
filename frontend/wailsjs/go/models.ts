@@ -1,3 +1,26 @@
+export namespace appupdate {
+
+	export class Status {
+	    state: string;
+	    version?: string;
+	    channel: string;
+	    message?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.version = source["version"];
+	        this.channel = source["channel"];
+	        this.message = source["message"];
+	    }
+	}
+
+}
+
 export namespace bindings {
 
 	export class CommandInitialState {
@@ -147,6 +170,7 @@ export namespace bindings {
 	    sshKeys: SSHKeyOption[];
 	    diagnostics: Diagnostics;
 	    currentUsername?: string;
+	    updateStatus: appupdate.Status;
 	    message?: string;
 	    recoverable?: boolean;
 
@@ -162,6 +186,7 @@ export namespace bindings {
 	        this.sshKeys = this.convertValues(source["sshKeys"], SSHKeyOption);
 	        this.diagnostics = this.convertValues(source["diagnostics"], Diagnostics);
 	        this.currentUsername = source["currentUsername"];
+	        this.updateStatus = this.convertValues(source["updateStatus"], appupdate.Status);
 	        this.message = source["message"];
 	        this.recoverable = source["recoverable"];
 	    }
@@ -485,6 +510,7 @@ export namespace preferences {
 	    theme: string;
 	    lastSelectedServerId?: string;
 	    automaticUpdates: boolean;
+	    useExperimentalChannel: boolean;
 	    browserSwitcherShortcut: string;
 	    browserSwitcherBackwardShortcut: string;
 	    browserAppearances: Record<string, BrowserAppearance>;
@@ -506,6 +532,7 @@ export namespace preferences {
 	        this.theme = source["theme"];
 	        this.lastSelectedServerId = source["lastSelectedServerId"];
 	        this.automaticUpdates = source["automaticUpdates"];
+	        this.useExperimentalChannel = source["useExperimentalChannel"];
 	        this.browserSwitcherShortcut = source["browserSwitcherShortcut"];
 	        this.browserSwitcherBackwardShortcut = source["browserSwitcherBackwardShortcut"];
 	        this.browserAppearances = this.convertValues(source["browserAppearances"], BrowserAppearance, true);

@@ -81,6 +81,7 @@ function createFakeApi({
   runningBrowsers = [],
   version = 'Dev build',
   automaticUpdatesSupported = true,
+  updateStatus = { state: 'idle', channel: 'stable' },
 } = {}) {
   const state = {
     servers: clone(servers),
@@ -90,6 +91,7 @@ function createFakeApi({
       theme: 'dark',
       lastSelectedServerId: '',
       automaticUpdates: true,
+      useExperimentalChannel: false,
       browserSwitcherShortcut: 'Alt+X',
       browserSwitcherBackwardShortcut: 'Alt+Z',
       browserAppearances: {},
@@ -117,6 +119,7 @@ function createFakeApi({
         automaticUpdatesSupported,
       },
       currentUsername,
+      updateStatus: clone(updateStatus),
       recoverable: false,
       message: '',
     })),
@@ -214,6 +217,10 @@ function createFakeApi({
       api.preferencesChangedListener = callback
       return () => { api.preferencesChangedListener = null }
     }),
+    onUpdateStatusChanged: vi.fn((callback) => {
+      api.updateStatusListener = callback
+      return () => { api.updateStatusListener = null }
+    }),
     onBrowserSwitcherRequested: vi.fn((callback) => {
       api.browserSwitcherListener = callback
       return () => { api.browserSwitcherListener = null }
@@ -238,6 +245,7 @@ function createFakeApi({
     openServerCommand: vi.fn(async () => undefined),
     hideApplicationWindow: vi.fn(async () => undefined),
     quitApplication: vi.fn(async () => undefined),
+    installApplicationUpdate: vi.fn(async () => undefined),
     openExternalURL: vi.fn(async () => undefined),
   }
 
@@ -532,6 +540,53 @@ describe('React application flows', () => {
       automaticUpdates: false,
     })))
     expect(toggle.checked).toBe(false)
+  })
+
+  test('lets users select the experimental update channel', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi()
+    renderSettingsApp(api)
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Use experimental channel' })
+    expect(toggle.checked).toBe(false)
+
+    await user.click(toggle)
+
+    await waitFor(() => expect(api.savePreferences).toHaveBeenCalledWith(expect.objectContaining({
+      useExperimentalChannel: true,
+    })))
+    expect(toggle.checked).toBe(true)
+  })
+
+  test('shows a ready update banner and installs with one click', async () => {
+    const user = userEvent.setup()
+    const { api } = createFakeApi({
+      updateStatus: { state: 'ready', version: '1.15.0', channel: 'experimental' },
+    })
+    renderApp(api)
+
+    expect(await screen.findByText('SSH Man 1.15.0 is ready')).toBeTruthy()
+    expect(screen.getByText('Experimental update')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Update now' }))
+
+    expect(api.installApplicationUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  test('updates the banner when the backend publishes update status', async () => {
+    const { api } = createFakeApi()
+    renderApp(api)
+
+    await waitFor(() => expect(api.updateStatusListener).toBeTypeOf('function'))
+    expect(screen.queryByText('SSH Man 1.15.0 is ready')).toBeNull()
+
+    act(() => api.updateStatusListener({
+      state: 'ready',
+      version: '1.15.0',
+      channel: 'stable',
+    }))
+
+    expect(await screen.findByText('SSH Man 1.15.0 is ready')).toBeTruthy()
   })
 
   test('hides automatic updates when the platform does not support them', async () => {

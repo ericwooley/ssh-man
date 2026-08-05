@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"ssh-man/internal/app/bootstrap"
+	"ssh-man/internal/appupdate"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
 	sessiondomain "ssh-man/internal/domain/session"
@@ -59,6 +60,12 @@ func TestLoadInitialStateIncludesInjectedBuildVersion(t *testing.T) {
 	}
 	if !state.Preferences.AutomaticUpdates {
 		t.Fatal("automatic updates should be enabled in default initial state")
+	}
+	if state.Preferences.UseExperimentalChannel {
+		t.Fatal("the experimental channel should be disabled in default initial state")
+	}
+	if state.UpdateStatus.State != appupdate.StateIdle {
+		t.Fatalf("update status = %#v, want idle", state.UpdateStatus)
 	}
 
 	encoded, err := json.Marshal(state.Diagnostics)

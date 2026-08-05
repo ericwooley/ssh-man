@@ -172,6 +172,76 @@ svg {
   overflow: hidden;
 }
 
+.update-banner {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--info) 34%, var(--border));
+  background: color-mix(in srgb, var(--info-soft) 78%, var(--surface));
+}
+
+.update-banner > svg {
+  color: var(--info);
+}
+
+.update-banner__copy,
+.update-banner__copy > span,
+.update-banner__copy > strong,
+.update-banner__copy > small {
+  display: block;
+  min-width: 0;
+}
+
+.update-banner__copy small {
+  margin-bottom: 1px;
+  color: var(--info);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.update-banner__copy strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.update-banner__copy > span {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.update-banner__action {
+  min-height: 34px;
+  padding: 0 11px;
+  white-space: nowrap;
+}
+
+.update-banner__action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.update-banner__loader {
+  color: var(--info);
+}
+
+.update-banner--danger {
+  border-bottom-color: color-mix(in srgb, var(--danger) 34%, var(--border));
+  background: color-mix(in srgb, var(--danger-soft) 78%, var(--surface));
+}
+
+.update-banner--danger > svg {
+  color: var(--danger);
+}
+
 .app-header,
 .form-header {
   --wails-draggable: drag;

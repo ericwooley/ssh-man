@@ -24,6 +24,8 @@ export function DismissURLRoute(arg1:string):Promise<void>;
 
 export function HideWindow():Promise<void>;
 
+export function InstallUpdate():Promise<void>;
+
 export function LaunchBrowserThroughSocks(arg1:string,arg2:string):Promise<void>;
 
 export function ListRunningBrowsers():Promise<any>;
