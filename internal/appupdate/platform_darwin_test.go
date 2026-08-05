@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBundlePathFromExecutable(t *testing.T) {
@@ -64,5 +65,49 @@ func TestRelaunchIfRequestedUsesMacOSOpenOnlyForOneClickUpdate(t *testing.T) {
 	}
 	if !reflect.DeepEqual(arguments, []string{"/Applications/ssh-man.app"}) {
 		t.Fatalf("arguments = %#v", arguments)
+	}
+}
+
+func TestUpdateHelperCarriesRelaunchIntentAcrossProcessBoundary(t *testing.T) {
+	for _, requested := range []bool{false, true} {
+		t.Run(strconv.FormatBool(requested), func(t *testing.T) {
+			staged := &stagedUpdate{
+				Version:        "1.2.3",
+				AppPath:        "/tmp/updates/1.2.3-test/ssh-man.app",
+				RootPath:       "/tmp/updates/1.2.3-test",
+				CurrentAppPath: "/Applications/ssh-man.app",
+			}
+			arguments := updateHelperArguments(staged, 123, requested)
+			hasRelaunchFlag := false
+			for _, argument := range arguments {
+				if argument == "--relaunch" {
+					hasRelaunchFlag = true
+				}
+			}
+			if hasRelaunchFlag != requested {
+				t.Fatalf("relaunch flag present = %t, want %t", hasRelaunchFlag, requested)
+			}
+
+			var appliedRelaunch bool
+			err := runApplyHelperWithDependencies(
+				arguments[1:],
+				func(parentPID int, timeout time.Duration) error {
+					if parentPID != 123 || timeout != 5*time.Minute {
+						t.Fatalf("wait input = (%d, %s)", parentPID, timeout)
+					}
+					return nil
+				},
+				func(_, _, _, _ string, _ int, relaunch bool) error {
+					appliedRelaunch = relaunch
+					return nil
+				},
+			)
+			if err != nil {
+				t.Fatalf("execute helper: %v", err)
+			}
+			if appliedRelaunch != requested {
+				t.Fatalf("applied relaunch = %t, want %t", appliedRelaunch, requested)
+			}
+		})
 	}
 }
