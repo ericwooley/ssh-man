@@ -38,14 +38,24 @@ func TestRunApplyHelperRejectsBroadStagingRoot(t *testing.T) {
 	}
 }
 
-func TestReopenApplicationUsesMacOSOpen(t *testing.T) {
+func TestRelaunchIfRequestedUsesMacOSOpenOnlyForOneClickUpdate(t *testing.T) {
 	var command string
 	var arguments []string
-	err := reopenApplication("/Applications/ssh-man.app", func(_ context.Context, name string, args ...string) ([]byte, error) {
+	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
 		command = name
 		arguments = append([]string{}, args...)
 		return nil, nil
-	})
+	}
+
+	err := relaunchIfRequested(false, "/Applications/ssh-man.app", run)
+	if err != nil {
+		t.Fatalf("skip relaunch: %v", err)
+	}
+	if command != "" || arguments != nil {
+		t.Fatalf("normal quit command = %q %#v, want no relaunch", command, arguments)
+	}
+
+	err = relaunchIfRequested(true, "/Applications/ssh-man.app", run)
 	if err != nil {
 		t.Fatalf("reopen application: %v", err)
 	}

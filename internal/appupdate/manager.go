@@ -43,7 +43,7 @@ type stagedUpdate struct {
 type platformInstaller interface {
 	supported() bool
 	stage(context.Context, *Client, *updatePlan, string) (*stagedUpdate, error)
-	prepare(*stagedUpdate, int) error
+	prepare(*stagedUpdate, int, bool) error
 	cleanup(*stagedUpdate) error
 }
 
@@ -60,6 +60,7 @@ type Manager struct {
 	cancel         context.CancelFunc
 	runID          uint64
 	staged         *stagedUpdate
+	relaunch       bool
 	status         Status
 	statusObserver func(Status)
 	wait           sync.WaitGroup
@@ -112,6 +113,7 @@ func (m *Manager) Configure(enabled, experimental bool) {
 	previousStaged := m.staged
 	m.cancel = nil
 	m.staged = nil
+	m.relaunch = false
 	m.runID++
 	runID := m.runID
 	observer := m.statusObserver
@@ -232,6 +234,7 @@ func (m *Manager) Install() error {
 	if m.status.State != StateReady || m.staged == nil {
 		return errors.New("the update is not ready")
 	}
+	m.relaunch = true
 	return nil
 }
 
@@ -299,7 +302,9 @@ func (m *Manager) StopAndPrepare(enabled bool, parentPID int) error {
 
 	m.mu.Lock()
 	staged := m.staged
+	relaunch := m.relaunch
 	m.staged = nil
+	m.relaunch = false
 	m.mu.Unlock()
 	if staged == nil {
 		return nil
@@ -310,7 +315,7 @@ func (m *Manager) StopAndPrepare(enabled bool, parentPID int) error {
 		}
 		return nil
 	}
-	if err := m.installer.prepare(staged, parentPID); err != nil {
+	if err := m.installer.prepare(staged, parentPID, relaunch); err != nil {
 		return fmt.Errorf("prepare automatic update %s: %w", staged.Version, err)
 	}
 	return nil

@@ -147,7 +147,7 @@ func (darwinInstaller) stage(
 	}, nil
 }
 
-func (darwinInstaller) prepare(staged *stagedUpdate, parentPID int) error {
+func (darwinInstaller) prepare(staged *stagedUpdate, parentPID int, relaunch bool) error {
 	if staged == nil {
 		return nil
 	}
@@ -165,15 +165,18 @@ func (darwinInstaller) prepare(staged *stagedUpdate, parentPID int) error {
 		return fmt.Errorf("open update install log: %w", err)
 	}
 
-	command := exec.Command(
-		executablePath,
+	arguments := []string{
 		applyUpdateArgument,
 		"--parent-pid", strconv.Itoa(parentPID),
 		"--current-app", staged.CurrentAppPath,
 		"--staged-app", staged.AppPath,
 		"--version", staged.Version,
 		"--root", staged.RootPath,
-	)
+	}
+	if relaunch {
+		arguments = append(arguments, "--relaunch")
+	}
+	command := exec.Command(executablePath, arguments...)
 	command.Stdout = logFile
 	command.Stderr = logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -203,6 +206,7 @@ func runApplyHelper(args []string) error {
 	stagedApp := flags.String("staged-app", "", "")
 	version := flags.String("version", "", "")
 	rootPath := flags.String("root", "", "")
+	relaunch := flags.Bool("relaunch", false, "")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -237,10 +241,10 @@ func runApplyHelper(args []string) error {
 	if err := waitForProcessExit(*parentPID, 5*time.Minute); err != nil {
 		return err
 	}
-	return applyStagedUpdate(cleanCurrent, cleanStaged, cleanRoot, *version, *parentPID)
+	return applyStagedUpdate(cleanCurrent, cleanStaged, cleanRoot, *version, *parentPID, *relaunch)
 }
 
-func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPID int) (returnErr error) {
+func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPID int, relaunch bool) (returnErr error) {
 	parentDir := filepath.Dir(currentApp)
 	if err := unix.Access(parentDir, unix.W_OK); err != nil {
 		return fmt.Errorf("the app directory is not writable: %w", err)
@@ -303,7 +307,7 @@ func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPI
 	if err := os.RemoveAll(backupApp); err != nil {
 		return fmt.Errorf("remove previous app bundle: %w", err)
 	}
-	if err := reopenApplication(currentApp, runCommand); err != nil {
+	if err := relaunchIfRequested(relaunch, currentApp, runCommand); err != nil {
 		return err
 	}
 	if err := os.RemoveAll(rootPath); err != nil {
@@ -312,7 +316,10 @@ func applyStagedUpdate(currentApp, stagedApp, rootPath, version string, parentPI
 	return nil
 }
 
-func reopenApplication(appPath string, run func(context.Context, string, ...string) ([]byte, error)) error {
+func relaunchIfRequested(relaunch bool, appPath string, run func(context.Context, string, ...string) ([]byte, error)) error {
+	if !relaunch {
+		return nil
+	}
 	if _, err := run(context.Background(), "/usr/bin/open", appPath); err != nil {
 		return fmt.Errorf("reopen updated application: %w", err)
 	}
