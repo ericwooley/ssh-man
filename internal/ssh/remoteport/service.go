@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	serverdomain "ssh-man/internal/domain/server"
 	sshconnection "ssh-man/internal/ssh/connection"
@@ -18,6 +19,8 @@ import (
 const (
 	SchemeHTTP  = "http"
 	SchemeHTTPS = "https"
+
+	defaultSSHConnectTimeout = 10 * time.Second
 )
 
 const discoveryCommand = `if command -v ss >/dev/null 2>&1; then ss -H -lnt | awk '{print $4}' | head -n 4096; elif command -v netstat >/dev/null 2>&1; then netstat -an 2>/dev/null | awk '$1 ~ /^tcp/ && $NF == "LISTEN" {print $4}' | head -n 4096; else printf 'Neither ss nor netstat is available.\n' >&2; exit 127; fi`
@@ -130,12 +133,13 @@ func runSSHCommand(ctx context.Context, server serverdomain.Server, passphrase, 
 		return nil, fmt.Errorf("configure SSH host key verification: %w", err)
 	}
 
-	rawConnection, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(server.Host, strconv.Itoa(server.Port)))
+	address := net.JoinHostPort(server.Host, strconv.Itoa(server.Port))
+	rawConnection, err := (&net.Dialer{Timeout: defaultSSHConnectTimeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("connect to SSH server: %w", err)
 	}
 
-	connection, channels, requests, err := ssh.NewClientConn(rawConnection, net.JoinHostPort(server.Host, strconv.Itoa(server.Port)), &ssh.ClientConfig{
+	client, err := handshakeSSHClient(ctx, rawConnection, address, &ssh.ClientConfig{
 		User:            server.Username,
 		Auth:            []ssh.AuthMethod{authMethod},
 		HostKeyCallback: hostKeyCallback,
@@ -144,7 +148,6 @@ func runSSHCommand(ctx context.Context, server serverdomain.Server, passphrase, 
 		_ = rawConnection.Close()
 		return nil, fmt.Errorf("start SSH connection: %w", err)
 	}
-	client := ssh.NewClient(connection, channels, requests)
 	defer client.Close()
 
 	session, err := client.NewSession()
@@ -174,4 +177,40 @@ func runSSHCommand(ctx context.Context, server serverdomain.Server, passphrase, 
 		}
 		return output.Bytes(), nil
 	}
+}
+
+func handshakeSSHClient(ctx context.Context, rawConnection net.Conn, address string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	deadline := time.Now().Add(defaultSSHConnectTimeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
+	if err := rawConnection.SetDeadline(deadline); err != nil {
+		return nil, fmt.Errorf("set SSH handshake deadline: %w", err)
+	}
+
+	handshakeDone := make(chan struct{})
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-ctx.Done():
+			_ = rawConnection.SetDeadline(time.Now())
+		case <-handshakeDone:
+		}
+	}()
+
+	connection, channels, requests, err := ssh.NewClientConn(rawConnection, address, config)
+	close(handshakeDone)
+	<-watcherDone
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, err
+	}
+	if err := rawConnection.SetDeadline(time.Time{}); err != nil {
+		_ = connection.Close()
+		return nil, fmt.Errorf("clear SSH handshake deadline: %w", err)
+	}
+	return ssh.NewClient(connection, channels, requests), nil
 }

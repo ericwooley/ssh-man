@@ -54,7 +54,11 @@ func (service *Service) Save(ctx context.Context, link Link) (Link, error) {
 	if err := service.store.Save(ctx, link); err != nil {
 		return Link{}, fmt.Errorf("save port link: %w", err)
 	}
-	return link, nil
+	canonical, err := service.store.GetByServerPort(ctx, link.ServerID, link.Port)
+	if err != nil {
+		return Link{}, fmt.Errorf("reload saved port link: %w", err)
+	}
+	return canonical, nil
 }
 
 func (service *Service) Delete(ctx context.Context, id string) error {

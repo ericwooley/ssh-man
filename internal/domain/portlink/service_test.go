@@ -3,6 +3,7 @@ package portlink
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -152,5 +153,97 @@ func TestServicePreservesCallerTimestampOnExistingID(t *testing.T) {
 	}
 	if !updated.CreatedAt.Equal(createdAt) {
 		t.Fatalf("created at = %v, want %v", updated.CreatedAt, createdAt)
+	}
+}
+
+type concurrentCreateStore struct {
+	mu           sync.Mutex
+	firstReads   int
+	firstReadsOK chan struct{}
+	releaseReads chan struct{}
+	item         Link
+}
+
+func newConcurrentCreateStore() *concurrentCreateStore {
+	return &concurrentCreateStore{
+		firstReadsOK: make(chan struct{}),
+		releaseReads: make(chan struct{}),
+	}
+}
+
+func (store *concurrentCreateStore) ListByServer(context.Context, string) ([]Link, error) {
+	return nil, nil
+}
+
+func (store *concurrentCreateStore) GetByServerPort(context.Context, string, int) (Link, error) {
+	store.mu.Lock()
+	store.firstReads++
+	readNumber := store.firstReads
+	if readNumber == 2 {
+		close(store.firstReadsOK)
+	}
+	if readNumber > 2 {
+		item := store.item
+		store.mu.Unlock()
+		return item, nil
+	}
+	store.mu.Unlock()
+	<-store.releaseReads
+	return Link{}, ErrNotFound
+}
+
+func (store *concurrentCreateStore) Save(_ context.Context, item Link) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.item.ID == "" {
+		store.item = item
+		return nil
+	}
+	item.ID = store.item.ID
+	item.CreatedAt = store.item.CreatedAt
+	store.item = item
+	return nil
+}
+
+func (store *concurrentCreateStore) Delete(context.Context, string) error {
+	return nil
+}
+
+func TestServiceConcurrentCreatesReturnCanonicalStoredIdentity(t *testing.T) {
+	store := newConcurrentCreateStore()
+	service := NewService(store)
+	results := make(chan Link, 2)
+	errors := make(chan error, 2)
+
+	for _, name := range []string{"First", "Second"} {
+		name := name
+		go func() {
+			link, err := service.Save(context.Background(), Link{
+				ServerID: "server-1",
+				Port:     3000,
+				Name:     name,
+				Scheme:   SchemeHTTP,
+			})
+			results <- link
+			errors <- err
+		}()
+	}
+
+	<-store.firstReadsOK
+	close(store.releaseReads)
+
+	first := <-results
+	second := <-results
+	if err := <-errors; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-errors; err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == "" || first.ID != second.ID || first.ID != store.item.ID {
+		t.Fatalf("returned IDs = %q and %q, stored ID = %q", first.ID, second.ID, store.item.ID)
+	}
+	if !first.CreatedAt.Equal(store.item.CreatedAt) || !second.CreatedAt.Equal(store.item.CreatedAt) {
+		t.Fatalf("returned creation times = %v and %v, stored = %v", first.CreatedAt, second.CreatedAt, store.item.CreatedAt)
 	}
 }

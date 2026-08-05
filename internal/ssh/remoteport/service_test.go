@@ -2,10 +2,15 @@ package remoteport
 
 import (
 	"context"
+	"errors"
+	"net"
 	"reflect"
 	"testing"
+	"time"
 
 	serverdomain "ssh-man/internal/domain/server"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func TestParseListeningPortsGroupsAddressesAndSortsPorts(t *testing.T) {
@@ -54,5 +59,27 @@ func TestServiceDiscoverUsesStaticCommandAndReturnsPorts(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Port != 5173 {
 		t.Fatalf("ports = %#v", got)
+	}
+}
+
+func TestHandshakeSSHClientStopsWhenContextExpires(t *testing.T) {
+	clientConnection, serverConnection := net.Pipe()
+	t.Cleanup(func() {
+		_ = clientConnection.Close()
+		_ = serverConnection.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	_, err := handshakeSSHClient(ctx, clientConnection, "example.com:22", &ssh.ClientConfig{
+		User:            "eric",
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("handshake error = %v, want context deadline", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("handshake stopped after %v, want less than one second", elapsed)
 	}
 }
