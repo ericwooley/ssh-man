@@ -23,6 +23,7 @@ function createApi({
     discoverPorts: vi.fn(async () => discovery),
     savePortLink: vi.fn(async (link) => ({ ...link, id: link.id || 'link-new', serverId: 'server-1' })),
     deletePortLink: vi.fn(async () => undefined),
+    findPortFavicon: vi.fn(async () => ({ faviconDataUrl: 'data:image/png;base64,aWNvbg==' })),
     openPort: vi.fn(async (port, scheme) => ({ url: `${scheme}://127.0.0.1:${port + 10000}` })),
     openExternalURL: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
@@ -62,6 +63,23 @@ describe('HostApp', () => {
       scheme: 'http',
     })))
     expect(await screen.findByText('Preview app')).toBeTruthy()
+  })
+
+  test('finds and saves a favicon for a named port', async () => {
+    const user = userEvent.setup()
+    const api = createApi({ links: [] })
+    render(<HostApp api={api} />)
+    await screen.findByText('Port 3000')
+
+    await user.click(screen.getByRole('button', { name: 'Name port 3000' }))
+    await user.click(screen.getByRole('button', { name: 'Find favicon' }))
+    await waitFor(() => expect(api.findPortFavicon).toHaveBeenCalledWith(3000, 'http'))
+    expect(screen.getByRole('img', { name: 'Selected favicon' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Save link' }))
+    await waitFor(() => expect(api.savePortLink).toHaveBeenCalledWith(expect.objectContaining({
+      faviconDataUrl: 'data:image/png;base64,aWNvbg==',
+    })))
   })
 
   test('asks for the key passphrase and retries discovery', async () => {

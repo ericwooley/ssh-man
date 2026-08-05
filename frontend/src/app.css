@@ -568,6 +568,23 @@ svg {
   transition: border-color 150ms ease, background 150ms ease;
 }
 
+.server-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px;
+}
+
+.server-row__manage {
+  align-self: stretch;
+  width: 56px;
+  min-width: 56px;
+  height: auto;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .server-row:hover,
 .tunnel-row:hover,
 .activity-row:hover {
@@ -6013,6 +6030,39 @@ kbd {
   gap: 12px;
 }
 
+.host-favicon-picker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.host-favicon-picker__copy {
+  display: grid;
+  gap: 2px;
+}
+
+.host-favicon-picker__copy strong {
+  font-size: 12px;
+}
+
+.host-favicon-picker__copy > span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.host-favicon-picker .primary-button,
+.host-favicon-picker .secondary-button,
+.host-favicon-picker .text-button {
+  min-height: 38px;
+  padding: 8px 11px;
+  font-size: 11px;
+}
+
 .host-link-editor__actions {
   justify-content: space-between;
 }
@@ -6169,6 +6219,16 @@ kbd {
 
   .host-link-editor__fields {
     grid-template-columns: 1fr;
+  }
+
+  .host-favicon-picker {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .host-favicon-picker .secondary-button,
+  .host-favicon-picker .text-button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .host-port-open {

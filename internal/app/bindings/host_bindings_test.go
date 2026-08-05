@@ -104,6 +104,42 @@ func TestHostBindingsDiscoversAndOpensOnlyCurrentPorts(t *testing.T) {
 	}
 }
 
+func TestHostBindingsFindsFaviconThroughCurrentPort(t *testing.T) {
+	var gotURL string
+	binding := newHostBindingsWithDependencies(
+		serverdomain.Server{ID: "server-1", Name: "Production"},
+		appwindow.New(),
+		&fakePortLinkService{},
+		fakePortDiscoverer{ports: []remoteport.ListeningPort{{
+			Port:      3000,
+			Addresses: []string{"127.0.0.1"},
+		}}},
+		&fakePortForwarder{},
+		nil,
+		func(_ context.Context, rawURL string) (string, error) {
+			gotURL = rawURL
+			return "data:image/png;base64,aWNvbg==", nil
+		},
+	)
+	if _, err := binding.DiscoverPorts(""); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := binding.FindPortFavicon(3000, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotURL != "http://127.0.0.1:43123" {
+		t.Fatalf("favicon URL = %q", gotURL)
+	}
+	if result.FaviconDataURL != "data:image/png;base64,aWNvbg==" {
+		t.Fatalf("favicon result = %#v", result)
+	}
+	if _, err := binding.FindPortFavicon(8080, "http"); err == nil {
+		t.Fatal("expected an undiscovered-port error")
+	}
+}
+
 func TestHostBindingsReturnsPassphraseState(t *testing.T) {
 	binding := newHostBindingsWithDependencies(
 		serverdomain.Server{ID: "server-1"},

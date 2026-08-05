@@ -8,6 +8,7 @@ import {
   Pencil,
   RefreshCw,
   Save,
+  Search,
   Server,
   Trash2,
   X,
@@ -64,6 +65,7 @@ export default function HostApp({ api = defaultApi }) {
   const [editing, setEditing] = useState(null)
   const [pendingPort, setPendingPort] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [findingFavicon, setFindingFavicon] = useState(false)
   const startedRef = useRef(false)
 
   const discover = useCallback(async (secret = '') => {
@@ -165,6 +167,25 @@ export default function HostApp({ api = defaultApi }) {
     }
   }
 
+  async function findFavicon() {
+    if (!editing || findingFavicon) return
+    setFindingFavicon(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await api.findPortFavicon(editing.port, editing.scheme)
+      if (!result.faviconDataUrl) {
+        throw new Error('The service did not return a favicon.')
+      }
+      setEditing((current) => current ? { ...current, faviconDataUrl: result.faviconDataUrl } : current)
+      setNotice('Favicon found. Save the link to keep it.')
+    } catch (nextError) {
+      setError(nextError.message || 'A favicon was not found for this service.')
+    } finally {
+      setFindingFavicon(false)
+    }
+  }
+
   if (!server && phase !== 'error') {
     return (
       <div className="host-shell host-state" role="status">
@@ -251,7 +272,7 @@ export default function HostApp({ api = defaultApi }) {
                   <span className="eyebrow">Port {editing.port}</span>
                   <h2>{editing.id ? 'Edit saved link' : 'Name this port'}</h2>
                 </div>
-                <IconButton label="Close link editor" disabled={saving} onClick={() => setEditing(null)}>
+                <IconButton label="Close link editor" disabled={saving || findingFavicon} onClick={() => setEditing(null)}>
                   <X aria-hidden="true" />
                 </IconButton>
               </div>
@@ -272,13 +293,45 @@ export default function HostApp({ api = defaultApi }) {
                   </select>
                 </label>
               </div>
+              <div className="host-favicon-picker">
+                <span className="host-port-icon">
+                  {editing.faviconDataUrl ? (
+                    <img src={editing.faviconDataUrl} alt="Selected favicon" />
+                  ) : (
+                    <Globe2 aria-hidden="true" />
+                  )}
+                </span>
+                <span className="host-favicon-picker__copy">
+                  <strong>Link icon</strong>
+                  <span>Find the favicon from this web service.</span>
+                </span>
+                {editing.faviconDataUrl ? (
+                  <button
+                    className="text-button"
+                    type="button"
+                    disabled={saving || findingFavicon}
+                    onClick={() => setEditing({ ...editing, faviconDataUrl: '' })}
+                  >
+                    Remove icon
+                  </button>
+                ) : null}
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={saving || findingFavicon}
+                  onClick={findFavicon}
+                >
+                  {findingFavicon ? <LoaderCircle className="spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
+                  Find favicon
+                </button>
+              </div>
               <div className="host-link-editor__actions">
                 {editing.id ? (
                   <button className="text-button text-button--danger" type="button" disabled={saving} onClick={deleteLink}>
                     <Trash2 aria-hidden="true" /> Remove
                   </button>
                 ) : <span />}
-                <button className="primary-button" type="submit" disabled={saving}>
+                <button className="primary-button" type="submit" disabled={saving || findingFavicon}>
                   {saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
                   Save link
                 </button>

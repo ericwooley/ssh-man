@@ -36,6 +36,8 @@ type portForwarder interface {
 	Close() error
 }
 
+type faviconFinder func(context.Context, string) (string, error)
+
 type HostInitialState struct {
 	Server serverdomain.Server   `json:"server"`
 	Links  []portlinkdomain.Link `json:"links"`
@@ -50,16 +52,21 @@ type HostOpenPortResult struct {
 	URL string `json:"url"`
 }
 
+type HostFaviconResult struct {
+	FaviconDataURL string `json:"faviconDataUrl"`
+}
+
 type HostBindings struct {
-	mu         sync.Mutex
-	server     serverdomain.Server
-	window     *appwindow.Controller
-	links      portLinkService
-	discoverer portDiscoverer
-	forwarder  portForwarder
-	shutdown   func(context.Context) error
-	passphrase string
-	available  map[int][]string
+	mu          sync.Mutex
+	server      serverdomain.Server
+	window      *appwindow.Controller
+	links       portLinkService
+	discoverer  portDiscoverer
+	forwarder   portForwarder
+	findFavicon faviconFinder
+	shutdown    func(context.Context) error
+	passphrase  string
+	available   map[int][]string
 }
 
 func NewHostBindings(app *bootstrap.Application, server serverdomain.Server, window *appwindow.Controller) *HostBindings {
@@ -80,18 +87,24 @@ func newHostBindingsWithDependencies(
 	discoverer portDiscoverer,
 	forwarder portForwarder,
 	shutdown func(context.Context) error,
+	faviconFinders ...faviconFinder,
 ) *HostBindings {
 	if window == nil {
 		window = appwindow.New()
 	}
+	findFavicon := remoteport.FindFavicon
+	if len(faviconFinders) > 0 && faviconFinders[0] != nil {
+		findFavicon = faviconFinders[0]
+	}
 	return &HostBindings{
-		server:     server,
-		window:     window,
-		links:      links,
-		discoverer: discoverer,
-		forwarder:  forwarder,
-		shutdown:   shutdown,
-		available:  map[int][]string{},
+		server:      server,
+		window:      window,
+		links:       links,
+		discoverer:  discoverer,
+		forwarder:   forwarder,
+		findFavicon: findFavicon,
+		shutdown:    shutdown,
+		available:   map[int][]string{},
 	}
 }
 
@@ -164,30 +177,52 @@ func (bindings *HostBindings) DeletePortLink(id string) error {
 }
 
 func (bindings *HostBindings) OpenPort(port int, scheme string) (HostOpenPortResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), hostOpenTimeout)
+	defer cancel()
+	target, err := bindings.openPortURL(ctx, port, scheme)
+	if err != nil {
+		return HostOpenPortResult{}, err
+	}
+	return HostOpenPortResult{URL: target.String()}, nil
+}
+
+func (bindings *HostBindings) FindPortFavicon(port int, scheme string) (HostFaviconResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), hostOpenTimeout)
+	defer cancel()
+	target, err := bindings.openPortURL(ctx, port, scheme)
+	if err != nil {
+		return HostFaviconResult{}, err
+	}
+	dataURL, err := bindings.findFavicon(ctx, target.String())
+	if err != nil {
+		return HostFaviconResult{}, fmt.Errorf("find favicon for port %d: %w", port, err)
+	}
+	return HostFaviconResult{FaviconDataURL: dataURL}, nil
+}
+
+func (bindings *HostBindings) openPortURL(ctx context.Context, port int, scheme string) (*url.URL, error) {
 	scheme = strings.ToLower(strings.TrimSpace(scheme))
 	if scheme != string(portlinkdomain.SchemeHTTP) && scheme != string(portlinkdomain.SchemeHTTPS) {
-		return HostOpenPortResult{}, fmt.Errorf("port link scheme must be http or https")
+		return nil, fmt.Errorf("port link scheme must be http or https")
 	}
 
 	bindings.mu.Lock()
 	addresses, ok := bindings.available[port]
+	addresses = append([]string(nil), addresses...)
 	passphrase := bindings.passphrase
 	bindings.mu.Unlock()
 	if !ok {
-		return HostOpenPortResult{}, fmt.Errorf("refresh available ports before opening port %d", port)
+		return nil, fmt.Errorf("refresh available ports before opening port %d", port)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), hostOpenTimeout)
-	defer cancel()
 	forward, err := bindings.forwarder.Open(ctx, passphrase, port, addresses)
 	if err != nil {
-		return HostOpenPortResult{}, err
+		return nil, err
 	}
-	target := &url.URL{
+	return &url.URL{
 		Scheme: scheme,
 		Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(forward.LocalPort)),
-	}
-	return HostOpenPortResult{URL: target.String()}, nil
+	}, nil
 }
 
 func (bindings *HostBindings) Close() error {

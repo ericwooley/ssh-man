@@ -29,6 +29,10 @@ export async function deletePortLink(id) {
   return requireBindings().DeletePortLink(id)
 }
 
+export async function findPortFavicon(port, scheme) {
+  return requireBindings().FindPortFavicon(port, scheme)
+}
+
 export async function openPort(port, scheme) {
   return requireBindings().OpenPort(port, scheme)
 }

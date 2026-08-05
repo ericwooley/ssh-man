@@ -951,6 +951,17 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }), [api, notify, runPending, servers])
 
+  const openHostWindow = useCallback((serverId) => runPending(`open-host:${serverId}`, async () => {
+    try {
+      await api.openHostWindow(serverId)
+      notify('success', 'Host details opened in a new window.')
+      return true
+    } catch (error) {
+      notify('danger', 'Host details could not be opened.', error.message || '')
+      return false
+    }
+  }), [api, notify, runPending])
+
   return {
     phase,
     servers,
@@ -1012,6 +1023,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     copyHistory,
     copyPath,
     openDevTools,
+    openHostWindow,
     openServerExplorer,
     openSettingsWindow,
     openServerCommand,
