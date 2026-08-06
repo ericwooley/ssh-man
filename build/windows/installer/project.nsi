@@ -96,11 +96,14 @@ Section "uninstall"
   !insertmacro wails.setShellContext
 
   RMDir /r "$AppData\${PRODUCT_EXECUTABLE}"
-  RMDir /r $INSTDIR
+  Delete "$INSTDIR\${PRODUCT_EXECUTABLE}"
+  Delete "$INSTDIR\${PRODUCT_EXECUTABLE}.new"
+  Delete "$INSTDIR\${PRODUCT_EXECUTABLE}.old"
 
   Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
   Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
 
   !insertmacro wails.unassociateFiles
   !insertmacro wails.deleteUninstaller
+  RMDir "$INSTDIR"
 SectionEnd

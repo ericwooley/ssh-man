@@ -140,6 +140,9 @@ if ($retryExitCode -ne 0) {
 Assert-InstalledState
 
 $uninstallerPath = Join-Path $installDirectory 'uninstall.exe'
+$foreignFilePath = Join-Path $installDirectory 'user-owned-file.txt'
+$foreignFileContent = 'This file does not belong to SSH Man.'
+[System.IO.File]::WriteAllText($foreignFilePath, $foreignFileContent)
 $temporaryUninstallerPath = Join-Path `
     ([System.IO.Path]::GetTempPath()) `
     "ssh-man-uninstall-$([Guid]::NewGuid().ToString('N')).exe"
@@ -164,5 +167,14 @@ if (Test-Path -LiteralPath $executablePath) {
 if (Test-Path -LiteralPath $registryPath) {
     throw "Uninstallation left the registry entry: $registryPath"
 }
+if (-not (Test-Path -LiteralPath $foreignFilePath -PathType Leaf)) {
+    throw "Uninstallation removed a user-owned file: $foreignFilePath"
+}
+if ([System.IO.File]::ReadAllText($foreignFilePath) -ne $foreignFileContent) {
+    throw "Uninstallation changed a user-owned file: $foreignFilePath"
+}
+
+Remove-Item -LiteralPath $foreignFilePath -Force
+Remove-Item -LiteralPath $installDirectory -Force
 
 Write-Host 'Windows installer lifecycle tests passed.'
