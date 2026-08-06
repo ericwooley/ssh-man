@@ -110,6 +110,93 @@ func TestForwarderRecreatesForwardWhenRemoteHostChanges(t *testing.T) {
 	}
 }
 
+type failingRemoteClient struct {
+	dialed     chan struct{}
+	dialOnce   sync.Once
+	closeCount atomic.Int32
+}
+
+func newFailingRemoteClient() *failingRemoteClient {
+	return &failingRemoteClient{dialed: make(chan struct{})}
+}
+
+func (client *failingRemoteClient) Dial(string, string) (net.Conn, error) {
+	client.dialOnce.Do(func() {
+		close(client.dialed)
+	})
+	return nil, errors.New("SSH client is closed")
+}
+
+func (client *failingRemoteClient) Close() error {
+	client.closeCount.Add(1)
+	return nil
+}
+
+func TestForwarderRecreatesForwardsAfterPersistentClientFailure(t *testing.T) {
+	failedClient := newFailingRemoteClient()
+	healthyClient := echoRemoteClient{}
+	var dialCount atomic.Int32
+	forwarder := NewForwarderWithDialer(
+		serverdomain.Server{ID: "server-1"},
+		func(context.Context, serverdomain.Server, string) (RemoteClient, error) {
+			if dialCount.Add(1) == 1 {
+				return failedClient, nil
+			}
+			return healthyClient, nil
+		},
+	)
+	t.Cleanup(func() {
+		_ = forwarder.Close()
+	})
+
+	first, err := forwarder.Open(context.Background(), "", 3000, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(first.LocalPort)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := "GET / HTTP/1.1\r\nHost: " + net.JoinHostPort(first.AccessHost, strconv.Itoa(first.LocalPort)) + "\r\n\r\n"
+	if _, err := connection.Write([]byte(request)); err != nil {
+		t.Fatal(err)
+	}
+	_ = connection.Close()
+
+	select {
+	case <-failedClient.dialed:
+	case <-time.After(time.Second):
+		t.Fatal("persistent client did not receive the remote dial")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		forwarder.mu.Lock()
+		cleared := forwarder.client == nil && len(forwarder.forwards) == 0
+		forwarder.mu.Unlock()
+		if cleared {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("failed persistent client kept stale forwards")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	second, err := forwarder.Open(context.Background(), "", 3000, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second == first {
+		t.Fatalf("stale forward was reused: %#v", second)
+	}
+	if dialCount.Load() != 2 {
+		t.Fatalf("SSH dial count = %d, want 2", dialCount.Load())
+	}
+	if failedClient.closeCount.Load() != 1 {
+		t.Fatalf("failed client close count = %d, want 1", failedClient.closeCount.Load())
+	}
+}
+
 type countingRemoteClient struct {
 	dialCount  atomic.Int32
 	closeCount atomic.Int32

@@ -54,11 +54,12 @@ func (connection *clientOwnedConnection) Close() error {
 }
 
 type Forwarder struct {
-	mu       sync.Mutex
-	server   serverdomain.Server
-	dial     clientDialer
-	client   RemoteClient
-	forwards map[int]runningForward
+	mu               sync.Mutex
+	server           serverdomain.Server
+	dial             clientDialer
+	client           RemoteClient
+	clientGeneration uint64
+	forwards         map[int]runningForward
 }
 
 const (
@@ -103,6 +104,7 @@ func (forwarder *Forwarder) Open(ctx context.Context, passphrase string, remoteP
 			return Forward{}, fmt.Errorf("connect before opening port: %w", err)
 		}
 		forwarder.client = client
+		forwarder.clientGeneration++
 	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -148,6 +150,7 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 
 	forwarder.mu.Lock()
 	client := forwarder.client
+	clientGeneration := forwarder.clientGeneration
 	forwarder.mu.Unlock()
 	if client == nil {
 		_ = localConnection.Close()
@@ -156,6 +159,7 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	remoteConnection, err := client.Dial("tcp", net.JoinHostPort(forward.RemoteHost, strconv.Itoa(forward.RemotePort)))
 	if err != nil {
 		_ = localConnection.Close()
+		forwarder.invalidatePersistentClient(clientGeneration)
 		return
 	}
 	if _, err := remoteConnection.Write(preamble); err != nil {
@@ -175,6 +179,24 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	_ = localConnection.Close()
 	_ = remoteConnection.Close()
 	<-done
+}
+
+func (forwarder *Forwarder) invalidatePersistentClient(clientGeneration uint64) {
+	forwarder.mu.Lock()
+	if forwarder.client == nil || forwarder.clientGeneration != clientGeneration {
+		forwarder.mu.Unlock()
+		return
+	}
+	client := forwarder.client
+	forwarder.client = nil
+	forwards := forwarder.forwards
+	forwarder.forwards = map[int]runningForward{}
+	forwarder.mu.Unlock()
+
+	for _, running := range forwards {
+		_ = running.listener.Close()
+	}
+	_ = client.Close()
 }
 
 func (forwarder *Forwarder) DialRemote(

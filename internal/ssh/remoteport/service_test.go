@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"reflect"
 	"sync"
 	"testing"
@@ -66,25 +65,41 @@ func TestServiceDiscoverUsesStaticCommandAndReturnsPorts(t *testing.T) {
 	}
 }
 
-func TestHandshakeSSHClientStopsWhenContextExpires(t *testing.T) {
-	clientConnection, serverConnection := net.Pipe()
-	t.Cleanup(func() {
-		_ = clientConnection.Close()
-		_ = serverConnection.Close()
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
-	defer cancel()
-	startedAt := time.Now()
-	_, err := handshakeSSHClient(ctx, clientConnection, "example.com:22", &ssh.ClientConfig{
-		User:            "eric",
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	})
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("handshake error = %v, want context deadline", err)
+func TestDialSSHClientDelegatesToResolvedConnectionDialer(t *testing.T) {
+	server := serverdomain.Server{
+		ID:       "server-1",
+		Host:     "production-alias",
+		Port:     22,
+		Username: "eric",
 	}
-	if elapsed := time.Since(startedAt); elapsed > time.Second {
-		t.Fatalf("handshake stopped after %v, want less than one second", elapsed)
+	wantErr := errors.New("resolved dial failed")
+	var gotAuthServer serverdomain.Server
+	var gotPassphrase string
+	var gotDialServer serverdomain.Server
+
+	_, err := dialSSHClientWithDependencies(
+		context.Background(),
+		server,
+		"secret",
+		func(input serverdomain.Server, passphrase string) (ssh.AuthMethod, error) {
+			gotAuthServer = input
+			gotPassphrase = passphrase
+			return ssh.Password("password"), nil
+		},
+		func(_ context.Context, input serverdomain.Server, _ ssh.AuthMethod) (*ssh.Client, error) {
+			gotDialServer = input
+			return nil, wantErr
+		},
+	)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("dial error = %v, want %v", err, wantErr)
+	}
+	if !reflect.DeepEqual(gotAuthServer, server) || gotPassphrase != "secret" {
+		t.Fatalf("auth input = %#v, %q", gotAuthServer, gotPassphrase)
+	}
+	if !reflect.DeepEqual(gotDialServer, server) {
+		t.Fatalf("resolved dial server = %#v, want %#v", gotDialServer, server)
 	}
 }
 

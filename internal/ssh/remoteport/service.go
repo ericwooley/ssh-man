@@ -23,9 +23,8 @@ const (
 	SchemeHTTP  = "http"
 	SchemeHTTPS = "https"
 
-	defaultSSHConnectTimeout = 10 * time.Second
-	defaultDiscoveryTimeout  = 15 * time.Second
-	maxDiscoveryOutputBytes  = 1 << 20
+	defaultDiscoveryTimeout = 15 * time.Second
+	maxDiscoveryOutputBytes = 1 << 20
 )
 
 var errDiscoveryOutputLimit = errors.New("remote port output exceeded the local size limit")
@@ -223,32 +222,32 @@ func runSSHCommand(ctx context.Context, server serverdomain.Server, passphrase, 
 	}, command)
 }
 
+type authMethodFactory func(serverdomain.Server, string) (ssh.AuthMethod, error)
+
+type resolvedSSHClientDialer func(context.Context, serverdomain.Server, ssh.AuthMethod) (*ssh.Client, error)
+
 func dialSSHClient(ctx context.Context, server serverdomain.Server, passphrase string) (*ssh.Client, error) {
-	authMethod, err := sshconnection.AuthMethod(server, passphrase)
+	return dialSSHClientWithDependencies(
+		ctx,
+		server,
+		passphrase,
+		sshconnection.AuthMethod,
+		sshconnection.DialSSH,
+	)
+}
+
+func dialSSHClientWithDependencies(
+	ctx context.Context,
+	server serverdomain.Server,
+	passphrase string,
+	authFactory authMethodFactory,
+	dial resolvedSSHClientDialer,
+) (*ssh.Client, error) {
+	authMethod, err := authFactory(server, passphrase)
 	if err != nil {
 		return nil, err
 	}
-	hostKeyCallback, err := sshconnection.KnownHostsCallback()
-	if err != nil {
-		return nil, fmt.Errorf("configure SSH host key verification: %w", err)
-	}
-
-	address := net.JoinHostPort(server.Host, strconv.Itoa(server.Port))
-	rawConnection, err := (&net.Dialer{Timeout: defaultSSHConnectTimeout}).DialContext(ctx, "tcp", address)
-	if err != nil {
-		return nil, fmt.Errorf("connect to SSH server: %w", err)
-	}
-
-	client, err := handshakeSSHClient(ctx, rawConnection, address, &ssh.ClientConfig{
-		User:            server.Username,
-		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: hostKeyCallback,
-	})
-	if err != nil {
-		_ = rawConnection.Close()
-		return nil, fmt.Errorf("start SSH connection: %w", err)
-	}
-	return client, nil
+	return dial(ctx, server, authMethod)
 }
 
 func runSSHClientCommand(ctx context.Context, client io.Closer, newSession sessionFactory, command string) ([]byte, error) {
@@ -309,46 +308,4 @@ func runSSHClientCommand(ctx context.Context, client io.Closer, newSession sessi
 		return nil, ctx.Err()
 	}
 	return output.Bytes(), nil
-}
-
-func handshakeSSHClient(ctx context.Context, rawConnection net.Conn, address string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	deadline := time.Now().Add(defaultSSHConnectTimeout)
-	usesContextDeadline := false
-	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
-		deadline = contextDeadline
-		usesContextDeadline = true
-	}
-	if err := rawConnection.SetDeadline(deadline); err != nil {
-		return nil, fmt.Errorf("set SSH handshake deadline: %w", err)
-	}
-
-	handshakeDone := make(chan struct{})
-	watcherDone := make(chan struct{})
-	go func() {
-		defer close(watcherDone)
-		select {
-		case <-ctx.Done():
-			_ = rawConnection.SetDeadline(time.Now())
-		case <-handshakeDone:
-		}
-	}()
-
-	connection, channels, requests, err := ssh.NewClientConn(rawConnection, address, config)
-	close(handshakeDone)
-	<-watcherDone
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		var netError net.Error
-		if usesContextDeadline && errors.As(err, &netError) && netError.Timeout() {
-			return nil, context.DeadlineExceeded
-		}
-		return nil, err
-	}
-	if err := rawConnection.SetDeadline(time.Time{}); err != nil {
-		_ = connection.Close()
-		return nil, fmt.Errorf("clear SSH handshake deadline: %w", err)
-	}
-	return ssh.NewClient(connection, channels, requests), nil
 }
