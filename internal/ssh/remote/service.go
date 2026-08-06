@@ -870,8 +870,10 @@ func classifyPreview(remotePath string) (string, string) {
 		return "browser", mimeType
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif":
 		return "image", mimeType
-	case ".mp4", ".webm":
-		return "video", mimeType
+	case ".mp4":
+		return "video", "video/mp4"
+	case ".webm":
+		return "video", "video/webm"
 	case ".pdf", ".mp3", ".wav", ".ogg":
 		return "browser", mimeType
 	case ".7z", ".bz2", ".dmg", ".gz", ".iso", ".rar", ".tar", ".tgz", ".xz", ".zip":
