@@ -46,6 +46,22 @@ assert_not_contains_case_insensitive() {
   fi
 }
 
+sha256_file() {
+  local file_path="$1"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file_path" | awk '{print $1}'
+    return
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file_path" | awk '{print $1}'
+    return
+  fi
+
+  fail "SHA-256 checksum command was not found"
+}
+
 fixture_root="$TEST_ROOT/project"
 fake_bin="$TEST_ROOT/bin"
 [ -f "$INSTALLER_TEMPLATE" ] ||
@@ -57,9 +73,7 @@ mkdir -p "$fixture_root/scripts" "$fixture_root/build/windows/installer" "$fake_
 cp "$PACKAGER" "$fixture_root/scripts/package-windows-release.sh"
 cp "$INSTALLER_TEMPLATE" "$fixture_root/build/windows/installer/project.nsi"
 cp "$ROOT_DIR/wails.json" "$fixture_root/wails.json"
-original_wails_config_sha="$(
-  shasum -a 256 "$fixture_root/wails.json" | awk '{print $1}'
-)"
+original_wails_config_sha="$(sha256_file "$fixture_root/wails.json")"
 
 cat >"$fake_bin/go" <<'FAKE_GO'
 #!/usr/bin/env bash
@@ -147,7 +161,7 @@ restored_product_version="$(
 )"
 [ "$restored_product_version" = "1.0.0" ] ||
   fail "packager did not restore the original Wails product version"
-[ "$(shasum -a 256 "$fixture_root/wails.json" | awk '{print $1}')" = "$original_wails_config_sha" ] ||
+[ "$(sha256_file "$fixture_root/wails.json")" = "$original_wails_config_sha" ] ||
   fail "packager did not restore the exact Wails configuration after a successful build"
 
 failed_build_log="$TEST_ROOT/failed-build.log"
@@ -171,7 +185,7 @@ restored_after_failure="$(
 )"
 [ "$restored_after_failure" = "1.0.0" ] ||
   fail "packager did not restore Wails configuration after a build failure"
-[ "$(shasum -a 256 "$fixture_root/wails.json" | awk '{print $1}')" = "$original_wails_config_sha" ] ||
+[ "$(sha256_file "$fixture_root/wails.json")" = "$original_wails_config_sha" ] ||
   fail "packager did not restore the exact Wails configuration after a failed build"
 
 invalid_log="$TEST_ROOT/invalid.log"

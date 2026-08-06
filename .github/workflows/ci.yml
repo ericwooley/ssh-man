@@ -114,6 +114,10 @@ jobs:
       - name: Run frontend tests
         run: pnpm --dir frontend run test
 
+      - name: Run Windows release packaging tests
+        shell: bash
+        run: bash ./scripts/package-windows-release.test.sh
+
   vm-e2e:
     name: VM E2E
     needs:
