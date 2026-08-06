@@ -62,10 +62,11 @@ type fakePortForwarder struct {
 
 type fakeHostPreferences struct {
 	preference preferencesdomain.UserPreference
+	err        error
 }
 
 func (fake fakeHostPreferences) Load(context.Context) (preferencesdomain.UserPreference, error) {
-	return fake.preference, nil
+	return fake.preference, fake.err
 }
 
 func (fake *fakePortForwarder) Open(_ context.Context, _ string, port int, addresses []string) (remoteport.Forward, error) {
@@ -284,6 +285,30 @@ func TestHostBindingsInitialStateIncludesSavedTheme(t *testing.T) {
 				t.Fatalf("theme = %q, want %q", state.Theme, theme)
 			}
 		})
+	}
+}
+
+func TestHostBindingsInitialStateUsesDefaultThemeWhenPreferencesFail(t *testing.T) {
+	want := portlinkdomain.Link{ID: "link-1", ServerID: "server-1", Port: 3000}
+	binding := newHostBindingsWithDependencies(
+		serverdomain.Server{ID: "server-1"},
+		appwindow.New(),
+		&fakePortLinkService{items: []portlinkdomain.Link{want}},
+		fakePortDiscoverer{},
+		&fakePortForwarder{},
+		nil,
+	)
+	binding.preferences = fakeHostPreferences{err: errors.New("preferences unavailable")}
+
+	state, err := binding.InitialState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Theme != preferencesdomain.ThemeDark {
+		t.Fatalf("theme = %q, want %q", state.Theme, preferencesdomain.ThemeDark)
+	}
+	if state.Server.ID != "server-1" || len(state.Links) != 1 || state.Links[0].ID != want.ID {
+		t.Fatalf("initial state = %#v", state)
 	}
 }
 

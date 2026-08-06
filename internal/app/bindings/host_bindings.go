@@ -135,10 +135,9 @@ func (bindings *HostBindings) InitialState() (HostInitialState, error) {
 	theme := preferencesdomain.ThemeDark
 	if bindings.preferences != nil {
 		preference, preferenceErr := bindings.preferences.Load(context.Background())
-		if preferenceErr != nil {
-			return HostInitialState{}, fmt.Errorf("load host window theme: %w", preferenceErr)
+		if preferenceErr == nil {
+			theme = preference.Theme
 		}
-		theme = preference.Theme
 	}
 	return HostInitialState{Server: bindings.server, Links: items, Theme: theme}, nil
 }
