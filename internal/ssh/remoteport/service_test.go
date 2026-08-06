@@ -38,7 +38,57 @@ invalid
 	}
 }
 
-func TestServiceDiscoverUsesStaticCommandAndReturnsPorts(t *testing.T) {
+func TestParseDashboardSnapshotReturnsMetricsPortsAndApplications(t *testing.T) {
+	output := []byte(`
+SSH_MAN_METRIC	memoryTotalBytes	17179869184
+SSH_MAN_METRIC	memoryAvailableBytes	5368709120
+SSH_MAN_METRIC	uptimeSeconds	273900
+SSH_MAN_METRIC	loadOne	1.42
+SSH_MAN_METRIC	cpuCount	8
+SSH_MAN_PORT	127.0.0.1:3000	node	412
+SSH_MAN_PORT	0.0.0.0:3000	node	412
+SSH_MAN_PORT	[::]:8443	caddy	91
+SSH_MAN_PORT	invalid	ignored	1
+`)
+
+	got := parseDashboardSnapshot(output)
+	want := DashboardSnapshot{
+		Metrics: HostMetrics{
+			MemoryTotalBytes:     17179869184,
+			MemoryAvailableBytes: 5368709120,
+			UptimeSeconds:        273900,
+			LoadOne:              1.42,
+			CPUCount:             8,
+		},
+		Ports: []ListeningPort{
+			{Port: 3000, Addresses: []string{"0.0.0.0", "127.0.0.1"}, SuggestedScheme: SchemeHTTP},
+			{Port: 8443, Addresses: []string{"::"}, SuggestedScheme: SchemeHTTPS},
+		},
+		Applications: []ListeningApplication{
+			{Name: "caddy", PID: 91, Ports: []int{8443}},
+			{Name: "node", PID: 412, Ports: []int{3000}},
+		},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseDashboardSnapshot() = %#v, want %#v", got, want)
+	}
+}
+
+func TestParseDashboardSnapshotKeepsPortsWhenMetricsAndProcessesAreUnavailable(t *testing.T) {
+	output := []byte("SSH_MAN_PORT\t*.8080\t\t\n")
+
+	got := parseDashboardSnapshot(output)
+
+	if len(got.Ports) != 1 || got.Ports[0].Port != 8080 {
+		t.Fatalf("ports = %#v", got.Ports)
+	}
+	if len(got.Applications) != 0 {
+		t.Fatalf("applications = %#v, want none", got.Applications)
+	}
+}
+
+func TestServiceDiscoverUsesStaticCommandAndReturnsSnapshot(t *testing.T) {
 	server := serverdomain.Server{ID: "server-1"}
 	var gotServer serverdomain.Server
 	var gotPassphrase string
@@ -47,7 +97,7 @@ func TestServiceDiscoverUsesStaticCommandAndReturnsPorts(t *testing.T) {
 		gotServer = inputServer
 		gotPassphrase = passphrase
 		gotCommand = command
-		return []byte("127.0.0.1:5173\n"), nil
+		return []byte("SSH_MAN_PORT\t127.0.0.1:5173\tvite\t33\n"), nil
 	})
 
 	got, err := service.Discover(context.Background(), "secret")
@@ -60,8 +110,8 @@ func TestServiceDiscoverUsesStaticCommandAndReturnsPorts(t *testing.T) {
 	if gotCommand != discoveryCommand {
 		t.Fatalf("command = %q, want static discovery command", gotCommand)
 	}
-	if len(got) != 1 || got[0].Port != 5173 {
-		t.Fatalf("ports = %#v", got)
+	if len(got.Ports) != 1 || got.Ports[0].Port != 5173 {
+		t.Fatalf("snapshot = %#v", got)
 	}
 }
 

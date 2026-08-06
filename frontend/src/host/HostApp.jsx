@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AppWindow,
   ArrowUpRight,
+  Clock3,
   CircleAlert,
+  Gauge,
   Globe2,
   KeyRound,
   LoaderCircle,
+  MemoryStick,
+  Network,
   Pencil,
   RefreshCw,
   Save,
@@ -54,10 +59,31 @@ function PortIcon({ link }) {
   return <Globe2 aria-hidden="true" />
 }
 
+function formatMemory(bytes) {
+  if (bytes === undefined || bytes === null) return 'Unavailable'
+  const gibibytes = bytes / (1024 ** 3)
+  return `${gibibytes >= 10 ? Math.round(gibibytes) : gibibytes.toFixed(1)} GB`
+}
+
+function formatUptime(seconds) {
+  if (!seconds) return 'Unavailable'
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  if (days) return `${days}d ${hours}h`
+  if (hours) return `${hours}h`
+  return `${Math.max(1, Math.floor(seconds / 60))}m`
+}
+
+function applicationForPort(applications, port) {
+  return applications.find((application) => application.ports?.includes(port))
+}
+
 export default function HostApp({ api = defaultApi }) {
   const [server, setServer] = useState(null)
   const [links, setLinks] = useState([])
   const [ports, setPorts] = useState([])
+  const [metrics, setMetrics] = useState({})
+  const [applications, setApplications] = useState([])
   const [phase, setPhase] = useState('loading')
   const [passphrase, setPassphrase] = useState('')
   const [error, setError] = useState('')
@@ -80,6 +106,8 @@ export default function HostApp({ api = defaultApi }) {
         return
       }
       setPorts(result.ports || [])
+      setMetrics(result.metrics || {})
+      setApplications(result.applications || [])
       setPassphrase('')
       setPhase('ready')
     } catch (nextError) {
@@ -114,6 +142,12 @@ export default function HostApp({ api = defaultApi }) {
   }, [start])
 
   const records = useMemo(() => portRecords(ports, links), [links, ports])
+  const favoriteRecords = useMemo(() => records.filter((record) => record.link), [records])
+  const openRecords = useMemo(() => records.filter((record) => record.available), [records])
+  const memoryUsed = Math.max(0, (metrics.memoryTotalBytes || 0) - (metrics.memoryAvailableBytes || 0))
+  const memoryPercent = metrics.memoryTotalBytes
+    ? Math.min(100, Math.round((memoryUsed / metrics.memoryTotalBytes) * 100))
+    : 0
 
   async function openRecord(record) {
     if (!record.available || pendingPort) return
@@ -272,11 +306,43 @@ export default function HostApp({ api = defaultApi }) {
         </main>
       ) : (
         <main className="host-content">
-          <section className="host-intro">
-            <div>
-              <span className="eyebrow">Available now</span>
-              <h2>{ports.length} listening port{ports.length === 1 ? '' : 's'}</h2>
-              <p>Open a web service, or give it a name for later use.</p>
+          <section className="host-summary" aria-label="Host summary">
+            <div className="host-metric">
+              <span className="host-metric__icon" aria-hidden="true"><MemoryStick /></span>
+              <span className="host-metric__copy">
+                <span>Memory</span>
+                <strong>{metrics.memoryTotalBytes ? `${formatMemory(memoryUsed)} used` : 'Unavailable'}</strong>
+                <small>{metrics.memoryTotalBytes ? `${memoryPercent}% of ${formatMemory(metrics.memoryTotalBytes)}` : 'Remote metric unavailable'}</small>
+              </span>
+              {metrics.memoryTotalBytes ? (
+                <span className="host-memory-bar" aria-label={`${memoryPercent}% memory used`}>
+                  <span style={{ width: `${memoryPercent}%` }} />
+                </span>
+              ) : null}
+            </div>
+            <div className="host-metric">
+              <span className="host-metric__icon" aria-hidden="true"><Clock3 /></span>
+              <span className="host-metric__copy">
+                <span>Uptime</span>
+                <strong>{formatUptime(metrics.uptimeSeconds)}</strong>
+                <small>Since the last host restart</small>
+              </span>
+            </div>
+            <div className="host-metric">
+              <span className="host-metric__icon" aria-hidden="true"><Gauge /></span>
+              <span className="host-metric__copy">
+                <span>Load</span>
+                <strong>{metrics.cpuCount ? Number(metrics.loadOne || 0).toFixed(2) : 'Unavailable'}</strong>
+                <small>{metrics.cpuCount ? `${metrics.cpuCount} CPU core${metrics.cpuCount === 1 ? '' : 's'}` : 'CPU count unavailable'}</small>
+              </span>
+            </div>
+            <div className="host-metric">
+              <span className="host-metric__icon" aria-hidden="true"><Network /></span>
+              <span className="host-metric__copy">
+                <span>Open ports</span>
+                <strong>{ports.length}</strong>
+                <small>{favoriteRecords.length} favorite{favoriteRecords.length === 1 ? '' : 's'}</small>
+              </span>
             </div>
           </section>
 
@@ -356,30 +422,108 @@ export default function HostApp({ api = defaultApi }) {
             </form>
           ) : null}
 
-          {records.length ? (
-            <ul className="host-port-list" aria-label="Host ports">
-              {records.map((record) => {
-                const link = defaultLink(record, server.id)
-                const opening = pendingPort === record.port
-                return (
-                  <li key={record.port} className={record.available ? 'host-port-row' : 'host-port-row is-unavailable'}>
+          <section className="host-dashboard-section host-favorites">
+            <div className="host-dashboard-heading">
+              <div>
+                <span className="eyebrow">Saved links</span>
+                <h2>Favorite ports</h2>
+              </div>
+              <span>{favoriteRecords.filter((record) => record.available).length} running</span>
+            </div>
+            {favoriteRecords.length ? (
+              <div className="host-favorite-grid">
+                {favoriteRecords.map((record) => {
+                  const link = defaultLink(record, server.id)
+                  const opening = pendingPort === record.port
+                  return (
                     <button
-                      className="host-port-open"
+                      key={record.port}
+                      className="host-favorite"
                       type="button"
                       aria-label={`Open ${link.name}`}
                       aria-busy={opening}
-                      aria-disabled={Boolean(pendingPort)}
+                      aria-disabled={!record.available || Boolean(pendingPort)}
                       disabled={!record.available}
+                      onClick={() => openRecord(record)}
+                    >
+                      <span className="host-port-icon"><PortIcon link={record.link} /></span>
+                      <span className="host-port-copy">
+                        <strong>{link.name}</strong>
+                        <span>{link.scheme.toUpperCase()} port {record.port}</span>
+                        <small>{record.available ? record.addresses.join(', ') : 'Start the service to open it'}</small>
+                      </span>
+                      <span className={`host-status ${record.available ? 'is-running' : 'is-stopped'}`}>
+                        {record.available ? 'Running' : 'Stopped'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="host-section-empty">Named ports will appear here.</p>
+            )}
+          </section>
+
+          <div className="host-dashboard-grid">
+            <section className="host-dashboard-section">
+              <div className="host-dashboard-heading">
+                <div>
+                  <span className="eyebrow">Processes</span>
+                  <h2>Applications</h2>
+                </div>
+                <span>{applications.length}</span>
+              </div>
+              {applications.length ? (
+                <ul className="host-application-list">
+                  {applications.map((application) => (
+                    <li key={`${application.name}-${application.pid}`} className="host-application-row">
+                      <span className="host-application-icon" aria-hidden="true"><AppWindow /></span>
+                      <span>
+                        <strong>{application.name}</strong>
+                        <small>PID {application.pid}</small>
+                        <span className="host-port-chips">
+                          {application.ports.map((port) => <span key={port}>{port}</span>)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="host-section-empty">Process details are not available for this host.</p>
+              )}
+            </section>
+
+            <section className="host-dashboard-section">
+              <div className="host-dashboard-heading">
+                <div>
+                  <span className="eyebrow">Listening now</span>
+                  <h2>All open ports</h2>
+                </div>
+                <span>{openRecords.length}</span>
+              </div>
+              {openRecords.length ? (
+                <ul className="host-port-list" aria-label="Host ports">
+                  {openRecords.map((record) => {
+                const link = defaultLink(record, server.id)
+                const opening = pendingPort === record.port
+                const application = applicationForPort(applications, record.port)
+                return (
+                  <li key={record.port} className="host-port-row">
+                    <button
+                      className="host-port-open"
+                      type="button"
+                      aria-label={record.link ? `Open port ${record.port}` : `Open ${link.name}`}
+                      aria-busy={opening}
+                      aria-disabled={Boolean(pendingPort)}
                       onClick={() => openRecord(record)}
                     >
                       <span className="host-port-icon"><PortIcon link={record.link} /></span>
                       <span className="host-port-copy">
                         <span className="host-port-title">
                           <strong>{link.name}</strong>
-                          {record.link ? <span>Saved</span> : null}
                         </span>
-                        <span>{link.scheme.toUpperCase()} · Port {record.port}</span>
-                        <small>{record.available ? `Listening on ${record.addresses.join(', ')}` : 'Not listening now'}</small>
+                        <span>{link.scheme.toUpperCase()} port {record.port}</span>
+                        <small>{application ? `${application.name} · ` : ''}{record.addresses.join(', ')}</small>
                       </span>
                       {opening ? <LoaderCircle className="spin" aria-hidden="true" /> : <ArrowUpRight aria-hidden="true" />}
                     </button>
@@ -399,14 +543,16 @@ export default function HostApp({ api = defaultApi }) {
                   </li>
                 )
               })}
-            </ul>
-          ) : (
-            <div className="host-empty">
-              <Globe2 aria-hidden="true" />
-              <h2>No listening ports found</h2>
-              <p>Refresh after a service starts on this host.</p>
-            </div>
-          )}
+                </ul>
+              ) : (
+                <div className="host-empty">
+                  <Globe2 aria-hidden="true" />
+                  <h2>No listening ports found</h2>
+                  <p>Refresh after a service starts on this host.</p>
+                </div>
+              )}
+            </section>
+          </div>
         </main>
       )}
     </div>

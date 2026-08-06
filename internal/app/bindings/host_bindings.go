@@ -28,7 +28,7 @@ import (
 const hostOpenTimeout = 15 * time.Second
 
 type portDiscoverer interface {
-	Discover(context.Context, string) ([]remoteport.ListeningPort, error)
+	Discover(context.Context, string) (remoteport.DashboardSnapshot, error)
 }
 
 type portLinkService interface {
@@ -57,8 +57,10 @@ type HostInitialState struct {
 }
 
 type HostPortDiscoveryResult struct {
-	Ports           []remoteport.ListeningPort `json:"ports"`
-	NeedsPassphrase bool                       `json:"needsPassphrase"`
+	Metrics         remoteport.HostMetrics            `json:"metrics"`
+	Ports           []remoteport.ListeningPort        `json:"ports"`
+	Applications    []remoteport.ListeningApplication `json:"applications"`
+	NeedsPassphrase bool                              `json:"needsPassphrase"`
 }
 
 type HostOpenPortResult struct {
@@ -158,16 +160,20 @@ func (bindings *HostBindings) DiscoverPorts(passphrase string) (HostPortDiscover
 	}
 	bindings.mu.Unlock()
 
-	ports, err := bindings.discoverer.Discover(context.Background(), passphrase)
+	snapshot, err := bindings.discoverer.Discover(context.Background(), passphrase)
 	if errors.Is(err, auth.ErrPassphraseRequired) {
-		return HostPortDiscoveryResult{Ports: []remoteport.ListeningPort{}, NeedsPassphrase: true}, nil
+		return HostPortDiscoveryResult{
+			Ports:           []remoteport.ListeningPort{},
+			Applications:    []remoteport.ListeningApplication{},
+			NeedsPassphrase: true,
+		}, nil
 	}
 	if err != nil {
 		return HostPortDiscoveryResult{}, err
 	}
 
-	available := make(map[int][]string, len(ports))
-	for _, port := range ports {
+	available := make(map[int][]string, len(snapshot.Ports))
+	for _, port := range snapshot.Ports {
 		available[port.Port] = append([]string(nil), port.Addresses...)
 	}
 	bindings.mu.Lock()
@@ -175,10 +181,17 @@ func (bindings *HostBindings) DiscoverPorts(passphrase string) (HostPortDiscover
 	bindings.available = available
 	bindings.mu.Unlock()
 
-	if ports == nil {
-		ports = []remoteport.ListeningPort{}
+	if snapshot.Ports == nil {
+		snapshot.Ports = []remoteport.ListeningPort{}
 	}
-	return HostPortDiscoveryResult{Ports: ports}, nil
+	if snapshot.Applications == nil {
+		snapshot.Applications = []remoteport.ListeningApplication{}
+	}
+	return HostPortDiscoveryResult{
+		Metrics:      snapshot.Metrics,
+		Ports:        snapshot.Ports,
+		Applications: snapshot.Applications,
+	}, nil
 }
 
 func (bindings *HostBindings) SavePortLink(link portlinkdomain.Link) (portlinkdomain.Link, error) {

@@ -29,12 +29,76 @@ const (
 
 var errDiscoveryOutputLimit = errors.New("remote port output exceeded the local size limit")
 
-const discoveryCommand = `if command -v ss >/dev/null 2>&1; then ss -H -lnt | awk '{print $4}' | head -n 4096; elif command -v netstat >/dev/null 2>&1; then netstat -an 2>/dev/null | awk '$1 ~ /^tcp/ && $NF == "LISTEN" {print $4}' | head -n 4096; else printf 'Neither ss nor netstat is available.\n' >&2; exit 127; fi`
+const discoveryCommand = `if [ -r /proc/meminfo ]; then
+  awk '/^MemTotal:/ { total=$2*1024 } /^MemAvailable:/ { available=$2*1024 } END { printf "SSH_MAN_METRIC\tmemoryTotalBytes\t%.0f\nSSH_MAN_METRIC\tmemoryAvailableBytes\t%.0f\n", total, available }' /proc/meminfo
+  awk '{ printf "SSH_MAN_METRIC\tuptimeSeconds\t%.0f\n", $1 }' /proc/uptime
+  awk '{ printf "SSH_MAN_METRIC\tloadOne\t%s\n", $1 }' /proc/loadavg
+  cpu_count=$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '0')
+  printf 'SSH_MAN_METRIC\tcpuCount\t%s\n' "$cpu_count"
+elif command -v sysctl >/dev/null 2>&1; then
+  total=$(sysctl -n hw.memsize 2>/dev/null || printf '0')
+  printf 'SSH_MAN_METRIC\tmemoryTotalBytes\t%s\n' "$total"
+  if command -v vm_stat >/dev/null 2>&1; then
+    vm_stat | awk '
+      /page size of/ { page=$8; gsub(/\./, "", page) }
+      /^Pages free:/ || /^Pages inactive:/ || /^Pages speculative:/ || /^Pages purgeable:/ {
+        value=$NF; gsub(/\./, "", value); available+=value
+      }
+      END { printf "SSH_MAN_METRIC\tmemoryAvailableBytes\t%.0f\n", available*page }
+    '
+  fi
+  boot=$(sysctl -n kern.boottime 2>/dev/null | sed -E 's/.*sec = ([0-9]+).*/\1/')
+  now=$(date +%s)
+  if [ -n "$boot" ]; then printf 'SSH_MAN_METRIC\tuptimeSeconds\t%s\n' "$((now-boot))"; fi
+  sysctl -n vm.loadavg 2>/dev/null | awk '{ gsub(/[{}]/, ""); printf "SSH_MAN_METRIC\tloadOne\t%s\n", $1 }'
+  cpu_count=$(sysctl -n hw.logicalcpu 2>/dev/null || printf '0')
+  printf 'SSH_MAN_METRIC\tcpuCount\t%s\n' "$cpu_count"
+fi
+
+if command -v ss >/dev/null 2>&1; then
+  ss -H -lntp 2>/dev/null | head -n 4096 | while IFS= read -r line; do
+    address=$(printf '%s\n' "$line" | awk '{print $4}')
+    process=$(printf '%s\n' "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')
+    pid=$(printf '%s\n' "$line" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p')
+    printf 'SSH_MAN_PORT\t%s\t%s\t%s\n' "$address" "$process" "$pid"
+  done
+elif command -v lsof >/dev/null 2>&1; then
+  lsof -nP -iTCP -sTCP:LISTEN -Fpcn 2>/dev/null | awk '
+    /^p/ { pid=substr($0, 2) }
+    /^c/ { name=substr($0, 2) }
+    /^n/ { printf "SSH_MAN_PORT\t%s\t%s\t%s\n", substr($0, 2), name, pid }
+  ' | head -n 4096
+elif command -v netstat >/dev/null 2>&1; then
+  netstat -an 2>/dev/null | awk '$1 ~ /^tcp/ && $NF == "LISTEN" { printf "SSH_MAN_PORT\t%s\t\t\n", $4 }' | head -n 4096
+else
+  printf 'Neither ss nor netstat is available.\n' >&2
+  exit 127
+fi`
 
 type ListeningPort struct {
 	Port            int      `json:"port"`
 	Addresses       []string `json:"addresses"`
 	SuggestedScheme string   `json:"suggestedScheme"`
+}
+
+type HostMetrics struct {
+	MemoryTotalBytes     uint64  `json:"memoryTotalBytes"`
+	MemoryAvailableBytes uint64  `json:"memoryAvailableBytes"`
+	UptimeSeconds        uint64  `json:"uptimeSeconds"`
+	LoadOne              float64 `json:"loadOne"`
+	CPUCount             int     `json:"cpuCount"`
+}
+
+type ListeningApplication struct {
+	Name  string `json:"name"`
+	PID   int    `json:"pid"`
+	Ports []int  `json:"ports"`
+}
+
+type DashboardSnapshot struct {
+	Metrics      HostMetrics            `json:"metrics"`
+	Ports        []ListeningPort        `json:"ports"`
+	Applications []ListeningApplication `json:"applications"`
 }
 
 type commandRunner func(context.Context, serverdomain.Server, string, string) ([]byte, error)
@@ -52,14 +116,14 @@ func NewServiceWithRunner(server serverdomain.Server, runner commandRunner) *Ser
 	return &Service{server: server, run: runner}
 }
 
-func (service *Service) Discover(ctx context.Context, passphrase string) ([]ListeningPort, error) {
+func (service *Service) Discover(ctx context.Context, passphrase string) (DashboardSnapshot, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultDiscoveryTimeout)
 	defer cancel()
 	output, err := service.run(ctx, service.server, passphrase, discoveryCommand)
 	if err != nil {
-		return nil, fmt.Errorf("find listening ports: %w", err)
+		return DashboardSnapshot{}, fmt.Errorf("load host dashboard: %w", err)
 	}
-	return parseListeningPorts(output), nil
+	return parseDashboardSnapshot(output), nil
 }
 
 func parseListeningPorts(output []byte) []ListeningPort {
@@ -100,6 +164,90 @@ func parseListeningPorts(output []byte) []ListeningPort {
 		})
 	}
 	return items
+}
+
+func parseDashboardSnapshot(output []byte) DashboardSnapshot {
+	snapshot := DashboardSnapshot{
+		Ports:        []ListeningPort{},
+		Applications: []ListeningApplication{},
+	}
+	var portOutput strings.Builder
+	applicationPorts := map[string]map[int]struct{}{}
+
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			continue
+		}
+		switch fields[0] {
+		case "SSH_MAN_METRIC":
+			parseMetric(&snapshot.Metrics, fields[1], fields[2])
+		case "SSH_MAN_PORT":
+			address, port, ok := splitAddressPort(strings.TrimSpace(fields[1]))
+			if !ok {
+				continue
+			}
+			fmt.Fprintf(&portOutput, "%s:%d\n", formatAddress(address), port)
+			if len(fields) < 4 {
+				continue
+			}
+			name := strings.TrimSpace(fields[2])
+			pid, err := strconv.Atoi(strings.TrimSpace(fields[3]))
+			if name == "" || err != nil || pid < 1 {
+				continue
+			}
+			key := fmt.Sprintf("%s\t%d", name, pid)
+			if applicationPorts[key] == nil {
+				applicationPorts[key] = map[int]struct{}{}
+			}
+			applicationPorts[key][port] = struct{}{}
+		}
+	}
+
+	snapshot.Ports = parseListeningPorts([]byte(portOutput.String()))
+	for key, portSet := range applicationPorts {
+		fields := strings.Split(key, "\t")
+		pid, _ := strconv.Atoi(fields[1])
+		ports := make([]int, 0, len(portSet))
+		for port := range portSet {
+			ports = append(ports, port)
+		}
+		sort.Ints(ports)
+		snapshot.Applications = append(snapshot.Applications, ListeningApplication{
+			Name:  fields[0],
+			PID:   pid,
+			Ports: ports,
+		})
+	}
+	sort.Slice(snapshot.Applications, func(first, second int) bool {
+		if snapshot.Applications[first].Name != snapshot.Applications[second].Name {
+			return snapshot.Applications[first].Name < snapshot.Applications[second].Name
+		}
+		return snapshot.Applications[first].PID < snapshot.Applications[second].PID
+	})
+	return snapshot
+}
+
+func parseMetric(metrics *HostMetrics, name, value string) {
+	switch name {
+	case "memoryTotalBytes":
+		metrics.MemoryTotalBytes, _ = strconv.ParseUint(value, 10, 64)
+	case "memoryAvailableBytes":
+		metrics.MemoryAvailableBytes, _ = strconv.ParseUint(value, 10, 64)
+	case "uptimeSeconds":
+		metrics.UptimeSeconds, _ = strconv.ParseUint(value, 10, 64)
+	case "loadOne":
+		metrics.LoadOne, _ = strconv.ParseFloat(value, 64)
+	case "cpuCount":
+		metrics.CPUCount, _ = strconv.Atoi(value)
+	}
+}
+
+func formatAddress(address string) string {
+	if strings.Contains(address, ":") {
+		return "[" + address + "]"
+	}
+	return address
 }
 
 func splitAddressPort(value string) (string, int, bool) {

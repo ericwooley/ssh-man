@@ -19,21 +19,27 @@ import (
 )
 
 type fakePortDiscoverer struct {
-	ports []remoteport.ListeningPort
-	err   error
+	ports        []remoteport.ListeningPort
+	metrics      remoteport.HostMetrics
+	applications []remoteport.ListeningApplication
+	err          error
 }
 
-func (fake fakePortDiscoverer) Discover(context.Context, string) ([]remoteport.ListeningPort, error) {
-	return fake.ports, fake.err
+func (fake fakePortDiscoverer) Discover(context.Context, string) (remoteport.DashboardSnapshot, error) {
+	return remoteport.DashboardSnapshot{
+		Metrics:      fake.metrics,
+		Ports:        fake.ports,
+		Applications: fake.applications,
+	}, fake.err
 }
 
 type recordingPortDiscoverer struct {
 	passphrases []string
 }
 
-func (fake *recordingPortDiscoverer) Discover(_ context.Context, passphrase string) ([]remoteport.ListeningPort, error) {
+func (fake *recordingPortDiscoverer) Discover(_ context.Context, passphrase string) (remoteport.DashboardSnapshot, error) {
 	fake.passphrases = append(fake.passphrases, passphrase)
-	return []remoteport.ListeningPort{{Port: 3000}}, nil
+	return remoteport.DashboardSnapshot{Ports: []remoteport.ListeningPort{{Port: 3000}}}, nil
 }
 
 type fakePortLinkService struct {
@@ -262,6 +268,32 @@ func TestHostBindingsReturnsPassphraseState(t *testing.T) {
 	}
 	if !result.NeedsPassphrase {
 		t.Fatalf("discovery = %#v", result)
+	}
+}
+
+func TestHostBindingsReturnsDashboardData(t *testing.T) {
+	binding := newHostBindingsWithDependencies(
+		serverdomain.Server{ID: "server-1"},
+		appwindow.New(),
+		&fakePortLinkService{},
+		fakePortDiscoverer{
+			ports:        []remoteport.ListeningPort{{Port: 3000}},
+			metrics:      remoteport.HostMetrics{MemoryTotalBytes: 1024, CPUCount: 4},
+			applications: []remoteport.ListeningApplication{{Name: "node", PID: 12, Ports: []int{3000}}},
+		},
+		&fakePortForwarder{},
+		nil,
+	)
+
+	result, err := binding.DiscoverPorts("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Metrics.MemoryTotalBytes != 1024 || result.Metrics.CPUCount != 4 {
+		t.Fatalf("metrics = %#v", result.Metrics)
+	}
+	if len(result.Applications) != 1 || result.Applications[0].Name != "node" {
+		t.Fatalf("applications = %#v", result.Applications)
 	}
 }
 

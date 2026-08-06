@@ -14,6 +14,17 @@ function createDeferred() {
 function createApi({
   discovery = {
     needsPassphrase: false,
+    metrics: {
+      memoryTotalBytes: 17179869184,
+      memoryAvailableBytes: 5368709120,
+      uptimeSeconds: 273900,
+      loadOne: 1.42,
+      cpuCount: 8,
+    },
+    applications: [
+      { name: 'node', pid: 412, ports: [3000] },
+      { name: 'caddy', pid: 91, ports: [8443] },
+    ],
     ports: [
       { port: 3000, addresses: ['127.0.0.1'], suggestedScheme: 'http' },
       { port: 8443, addresses: ['0.0.0.0'], suggestedScheme: 'https' },
@@ -46,6 +57,28 @@ afterEach(() => {
 })
 
 describe('HostApp', () => {
+  test('shows host metrics, applications, favorites, and open ports', async () => {
+    const api = createApi({
+      links: [
+        { id: 'link-1', serverId: 'server-1', port: 3000, name: 'Admin', scheme: 'http', faviconDataUrl: '' },
+        { id: 'link-2', serverId: 'server-1', port: 5173, name: 'Preview', scheme: 'http', faviconDataUrl: '' },
+      ],
+    })
+    render(<HostApp api={api} />)
+
+    expect(await screen.findByRole('heading', { name: 'Production' })).toBeTruthy()
+    expect(screen.getByText('Memory')).toBeTruthy()
+    expect(screen.getByText('11 GB used')).toBeTruthy()
+    expect(screen.getByText('3d 4h')).toBeTruthy()
+    expect(screen.getByText('1.42')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Favorite ports' })).toBeTruthy()
+    expect(screen.getByText('Running')).toBeTruthy()
+    expect(screen.getByText('Stopped')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Applications' })).toBeTruthy()
+    expect(screen.getByText('node')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'All open ports' })).toBeTruthy()
+  })
+
   test.each(['light', 'dark'])('applies the saved %s theme', async (theme) => {
     const api = createApi({ theme })
     render(<HostApp api={api} />)
@@ -62,7 +95,7 @@ describe('HostApp', () => {
     render(<HostApp api={api} />)
 
     expect(await screen.findByRole('heading', { name: 'Production' })).toBeTruthy()
-    expect(screen.getByText('Admin')).toBeTruthy()
+    expect(screen.getAllByText('Admin')).toHaveLength(2)
     expect(screen.getByText('Port 8443')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'Open Admin' }))
@@ -110,7 +143,7 @@ describe('HostApp', () => {
       name: 'Preview app',
       scheme: 'http',
     })))
-    expect(await screen.findByText('Preview app')).toBeTruthy()
+    expect(await screen.findAllByText('Preview app')).toHaveLength(2)
   })
 
   test('finds and saves a favicon for a named port', async () => {
@@ -176,7 +209,7 @@ describe('HostApp', () => {
     const user = userEvent.setup()
     const api = createApi()
     render(<HostApp api={api} />)
-    await screen.findByText('Admin')
+    await screen.findAllByText('Admin')
 
     await user.click(screen.getByRole('button', { name: 'Edit Admin' }))
     await user.click(screen.getByRole('button', { name: 'Remove' }))

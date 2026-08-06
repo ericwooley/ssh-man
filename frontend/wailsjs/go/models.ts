@@ -162,7 +162,9 @@ export namespace bindings {
 	    }
 	}
 	export class HostPortDiscoveryResult {
+	    metrics: remoteport.HostMetrics;
 	    ports: remoteport.ListeningPort[];
+	    applications: remoteport.ListeningApplication[];
 	    needsPassphrase: boolean;
 
 	    static createFrom(source: any = {}) {
@@ -171,7 +173,9 @@ export namespace bindings {
 
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.metrics = this.convertValues(source["metrics"], remoteport.HostMetrics);
 	        this.ports = this.convertValues(source["ports"], remoteport.ListeningPort);
+	        this.applications = this.convertValues(source["applications"], remoteport.ListeningApplication);
 	        this.needsPassphrase = source["needsPassphrase"];
 	    }
 
@@ -897,6 +901,42 @@ export namespace remote {
 
 export namespace remoteport {
 
+	export class HostMetrics {
+	    memoryTotalBytes: number;
+	    memoryAvailableBytes: number;
+	    uptimeSeconds: number;
+	    loadOne: number;
+	    cpuCount: number;
+
+	    static createFrom(source: any = {}) {
+	        return new HostMetrics(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.memoryTotalBytes = source["memoryTotalBytes"];
+	        this.memoryAvailableBytes = source["memoryAvailableBytes"];
+	        this.uptimeSeconds = source["uptimeSeconds"];
+	        this.loadOne = source["loadOne"];
+	        this.cpuCount = source["cpuCount"];
+	    }
+	}
+	export class ListeningApplication {
+	    name: string;
+	    pid: number;
+	    ports: number[];
+
+	    static createFrom(source: any = {}) {
+	        return new ListeningApplication(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.pid = source["pid"];
+	        this.ports = source["ports"];
+	    }
+	}
 	export class ListeningPort {
 	    port: number;
 	    addresses: string[];
