@@ -119,6 +119,9 @@ func newControlBackend(app *bootstrap.Application, window *appwindow.Controller,
 		LaunchBrowser: func(ctx context.Context, configurationID string, browserID string) error {
 			return app.BrowserService.LaunchThroughSOCKS(ctx, configurationID, browserID)
 		},
+		LaunchBrowserURL: func(ctx context.Context, configurationID string, browserID string, rawURL string) error {
+			return app.BrowserService.LaunchThroughSOCKSURL(ctx, configurationID, browserID, rawURL)
+		},
 		SavePreferences: func(ctx context.Context, preferences preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
 			return app.PreferencesService.Save(ctx, preferences)
 		},

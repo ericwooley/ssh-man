@@ -284,6 +284,10 @@ func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 			record(ctx)
 			return nil
 		},
+		LaunchBrowserURL: func(ctx context.Context, _, _, _ string) error {
+			record(ctx)
+			return nil
+		},
 		SavePreferences: func(ctx context.Context, value preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error) {
 			record(ctx)
 			return value, nil
@@ -317,6 +321,7 @@ func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 		{name: "list browsers", request: Request{Command: "browser.list"}},
 		{name: "preview browser", request: Request{Command: "browser.preview", ConfigurationID: "tunnel-1", BrowserID: "browser-1"}},
 		{name: "launch browser", request: Request{Command: "browser.launch", ConfigurationID: "tunnel-1", BrowserID: "browser-1"}},
+		{name: "launch browser URL", request: Request{Command: "browser.launch_url", ConfigurationID: "tunnel-1", BrowserID: "browser-1", URL: "http://localhost:3000"}},
 		{name: "save preferences", request: Request{Command: "preferences.save", Preferences: &preferencesdomain.UserPreference{}}},
 		{name: "save browser appearance", request: Request{
 			Command:           "preferences.appearance.save",
@@ -355,6 +360,33 @@ func TestServerPassesRequestContextToBackendOperations(t *testing.T) {
 				t.Fatalf("backend context error = %v, want context canceled", received.Err())
 			}
 		})
+	}
+}
+
+func TestServerPassesBrowserURLToBackend(t *testing.T) {
+	var gotConfigurationID, gotBrowserID, gotURL string
+	server := NewServer("", Backend{
+		LaunchBrowserURL: func(_ context.Context, configurationID, browserID, rawURL string) error {
+			gotConfigurationID = configurationID
+			gotBrowserID = browserID
+			gotURL = rawURL
+			return nil
+		},
+	})
+
+	_, err := server.dispatch(context.Background(), Request{
+		Command:         "browser.launch_url",
+		ConfigurationID: "server-socks:server-1",
+		BrowserID:       "firefox",
+		URL:             "http://localhost:3000",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotConfigurationID != "server-socks:server-1" ||
+		gotBrowserID != "firefox" ||
+		gotURL != "http://localhost:3000" {
+		t.Fatalf("backend input = configuration %q, browser %q, URL %q", gotConfigurationID, gotBrowserID, gotURL)
 	}
 }
 

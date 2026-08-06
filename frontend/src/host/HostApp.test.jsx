@@ -56,7 +56,7 @@ describe('HostApp', () => {
     expect(document.documentElement.style.colorScheme).toBe(theme)
   })
 
-  test('lists saved and available ports, then opens a saved link', async () => {
+  test('opens a saved link through the backend proxy route', async () => {
     const user = userEvent.setup()
     const api = createApi()
     render(<HostApp api={api} />)
@@ -67,7 +67,7 @@ describe('HostApp', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open Admin' }))
     await waitFor(() => expect(api.openPort).toHaveBeenCalledWith(3000, 'http'))
-    expect(api.openExternalURL).toHaveBeenCalledWith('http://127.0.0.1:13000')
+    expect(api.openExternalURL).not.toHaveBeenCalled()
   })
 
   test('keeps focus on a port while it opens', async () => {

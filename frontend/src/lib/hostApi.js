@@ -37,15 +37,6 @@ export async function openPort(port, scheme) {
   return requireBindings().OpenPort(port, scheme)
 }
 
-export async function openExternalURL(url) {
-  if (typeof window !== 'undefined' && window.runtime?.BrowserOpenURL) {
-    return window.runtime.BrowserOpenURL(url)
-  }
-  if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
-}
-
 export async function close() {
   return requireBindings().Close()
 }

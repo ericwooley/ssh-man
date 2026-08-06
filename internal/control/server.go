@@ -251,6 +251,11 @@ func (s *Server) dispatch(ctx context.Context, request Request) (any, error) {
 			return nil, fmt.Errorf("command is unavailable")
 		}
 		return nil, s.backend.LaunchBrowser(ctx, request.ConfigurationID, request.BrowserID)
+	case "browser.launch_url":
+		if s.backend.LaunchBrowserURL == nil {
+			return nil, fmt.Errorf("command is unavailable")
+		}
+		return nil, s.backend.LaunchBrowserURL(ctx, request.ConfigurationID, request.BrowserID, request.URL)
 	case "preferences.save":
 		if request.Preferences == nil {
 			return nil, fmt.Errorf("preferences payload is required")

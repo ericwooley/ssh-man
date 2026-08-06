@@ -122,8 +122,7 @@ export default function HostApp({ api = defaultApi }) {
     setError('')
     setNotice('')
     try {
-      const result = await api.openPort(record.port, link.scheme)
-      await api.openExternalURL(result.url)
+      await api.openPort(record.port, link.scheme)
       setNotice(`Opened ${link.name}.`)
     } catch (nextError) {
       setError(nextError.message || `${link.name} could not be opened.`)

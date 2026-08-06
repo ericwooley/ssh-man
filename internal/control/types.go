@@ -51,6 +51,7 @@ type Request struct {
 	ServerID          string                                `json:"serverId,omitempty"`
 	ConfigurationID   string                                `json:"configurationId,omitempty"`
 	BrowserID         string                                `json:"browserId,omitempty"`
+	URL               string                                `json:"url,omitempty"`
 	AppearanceKey     string                                `json:"appearanceKey,omitempty"`
 	Secret            string                                `json:"secret,omitempty"`
 	Server            *serverdomain.Server                  `json:"server,omitempty"`
@@ -86,6 +87,7 @@ type Backend struct {
 	DiscoverBrowsers      func(context.Context) ([]browser.BrowserOption, error)
 	PreviewBrowser        func(context.Context, string, string) (browser.LaunchPreview, error)
 	LaunchBrowser         func(context.Context, string, string) error
+	LaunchBrowserURL      func(context.Context, string, string, string) error
 	SavePreferences       func(context.Context, preferencesdomain.UserPreference) (preferencesdomain.UserPreference, error)
 	SaveBrowserAppearance func(context.Context, string, preferencesdomain.BrowserAppearance) (preferencesdomain.UserPreference, error)
 	SetDefaultBrowser     func(context.Context) (defaultbrowser.Status, error)

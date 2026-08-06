@@ -15,9 +15,12 @@ import (
 
 	"ssh-man/internal/app/bootstrap"
 	appwindow "ssh-man/internal/app/window"
+	"ssh-man/internal/control"
+	configdomain "ssh-man/internal/domain/config"
 	portlinkdomain "ssh-man/internal/domain/portlink"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
+	"ssh-man/internal/platform/paths"
 	"ssh-man/internal/ssh/auth"
 	"ssh-man/internal/ssh/remoteport"
 )
@@ -45,6 +48,7 @@ type portForwarder interface {
 }
 
 type faviconFinder func(context.Context, string, remoteport.DialContextFunc) (string, error)
+type proxyURLLauncher func(context.Context, string, string, string) error
 
 type HostInitialState struct {
 	Server serverdomain.Server     `json:"server"`
@@ -66,17 +70,18 @@ type HostFaviconResult struct {
 }
 
 type HostBindings struct {
-	mu          sync.Mutex
-	server      serverdomain.Server
-	window      *appwindow.Controller
-	links       portLinkService
-	discoverer  portDiscoverer
-	forwarder   portForwarder
-	findFavicon faviconFinder
-	preferences hostPreferenceService
-	shutdown    func(context.Context) error
-	passphrase  string
-	available   map[int][]string
+	mu           sync.Mutex
+	server       serverdomain.Server
+	window       *appwindow.Controller
+	links        portLinkService
+	discoverer   portDiscoverer
+	forwarder    portForwarder
+	findFavicon  faviconFinder
+	openProxyURL proxyURLLauncher
+	preferences  hostPreferenceService
+	shutdown     func(context.Context) error
+	passphrase   string
+	available    map[int][]string
 }
 
 func NewHostBindings(app *bootstrap.Application, server serverdomain.Server, window *appwindow.Controller) *HostBindings {
@@ -89,6 +94,15 @@ func NewHostBindings(app *bootstrap.Application, server serverdomain.Server, win
 		app.Shutdown,
 	)
 	bindings.preferences = app.PreferencesService
+	controlClient := control.NewClient(paths.ControlSocketPath(app.ConfigDir), hostOpenTimeout)
+	bindings.openProxyURL = func(ctx context.Context, configurationID, browserID, rawURL string) error {
+		return controlClient.Call(ctx, control.Request{
+			Command:         "browser.launch_url",
+			ConfigurationID: configurationID,
+			BrowserID:       browserID,
+			URL:             rawURL,
+		}, nil)
+	}
 	return bindings
 }
 
@@ -198,19 +212,39 @@ func (bindings *HostBindings) DeletePortLink(id string) error {
 func (bindings *HostBindings) OpenPort(port int, scheme string) (HostOpenPortResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hostOpenTimeout)
 	defer cancel()
-	scheme, passphrase, addresses, err := bindings.portAccess(port, scheme)
+	scheme, _, _, err := bindings.portAccess(port, scheme)
 	if err != nil {
 		return HostOpenPortResult{}, err
 	}
-	forward, err := bindings.forwarder.Open(ctx, passphrase, port, addresses)
+	if bindings.preferences == nil || bindings.openProxyURL == nil {
+		return HostOpenPortResult{}, fmt.Errorf("the SOCKS browser route is unavailable")
+	}
+	preference, err := bindings.preferences.Load(ctx)
 	if err != nil {
-		return HostOpenPortResult{}, err
+		return HostOpenPortResult{}, fmt.Errorf("load proxy browser preference: %w", err)
 	}
 	target := &url.URL{
 		Scheme: scheme,
-		Host:   net.JoinHostPort(forward.AccessHost, strconv.Itoa(forward.LocalPort)),
+		Host:   net.JoinHostPort("localhost", strconv.Itoa(port)),
+	}
+	if err := bindings.openProxyURL(
+		ctx,
+		configdomain.ManagedSOCKSConfigurationID(bindings.server.ID),
+		browserIDForHostPort(preference, bindings.server.ID, port),
+		target.String(),
+	); err != nil {
+		return HostOpenPortResult{}, fmt.Errorf("open port through SOCKS browser: %w", err)
 	}
 	return HostOpenPortResult{URL: target.String()}, nil
+}
+
+func browserIDForHostPort(preference preferencesdomain.UserPreference, serverID string, port int) string {
+	for _, assignment := range preference.URLPortAssignments {
+		if assignment.ServerID == serverID && assignment.Port == port {
+			return assignment.BrowserID
+		}
+	}
+	return preference.ProxyBrowserID
 }
 
 func (bindings *HostBindings) FindPortFavicon(port int, scheme string) (HostFaviconResult, error) {

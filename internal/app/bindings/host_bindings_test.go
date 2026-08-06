@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	appwindow "ssh-man/internal/app/window"
+	configdomain "ssh-man/internal/domain/config"
 	portlinkdomain "ssh-man/internal/domain/portlink"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
@@ -99,7 +100,7 @@ func (*fakePortForwarder) Close() error {
 	return nil
 }
 
-func TestHostBindingsDiscoversAndOpensOnlyCurrentPorts(t *testing.T) {
+func TestHostBindingsOpensCurrentPortThroughAssignedServerProxyBrowser(t *testing.T) {
 	server := serverdomain.Server{ID: "server-1", Name: "Production"}
 	forwarder := &fakePortForwarder{}
 	binding := newHostBindingsWithDependencies(
@@ -114,6 +115,21 @@ func TestHostBindingsDiscoversAndOpensOnlyCurrentPorts(t *testing.T) {
 		forwarder,
 		nil,
 	)
+	binding.preferences = fakeHostPreferences{preference: preferencesdomain.UserPreference{
+		ProxyBrowserID: "google-chrome",
+		URLPortAssignments: []preferencesdomain.URLPortAssignment{{
+			Port:      3000,
+			ServerID:  "server-1",
+			BrowserID: "firefox",
+		}},
+	}}
+	var gotConfigurationID, gotBrowserID, gotURL string
+	binding.openProxyURL = func(_ context.Context, configurationID, browserID, rawURL string) error {
+		gotConfigurationID = configurationID
+		gotBrowserID = browserID
+		gotURL = rawURL
+		return nil
+	}
 
 	result, err := binding.DiscoverPorts("secret")
 	if err != nil {
@@ -126,14 +142,33 @@ func TestHostBindingsDiscoversAndOpensOnlyCurrentPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opened.URL != "http://ssh-man-test.localhost:43123" || forwarder.gotPort != 3000 {
-		t.Fatalf("opened = %#v, forwarder = %#v", opened, forwarder)
+	if opened.URL != "http://localhost:3000" {
+		t.Fatalf("opened = %#v", opened)
 	}
-	if !reflect.DeepEqual(forwarder.gotAddresses, []string{"0.0.0.0", "127.0.0.1"}) {
-		t.Fatalf("addresses = %#v", forwarder.gotAddresses)
+	if gotConfigurationID != configdomain.ManagedSOCKSConfigurationID("server-1") ||
+		gotBrowserID != "firefox" ||
+		gotURL != "http://localhost:3000" {
+		t.Fatalf("proxy launch = configuration %q, browser %q, URL %q", gotConfigurationID, gotBrowserID, gotURL)
+	}
+	if forwarder.openCalls != 0 {
+		t.Fatal("opening a port created a direct local forward")
 	}
 	if _, err := binding.OpenPort(8080, "http"); err == nil {
 		t.Fatal("expected an undiscovered-port error")
+	}
+}
+
+func TestBrowserIDForHostPortUsesProxyDefaultWithoutMatchingAssignment(t *testing.T) {
+	preference := preferencesdomain.UserPreference{
+		ProxyBrowserID: "google-chrome",
+		URLPortAssignments: []preferencesdomain.URLPortAssignment{{
+			Port:      3000,
+			ServerID:  "another-server",
+			BrowserID: "firefox",
+		}},
+	}
+	if got := browserIDForHostPort(preference, "server-1", 3000); got != "google-chrome" {
+		t.Fatalf("browser id = %q, want google-chrome", got)
 	}
 }
 
