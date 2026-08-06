@@ -226,13 +226,23 @@ type authMethodFactory func(serverdomain.Server, string) (ssh.AuthMethod, error)
 
 type resolvedSSHClientDialer func(context.Context, serverdomain.Server, ssh.AuthMethod) (*ssh.Client, error)
 
+type sshClientDependencies struct {
+	authFactory authMethodFactory
+	dial        resolvedSSHClientDialer
+}
+
+var defaultSSHClientDependencies = sshClientDependencies{
+	authFactory: sshconnection.AuthMethod,
+	dial:        sshconnection.DialSSH,
+}
+
 func dialSSHClient(ctx context.Context, server serverdomain.Server, passphrase string) (*ssh.Client, error) {
 	return dialSSHClientWithDependencies(
 		ctx,
 		server,
 		passphrase,
-		sshconnection.AuthMethod,
-		sshconnection.DialSSH,
+		defaultSSHClientDependencies.authFactory,
+		defaultSSHClientDependencies.dial,
 	)
 }
 

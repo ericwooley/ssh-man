@@ -202,6 +202,22 @@ func TestForwarderRecreatesForwardsAfterPersistentClientFailure(t *testing.T) {
 	if dialCount.Load() != 2 {
 		t.Fatalf("SSH dial count = %d, want 2", dialCount.Load())
 	}
+	replacementConnection, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(second.LocalPort)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replacementConnection.Close()
+	replacementRequest := "GET / HTTP/1.1\r\nHost: " + net.JoinHostPort(second.AccessHost, strconv.Itoa(second.LocalPort)) + "\r\n\r\n"
+	if _, err := replacementConnection.Write([]byte(replacementRequest)); err != nil {
+		t.Fatal(err)
+	}
+	replacementReply := make([]byte, len(replacementRequest))
+	if _, err := io.ReadFull(replacementConnection, replacementReply); err != nil {
+		t.Fatal(err)
+	}
+	if string(replacementReply) != replacementRequest {
+		t.Fatalf("replacement forward reply = %q", replacementReply)
+	}
 	select {
 	case <-failedClient.closed:
 	case <-time.After(time.Second):
@@ -232,8 +248,40 @@ func (client *countingRemoteClient) Close() error {
 	return nil
 }
 
-func TestForwarderKeepsOtherForwardsAfterRemoteTargetRejection(t *testing.T) {
-	remote := &countingRemoteClient{}
+type targetRejectingRemoteClient struct {
+	rejectedAddress string
+	rejected        chan struct{}
+	rejectOnce      sync.Once
+	closeCount      atomic.Int32
+}
+
+func newTargetRejectingRemoteClient(address string) *targetRejectingRemoteClient {
+	return &targetRejectingRemoteClient{
+		rejectedAddress: address,
+		rejected:        make(chan struct{}),
+	}
+}
+
+func (client *targetRejectingRemoteClient) Dial(network, address string) (net.Conn, error) {
+	if address == client.rejectedAddress {
+		client.rejectOnce.Do(func() {
+			close(client.rejected)
+		})
+		return nil, &ssh.OpenChannelError{
+			Reason:  ssh.ConnectionFailed,
+			Message: "remote target rejected the connection",
+		}
+	}
+	return echoRemoteClient{}.Dial(network, address)
+}
+
+func (client *targetRejectingRemoteClient) Close() error {
+	client.closeCount.Add(1)
+	return nil
+}
+
+func TestForwarderRemovesRejectedTargetWithoutClosingOtherForwards(t *testing.T) {
+	remote := newTargetRejectingRemoteClient("127.0.0.1:3000")
 	forwarder := NewForwarderWithDialer(
 		serverdomain.Server{ID: "server-1"},
 		func(context.Context, serverdomain.Server, string) (RemoteClient, error) {
@@ -252,34 +300,64 @@ func TestForwarderKeepsOtherForwardsAfterRemoteTargetRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forwarder.mu.Lock()
-	clientGeneration := forwarder.clientGeneration
-	forwarder.mu.Unlock()
-
-	forwarder.handlePersistentDialFailure(clientGeneration, &ssh.OpenChannelError{
-		Reason:  ssh.ConnectionFailed,
-		Message: "remote target rejected the connection",
-	})
-
-	forwarder.mu.Lock()
-	gotClient := forwarder.client
-	gotForwardCount := len(forwarder.forwards)
-	forwarder.mu.Unlock()
-	if gotClient != remote {
-		t.Fatal("remote target rejection closed the shared SSH client")
+	rejectedConnection, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(first.LocalPort)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if gotForwardCount != 2 {
-		t.Fatalf("forward count = %d, want 2", gotForwardCount)
+	rejectedRequest := "GET / HTTP/1.1\r\nHost: " + net.JoinHostPort(first.AccessHost, strconv.Itoa(first.LocalPort)) + "\r\n\r\n"
+	if _, err := rejectedConnection.Write([]byte(rejectedRequest)); err != nil {
+		t.Fatal(err)
+	}
+	_ = rejectedConnection.Close()
+
+	select {
+	case <-remote.rejected:
+	case <-time.After(time.Second):
+		t.Fatal("remote target did not reject the channel")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		forwarder.mu.Lock()
+		_, rejectedExists := forwarder.forwards[first.RemotePort]
+		healthy, healthyExists := forwarder.forwards[second.RemotePort]
+		gotClient := forwarder.client
+		forwarder.mu.Unlock()
+		if !rejectedExists && healthyExists && healthy.result == second && gotClient == remote {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("remote target rejection did not remove only its forward")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	replacement, err := forwarder.Open(context.Background(), "", 3000, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement == first {
+		t.Fatalf("rejected forward was reused: %#v", replacement)
 	}
 	if remote.closeCount.Load() != 0 {
 		t.Fatalf("client close count = %d, want 0", remote.closeCount.Load())
 	}
-	for _, item := range []Forward{first, second} {
-		connection, dialErr := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(item.LocalPort)))
-		if dialErr != nil {
-			t.Fatalf("connect to retained forward %d: %v", item.RemotePort, dialErr)
-		}
-		_ = connection.Close()
+
+	healthyConnection, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(second.LocalPort)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer healthyConnection.Close()
+	healthyRequest := "GET / HTTP/1.1\r\nHost: " + net.JoinHostPort(second.AccessHost, strconv.Itoa(second.LocalPort)) + "\r\n\r\n"
+	if _, err := healthyConnection.Write([]byte(healthyRequest)); err != nil {
+		t.Fatal(err)
+	}
+	healthyReply := make([]byte, len(healthyRequest))
+	if _, err := io.ReadFull(healthyConnection, healthyReply); err != nil {
+		t.Fatal(err)
+	}
+	if string(healthyReply) != healthyRequest {
+		t.Fatalf("healthy forward reply = %q", healthyReply)
 	}
 }
 

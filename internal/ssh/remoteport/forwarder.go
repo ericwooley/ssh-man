@@ -161,7 +161,7 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	remoteConnection, err := client.Dial("tcp", net.JoinHostPort(forward.RemoteHost, strconv.Itoa(forward.RemotePort)))
 	if err != nil {
 		_ = localConnection.Close()
-		forwarder.handlePersistentDialFailure(clientGeneration, err)
+		forwarder.handlePersistentDialFailure(clientGeneration, forward, err)
 		return
 	}
 	if _, err := remoteConnection.Write(preamble); err != nil {
@@ -183,12 +183,30 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	<-done
 }
 
-func (forwarder *Forwarder) handlePersistentDialFailure(clientGeneration uint64, err error) {
+func (forwarder *Forwarder) handlePersistentDialFailure(clientGeneration uint64, forward Forward, err error) {
 	var channelError *ssh.OpenChannelError
 	if errors.As(err, &channelError) {
+		forwarder.removePersistentForward(clientGeneration, forward)
 		return
 	}
 	forwarder.invalidatePersistentClient(clientGeneration)
+}
+
+func (forwarder *Forwarder) removePersistentForward(clientGeneration uint64, forward Forward) {
+	forwarder.mu.Lock()
+	if forwarder.client == nil || forwarder.clientGeneration != clientGeneration {
+		forwarder.mu.Unlock()
+		return
+	}
+	running, ok := forwarder.forwards[forward.RemotePort]
+	if !ok || running.result != forward {
+		forwarder.mu.Unlock()
+		return
+	}
+	delete(forwarder.forwards, forward.RemotePort)
+	forwarder.mu.Unlock()
+
+	_ = running.listener.Close()
 }
 
 func (forwarder *Forwarder) invalidatePersistentClient(clientGeneration uint64) {

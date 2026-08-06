@@ -65,7 +65,7 @@ func TestServiceDiscoverUsesStaticCommandAndReturnsPorts(t *testing.T) {
 	}
 }
 
-func TestDialSSHClientDelegatesToResolvedConnectionDialer(t *testing.T) {
+func TestDialSSHClientUsesResolvedConnectionDialer(t *testing.T) {
 	server := serverdomain.Server{
 		ID:       "server-1",
 		Host:     "production-alias",
@@ -77,20 +77,23 @@ func TestDialSSHClientDelegatesToResolvedConnectionDialer(t *testing.T) {
 	var gotPassphrase string
 	var gotDialServer serverdomain.Server
 
-	_, err := dialSSHClientWithDependencies(
-		context.Background(),
-		server,
-		"secret",
-		func(input serverdomain.Server, passphrase string) (ssh.AuthMethod, error) {
+	originalDependencies := defaultSSHClientDependencies
+	defaultSSHClientDependencies = sshClientDependencies{
+		authFactory: func(input serverdomain.Server, passphrase string) (ssh.AuthMethod, error) {
 			gotAuthServer = input
 			gotPassphrase = passphrase
 			return ssh.Password("password"), nil
 		},
-		func(_ context.Context, input serverdomain.Server, _ ssh.AuthMethod) (*ssh.Client, error) {
+		dial: func(_ context.Context, input serverdomain.Server, _ ssh.AuthMethod) (*ssh.Client, error) {
 			gotDialServer = input
 			return nil, wantErr
 		},
-	)
+	}
+	t.Cleanup(func() {
+		defaultSSHClientDependencies = originalDependencies
+	})
+
+	_, err := dialSSHClient(context.Background(), server, "secret")
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("dial error = %v, want %v", err, wantErr)
