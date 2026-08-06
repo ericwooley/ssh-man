@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 
-const css = readFileSync(`${process.cwd()}/src/app.css`, 'utf8')
+const css = readFileSync(`${process.cwd()}/src/app.css`, 'utf8').replace(/\r\n?/g, '\n')
 
 function themeToken(themeMarker, token) {
   const start = css.indexOf(themeMarker)
