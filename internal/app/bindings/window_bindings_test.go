@@ -63,3 +63,27 @@ func TestWindowBindingsQueueQuitBeforeStartup(t *testing.T) {
 		t.Fatalf("quit calls after startup = %d, want 1", runtime.quitCalls)
 	}
 }
+
+func TestInstallUpdateRequestsInstallBeforeQuit(t *testing.T) {
+	runtime := &fakeWindowRuntime{}
+	window := appwindow.NewWithRuntime(runtime)
+	window.SetContext(context.Background())
+	installCalls := 0
+	app := &AppBindings{
+		window: window,
+		installUpdate: func() error {
+			installCalls++
+			return nil
+		},
+	}
+
+	if err := app.InstallUpdate(); err != nil {
+		t.Fatalf("InstallUpdate() error = %v", err)
+	}
+	if installCalls != 1 {
+		t.Fatalf("install calls = %d, want 1", installCalls)
+	}
+	if runtime.quitCalls != 1 {
+		t.Fatalf("quit calls = %d, want 1", runtime.quitCalls)
+	}
+}

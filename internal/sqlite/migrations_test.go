@@ -67,6 +67,27 @@ func TestRunMigrationsEnablesAutomaticUpdatesForLegacyPreferences(t *testing.T) 
 	}
 }
 
+func TestRunMigrationsKeepsLegacyUsersOnStableChannel(t *testing.T) {
+	db := openUnmigratedDatabase(t)
+	createLegacyPreferences(t, db, false, "")
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	var experimental bool
+	if err := db.QueryRow(`
+		SELECT use_experimental_channel
+		FROM user_preferences
+		WHERE id = 1
+	`).Scan(&experimental); err != nil {
+		t.Fatalf("load update channel preference: %v", err)
+	}
+	if experimental {
+		t.Fatal("legacy users should remain on the stable channel")
+	}
+}
+
 func TestRunMigrationsDoesNotOverwriteSavedBrowserSwitcherShortcuts(t *testing.T) {
 	db := openUnmigratedDatabase(t)
 	createLegacyPreferences(t, db, true, "Alt+]")

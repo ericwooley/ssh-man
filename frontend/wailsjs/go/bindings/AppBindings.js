@@ -38,6 +38,10 @@ export function HideWindow() {
   return window['go']['bindings']['AppBindings']['HideWindow']();
 }
 
+export function InstallUpdate() {
+  return window['go']['bindings']['AppBindings']['InstallUpdate']();
+}
+
 export function LaunchBrowserThroughSocks(arg1, arg2) {
   return window['go']['bindings']['AppBindings']['LaunchBrowserThroughSocks'](arg1, arg2);
 }

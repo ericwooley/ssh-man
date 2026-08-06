@@ -21,6 +21,7 @@ import (
 	"ssh-man/internal/app/bootstrap"
 	"ssh-man/internal/app/commandwindow"
 	"ssh-man/internal/app/explorerwindow"
+	"ssh-man/internal/app/hostwindow"
 	appmenu "ssh-man/internal/app/menu"
 	"ssh-man/internal/app/settingswindow"
 	appwindow "ssh-man/internal/app/window"
@@ -44,6 +45,7 @@ const (
 	browserSwitcherCancelEventName = "browser-switcher:cancel"
 	urlRouteChoiceEventName        = "url-routing:choice"
 	preferencesChangedEventName    = "preferences:changed"
+	appUpdateStatusEventName       = "app-update:status"
 	urlRoutingStartupWait          = 12 * time.Second
 	urlRouteChooserWidth           = 520
 	urlRouteChooserHeight          = 600
@@ -397,19 +399,28 @@ func Run(assets fs.FS) (runErr error) {
 		return err
 	}
 	updateManager := appupdate.NewManager(buildinfo.Version, application.ConfigDir)
-	if preferences, preferencesErr := application.PreferencesService.Load(context.Background()); preferencesErr != nil {
-		log.Printf("load automatic update preference: %v", preferencesErr)
-	} else {
-		updateManager.Start(preferences.AutomaticUpdates)
-	}
 
 	window := appwindow.New()
 	app := bindings.NewAppBindingsWithApplication(application, window)
+	app.SetUpdateStatusGetter(updateManager.Status)
+	app.SetUpdateInstaller(updateManager.Install)
+	updateManager.SetStatusObserver(func(status appupdate.Status) {
+		if ctx, contextErr := window.Context(); contextErr == nil {
+			wailsruntime.EventsEmit(ctx, appUpdateStatusEventName, status)
+		}
+	})
+	if preferences, preferencesErr := application.PreferencesService.Load(context.Background()); preferencesErr != nil {
+		log.Printf("load automatic update preference: %v", preferencesErr)
+	} else {
+		updateManager.Configure(preferences.AutomaticUpdates, preferences.UseExperimentalChannel)
+	}
 	app.SetPreferencesSavedObserver(func(preferences preferencesdomain.UserPreference) {
-		updateManager.SetEnabled(preferences.AutomaticUpdates)
+		updateManager.Configure(preferences.AutomaticUpdates, preferences.UseExperimentalChannel)
 	})
 	explorerManager := explorerwindow.NewManager()
 	explorerLauncher := bindings.NewExplorerLauncherBindingsWithDependencies(application.ServerService, explorerManager.Launch)
+	hostManager := hostwindow.NewManager()
+	hostLauncher := bindings.NewHostLauncherBindingsWithDependencies(application.ServerService, hostManager.Launch)
 	settingsManager := settingswindow.NewManager()
 	settingsLauncher := bindings.NewSettingsLauncherBindingsWithDependency(settingsManager.Launch)
 	commandManager := commandwindow.NewManager()
@@ -478,7 +489,12 @@ func Run(assets fs.FS) (runErr error) {
 		return application.SessionService.StartOnLaunch(ctx)
 	}
 	shutdownCompanions := func(ctx context.Context) error {
-		return errors.Join(settingsManager.Shutdown(ctx), explorerManager.Shutdown(ctx), commandManager.Shutdown(ctx))
+		return errors.Join(
+			settingsManager.Shutdown(ctx),
+			explorerManager.Shutdown(ctx),
+			commandManager.Shutdown(ctx),
+			hostManager.Shutdown(ctx),
+		)
 	}
 	lifecycle := newApplicationLifecycle(controlServer, bar, startConfiguredTunnels, shutdownCompanions, app.Shutdown)
 	defer func() {
@@ -501,7 +517,7 @@ func Run(assets fs.FS) (runErr error) {
 		return fmt.Errorf("start control service: %w", err)
 	}
 
-	runErr = wails.Run(newOptionsWithURLHandler(assets, app, explorerLauncher, settingsLauncher, commandLauncher, window, bar, lifecycle, func(rawURL string) {
+	runErr = wails.Run(newOptionsWithURLHandler(assets, app, explorerLauncher, hostLauncher, settingsLauncher, commandLauncher, window, bar, lifecycle, func(rawURL string) {
 		go func() {
 			select {
 			case <-urlRoutingReady:
@@ -516,11 +532,11 @@ func Run(assets fs.FS) (runErr error) {
 	return runErr
 }
 
-func newOptions(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, settingsLauncher *bindings.SettingsLauncherBindings, commandLauncher *bindings.CommandLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
-	return newOptionsWithURLHandler(assets, app, explorerLauncher, settingsLauncher, commandLauncher, window, bar, lifecycle, nil)
+func newOptions(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, hostLauncher *bindings.HostLauncherBindings, settingsLauncher *bindings.SettingsLauncherBindings, commandLauncher *bindings.CommandLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle) *options.App {
+	return newOptionsWithURLHandler(assets, app, explorerLauncher, hostLauncher, settingsLauncher, commandLauncher, window, bar, lifecycle, nil)
 }
 
-func newOptionsWithURLHandler(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, settingsLauncher *bindings.SettingsLauncherBindings, commandLauncher *bindings.CommandLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle, onURLOpen func(string)) *options.App {
+func newOptionsWithURLHandler(assets fs.FS, app *bindings.AppBindings, explorerLauncher *bindings.ExplorerLauncherBindings, hostLauncher *bindings.HostLauncherBindings, settingsLauncher *bindings.SettingsLauncherBindings, commandLauncher *bindings.CommandLauncherBindings, window *appwindow.Controller, bar menuBar, lifecycle *applicationLifecycle, onURLOpen func(string)) *options.App {
 	appOptions := &options.App{
 		Title:  "SSH Man",
 		Width:  420,
@@ -529,7 +545,7 @@ func newOptionsWithURLHandler(assets fs.FS, app *bindings.AppBindings, explorerL
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		Bind: append([]interface{}{app, explorerLauncher, settingsLauncher, commandLauncher}, additionalBindingsForGeneration()...),
+		Bind: append([]interface{}{app, explorerLauncher, hostLauncher, settingsLauncher, commandLauncher}, additionalBindingsForGeneration()...),
 		Mac: &mac.Options{
 			OnUrlOpen: onURLOpen,
 		},

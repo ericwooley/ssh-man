@@ -1,3 +1,26 @@
+export namespace appupdate {
+
+	export class Status {
+	    state: string;
+	    version?: string;
+	    channel: string;
+	    message?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.version = source["version"];
+	        this.channel = source["channel"];
+	        this.message = source["message"];
+	    }
+	}
+
+}
+
 export namespace bindings {
 
 	export class CommandInitialState {
@@ -60,6 +83,96 @@ export namespace bindings {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.server = this.convertValues(source["server"], server.Server);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class HostFaviconResult {
+	    faviconDataUrl: string;
+
+	    static createFrom(source: any = {}) {
+	        return new HostFaviconResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.faviconDataUrl = source["faviconDataUrl"];
+	    }
+	}
+	export class HostInitialState {
+	    server: server.Server;
+	    links: portlink.Link[];
+	    theme: string;
+
+	    static createFrom(source: any = {}) {
+	        return new HostInitialState(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.server = this.convertValues(source["server"], server.Server);
+	        this.links = this.convertValues(source["links"], portlink.Link);
+	        this.theme = source["theme"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class HostOpenPortResult {
+	    url: string;
+
+	    static createFrom(source: any = {}) {
+	        return new HostOpenPortResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	    }
+	}
+	export class HostPortDiscoveryResult {
+	    ports: remoteport.ListeningPort[];
+	    needsPassphrase: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new HostPortDiscoveryResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ports = this.convertValues(source["ports"], remoteport.ListeningPort);
+	        this.needsPassphrase = source["needsPassphrase"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -147,6 +260,7 @@ export namespace bindings {
 	    sshKeys: SSHKeyOption[];
 	    diagnostics: Diagnostics;
 	    currentUsername?: string;
+	    updateStatus: appupdate.Status;
 	    message?: string;
 	    recoverable?: boolean;
 
@@ -162,6 +276,7 @@ export namespace bindings {
 	        this.sshKeys = this.convertValues(source["sshKeys"], SSHKeyOption);
 	        this.diagnostics = this.convertValues(source["diagnostics"], Diagnostics);
 	        this.currentUsername = source["currentUsername"];
+	        this.updateStatus = this.convertValues(source["updateStatus"], appupdate.Status);
 	        this.message = source["message"];
 	        this.recoverable = source["recoverable"];
 	    }
@@ -401,6 +516,57 @@ export namespace config {
 
 }
 
+export namespace portlink {
+
+	export class Link {
+	    id: string;
+	    serverId: string;
+	    port: number;
+	    name: string;
+	    scheme: string;
+	    faviconDataUrl?: string;
+	    // Go type: time
+	    createdAt: any;
+	    // Go type: time
+	    updatedAt: any;
+
+	    static createFrom(source: any = {}) {
+	        return new Link(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.serverId = source["serverId"];
+	        this.port = source["port"];
+	        this.name = source["name"];
+	        this.scheme = source["scheme"];
+	        this.faviconDataUrl = source["faviconDataUrl"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace preferences {
 
 	export class BrowserAppearance {
@@ -485,6 +651,7 @@ export namespace preferences {
 	    theme: string;
 	    lastSelectedServerId?: string;
 	    automaticUpdates: boolean;
+	    useExperimentalChannel: boolean;
 	    browserSwitcherShortcut: string;
 	    browserSwitcherBackwardShortcut: string;
 	    browserAppearances: Record<string, BrowserAppearance>;
@@ -506,6 +673,7 @@ export namespace preferences {
 	        this.theme = source["theme"];
 	        this.lastSelectedServerId = source["lastSelectedServerId"];
 	        this.automaticUpdates = source["automaticUpdates"];
+	        this.useExperimentalChannel = source["useExperimentalChannel"];
 	        this.browserSwitcherShortcut = source["browserSwitcherShortcut"];
 	        this.browserSwitcherBackwardShortcut = source["browserSwitcherBackwardShortcut"];
 	        this.browserAppearances = this.convertValues(source["browserAppearances"], BrowserAppearance, true);
@@ -723,6 +891,27 @@ export namespace remote {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace remoteport {
+
+	export class ListeningPort {
+	    port: number;
+	    addresses: string[];
+	    suggestedScheme: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ListeningPort(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.port = source["port"];
+	        this.addresses = source["addresses"];
+	        this.suggestedScheme = source["suggestedScheme"];
+	    }
 	}
 
 }

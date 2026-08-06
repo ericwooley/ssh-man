@@ -15,6 +15,7 @@ const defaultPreferences = {
   theme: 'dark',
   lastSelectedServerId: '',
   automaticUpdates: true,
+  useExperimentalChannel: false,
   browserSwitcherShortcut: 'Alt+X',
   browserSwitcherBackwardShortcut: 'Alt+Z',
   browserAppearances: {},
@@ -31,6 +32,11 @@ const unavailableDiagnostics = {
   databasePath: '',
   version: '',
   automaticUpdatesSupported: false,
+}
+
+const defaultUpdateStatus = {
+  state: 'idle',
+  channel: 'stable',
 }
 
 function normalizePreferences(preferences = {}) {
@@ -115,6 +121,7 @@ export function useSshMan(api = defaultApi, options = {}) {
   const [selectedServerId, setSelectedServerId] = useState('')
   const [selectedConfigurationId, setSelectedConfigurationId] = useState('')
   const [diagnostics, setDiagnostics] = useState(unavailableDiagnostics)
+  const [updateStatus, setUpdateStatus] = useState(defaultUpdateStatus)
   const [currentUsername, setCurrentUsername] = useState('')
   const [sshKeys, setSshKeys] = useState([])
   const [storageIssue, setStorageIssue] = useState('')
@@ -205,6 +212,7 @@ export function useSshMan(api = defaultApi, options = {}) {
       setServers(nextServers)
       setSessions(buildRuntimeSessions(state.sessions || []))
       setDiagnostics(state.diagnostics || unavailableDiagnostics)
+      setUpdateStatus(state.updateStatus || defaultUpdateStatus)
       setCurrentUsername(state.currentUsername || '')
       setSshKeys(state.sshKeys || [])
       setStorageIssue(state.recoverable ? state.message || 'Saved data needs attention.' : '')
@@ -248,6 +256,7 @@ export function useSshMan(api = defaultApi, options = {}) {
         setServers(nextServers)
         setSessions(buildRuntimeSessions(state.sessions || []))
         setDiagnostics(state.diagnostics || unavailableDiagnostics)
+        setUpdateStatus(state.updateStatus || defaultUpdateStatus)
         setCurrentUsername(state.currentUsername || '')
         setSshKeys(state.sshKeys || [])
         setStorageIssue(state.recoverable ? state.message || 'Saved data needs attention.' : '')
@@ -298,6 +307,13 @@ export function useSshMan(api = defaultApi, options = {}) {
       void hydrate({ quiet: true })
     })
   }, [api, hydrate])
+
+  useEffect(() => {
+    if (!api.onUpdateStatusChanged) return undefined
+    return api.onUpdateStatusChanged((status) => {
+      setUpdateStatus(status || defaultUpdateStatus)
+    })
+  }, [api])
 
   const runtimeSessions = useMemo(() => buildRuntimeSessions(sessions), [sessions])
   const selectedServerRecord = useMemo(
@@ -667,6 +683,20 @@ export function useSshMan(api = defaultApi, options = {}) {
     return savePreferencesQuietly((current) => ({ ...current, automaticUpdates: Boolean(enabled) }))
   }, [savePreferencesQuietly])
 
+  const setExperimentalChannel = useCallback(async (enabled) => {
+    return savePreferencesQuietly((current) => ({ ...current, useExperimentalChannel: Boolean(enabled) }))
+  }, [savePreferencesQuietly])
+
+  const installUpdate = useCallback(async () => runPending('install-update', async () => {
+    try {
+      await api.installApplicationUpdate()
+      return true
+    } catch (error) {
+      notify('danger', 'SSH Man could not start the update.', error.message || '')
+      return false
+    }
+  }), [api, notify, runPending])
+
   const setBrowserSwitcherShortcut = useCallback(async (shortcut) => {
     return savePreferencesQuietly((current) => ({ ...current, browserSwitcherShortcut: shortcut }))
   }, [savePreferencesQuietly])
@@ -921,6 +951,17 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }), [api, notify, runPending, servers])
 
+  const openHostWindow = useCallback((serverId) => runPending(`open-host:${serverId}`, async () => {
+    try {
+      await api.openHostWindow(serverId)
+      notify('success', 'Host details opened in a new window.')
+      return true
+    } catch (error) {
+      notify('danger', 'Host details could not be opened.', error.message || '')
+      return false
+    }
+  }), [api, notify, runPending])
+
   return {
     phase,
     servers,
@@ -936,6 +977,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     selectedSession,
     selectedHistory,
     diagnostics,
+    updateStatus,
     currentUsername,
     sshKeys,
     storageIssue,
@@ -968,6 +1010,8 @@ export function useSshMan(api = defaultApi, options = {}) {
     launchBrowser,
     toggleTheme,
     setAutomaticUpdates,
+    setExperimentalChannel,
+    installUpdate,
     setBrowserSwitcherShortcut,
     setBrowserSwitcherBackwardShortcut,
     setBrowserAppearance,
@@ -979,6 +1023,7 @@ export function useSshMan(api = defaultApi, options = {}) {
     copyHistory,
     copyPath,
     openDevTools,
+    openHostWindow,
     openServerExplorer,
     openSettingsWindow,
     openServerCommand,

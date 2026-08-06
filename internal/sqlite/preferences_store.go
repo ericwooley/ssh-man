@@ -33,6 +33,7 @@ func (s *PreferencesStore) Load(ctx context.Context) (preferences.UserPreference
 	var updatedAt string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT theme, last_selected_server_id, automatic_updates_enabled,
+		       use_experimental_channel,
 		       browser_switcher_shortcut,
 		       browser_switcher_backward_shortcut, browser_appearances_json,
 		       default_browser_id, proxy_browser_id, custom_browsers_json,
@@ -44,6 +45,7 @@ func (s *PreferencesStore) Load(ctx context.Context) (preferences.UserPreference
 		&pref.Theme,
 		&pref.LastSelectedServerID,
 		&pref.AutomaticUpdates,
+		&pref.UseExperimentalChannel,
 		&pref.BrowserSwitcherShortcut,
 		&pref.BrowserSwitcherBackwardShortcut,
 		&browserAppearancesJSON,
@@ -157,17 +159,19 @@ func (s *PreferencesStore) Save(ctx context.Context, pref preferences.UserPrefer
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO user_preferences(
 			id, theme, last_selected_server_id, automatic_updates_enabled,
+			use_experimental_channel,
 			browser_switcher_shortcut,
 			browser_switcher_backward_shortcut, browser_appearances_json,
 			default_browser_id, proxy_browser_id, custom_browsers_json,
 			command_browsers_json, url_rules_json, browser_routing_rules_json,
 			url_port_assignments_json, disabled_browser_ids_json, updated_at
 		)
-		VALUES(1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES(1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			theme = excluded.theme,
 			last_selected_server_id = excluded.last_selected_server_id,
 			automatic_updates_enabled = excluded.automatic_updates_enabled,
+			use_experimental_channel = excluded.use_experimental_channel,
 			browser_switcher_shortcut = excluded.browser_switcher_shortcut,
 			browser_switcher_backward_shortcut = excluded.browser_switcher_backward_shortcut,
 			browser_appearances_json = excluded.browser_appearances_json,
@@ -180,7 +184,7 @@ func (s *PreferencesStore) Save(ctx context.Context, pref preferences.UserPrefer
 			url_port_assignments_json = excluded.url_port_assignments_json,
 			disabled_browser_ids_json = excluded.disabled_browser_ids_json,
 			updated_at = excluded.updated_at
-	`, string(pref.Theme), pref.LastSelectedServerID, pref.AutomaticUpdates, pref.BrowserSwitcherShortcut, pref.BrowserSwitcherBackwardShortcut, string(browserAppearancesJSON), pref.DefaultBrowserID, pref.ProxyBrowserID, string(customBrowsersJSON), string(commandBrowsersJSON), string(legacyURLRulesJSON), string(browserRoutingRulesJSON), string(urlPortAssignmentsJSON), string(disabledBrowserIDsJSON), pref.UpdatedAt.Format(time.RFC3339Nano))
+	`, string(pref.Theme), pref.LastSelectedServerID, pref.AutomaticUpdates, pref.UseExperimentalChannel, pref.BrowserSwitcherShortcut, pref.BrowserSwitcherBackwardShortcut, string(browserAppearancesJSON), pref.DefaultBrowserID, pref.ProxyBrowserID, string(customBrowsersJSON), string(commandBrowsersJSON), string(legacyURLRulesJSON), string(browserRoutingRulesJSON), string(urlPortAssignmentsJSON), string(disabledBrowserIDsJSON), pref.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("save preferences: %w", err)
 	}

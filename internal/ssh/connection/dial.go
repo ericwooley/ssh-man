@@ -30,11 +30,6 @@ func DialSSH(ctx context.Context, server serverdomain.Server, authMethod ssh.Aut
 		return nil, fmt.Errorf("connect to ssh server: %w", err)
 	}
 
-	handshakeDeadline := time.Now().Add(sshDialTimeout)
-	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(handshakeDeadline) {
-		handshakeDeadline = contextDeadline
-	}
-	_ = netConn.SetDeadline(handshakeDeadline)
 	config := &ssh.ClientConfig{
 		User:              server.Username,
 		Auth:              []ssh.AuthMethod{authMethod},
@@ -42,11 +37,56 @@ func DialSSH(ctx context.Context, server serverdomain.Server, authMethod ssh.Aut
 		HostKeyAlgorithms: hostKeyAlgorithms,
 		Timeout:           sshDialTimeout,
 	}
-	sshConn, channels, requests, err := ssh.NewClientConn(netConn, endpoint.HostKeyAddress, config)
+	client, err := handshakeSSHClient(ctx, netConn, endpoint.HostKeyAddress, config)
 	if err != nil {
-		_ = netConn.Close()
 		return nil, fmt.Errorf("connect to ssh server: %w", err)
 	}
-	_ = netConn.SetDeadline(time.Time{})
+	return client, nil
+}
+
+func handshakeSSHClient(
+	ctx context.Context,
+	netConn net.Conn,
+	hostKeyAddress string,
+	config *ssh.ClientConfig,
+) (*ssh.Client, error) {
+	handshakeDeadline := time.Now().Add(sshDialTimeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(handshakeDeadline) {
+		handshakeDeadline = contextDeadline
+	}
+	if err := netConn.SetDeadline(handshakeDeadline); err != nil {
+		_ = netConn.Close()
+		return nil, err
+	}
+
+	handshakeDone := make(chan struct{})
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-ctx.Done():
+			_ = netConn.SetDeadline(time.Now())
+		case <-handshakeDone:
+		}
+	}()
+
+	sshConn, channels, requests, err := ssh.NewClientConn(netConn, hostKeyAddress, config)
+	close(handshakeDone)
+	<-watcherDone
+	if err != nil {
+		_ = netConn.Close()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, err
+	}
+	if ctx.Err() != nil {
+		_ = sshConn.Close()
+		return nil, ctx.Err()
+	}
+	if err := netConn.SetDeadline(time.Time{}); err != nil {
+		_ = sshConn.Close()
+		return nil, err
+	}
 	return ssh.NewClient(sshConn, channels, requests), nil
 }

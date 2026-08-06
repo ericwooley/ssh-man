@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   allowSettingsWindowClose,
+  openHostWindow,
   openSettingsWindow,
   onBrowserSwitcherCancelRequested,
   onBrowserSwitcherCommitRequested,
@@ -96,6 +97,15 @@ describe('URL route window sizing', () => {
 })
 
 describe('companion window launchers', () => {
+  test('uses the host launcher Wails binding', async () => {
+    const Open = vi.fn(async () => undefined)
+    window.go = { bindings: { HostLauncherBindings: { Open } } }
+
+    await openHostWindow('server-1')
+
+    expect(Open).toHaveBeenCalledWith('server-1')
+  })
+
   test('uses the dedicated settings launcher binding', async () => {
     const Open = vi.fn(async () => undefined)
     window.go = { bindings: { SettingsLauncherBindings: { Open } } }

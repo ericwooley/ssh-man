@@ -25,6 +25,11 @@ function getCommandLauncherBindings() {
   return window.go?.bindings?.CommandLauncherBindings || null
 }
 
+function getHostLauncherBindings() {
+  if (typeof window === 'undefined') return null
+  return window.go?.bindings?.HostLauncherBindings || null
+}
+
 const hasWailsRuntime = () => getRuntimeBindings() !== null
 
 const memoryState = {
@@ -33,6 +38,7 @@ const memoryState = {
     theme: 'dark',
     lastSelectedServerId: '',
     automaticUpdates: true,
+    useExperimentalChannel: false,
     browserSwitcherShortcut: 'Alt+X',
     browserSwitcherBackwardShortcut: 'Alt+Z',
     browserAppearances: {},
@@ -44,6 +50,10 @@ const memoryState = {
   },
   sessions: [],
   sessionHistory: [],
+  updateStatus: {
+    state: 'idle',
+    channel: 'stable',
+  },
 }
 
 function id() {
@@ -347,6 +357,13 @@ export function onPreferencesChanged(callback) {
   return () => {}
 }
 
+export function onUpdateStatusChanged(callback) {
+  if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
+    return window.runtime.EventsOn('app-update:status', (status) => callback(status))
+  }
+  return () => {}
+}
+
 export function onSettingsCloseRequested(callback) {
   if (typeof window !== 'undefined' && window.runtime?.EventsOn) {
     return window.runtime.EventsOn('settings:close-requested', callback)
@@ -413,6 +430,12 @@ export async function quitApplication() {
   }
 }
 
+export async function installApplicationUpdate() {
+  if (hasWailsRuntime()) {
+    return appBindings().InstallUpdate()
+  }
+}
+
 export async function openServerExplorer(serverId) {
   const launcher = getExplorerLauncherBindings()
   if (launcher) {
@@ -427,6 +450,14 @@ export async function openSettingsWindow() {
     return launcher.Open()
   }
   return { opened: true }
+}
+
+export async function openHostWindow(serverId) {
+  const launcher = getHostLauncherBindings()
+  if (launcher) {
+    return launcher.Open(serverId)
+  }
+  return { serverId, opened: true }
 }
 
 export async function openServerCommand(serverId) {

@@ -22,7 +22,7 @@ func (unsupportedInstaller) stage(context.Context, *Client, *updatePlan, string)
 	return nil, errors.New("automatic updates are currently available only on macOS")
 }
 
-func (unsupportedInstaller) prepare(*stagedUpdate, int) error {
+func (unsupportedInstaller) prepare(*stagedUpdate, int, bool) error {
 	return errors.New("automatic updates are currently available only on macOS")
 }
 

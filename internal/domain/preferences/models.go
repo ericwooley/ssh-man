@@ -107,6 +107,7 @@ type UserPreference struct {
 	Theme                           Theme                        `json:"theme"`
 	LastSelectedServerID            string                       `json:"lastSelectedServerId,omitempty"`
 	AutomaticUpdates                bool                         `json:"automaticUpdates"`
+	UseExperimentalChannel          bool                         `json:"useExperimentalChannel"`
 	BrowserSwitcherShortcut         string                       `json:"browserSwitcherShortcut"`
 	BrowserSwitcherBackwardShortcut string                       `json:"browserSwitcherBackwardShortcut"`
 	BrowserAppearances              map[string]BrowserAppearance `json:"browserAppearances"`

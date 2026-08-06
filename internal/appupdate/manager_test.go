@@ -2,7 +2,10 @@ package appupdate
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +19,8 @@ func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) 
 type recordingInstaller struct {
 	prepared bool
 	cleaned  bool
+	staged   *stagedUpdate
+	relaunch bool
 }
 
 func (*recordingInstaller) supported() bool {
@@ -23,17 +28,81 @@ func (*recordingInstaller) supported() bool {
 }
 
 func (i *recordingInstaller) stage(context.Context, *Client, *updatePlan, string) (*stagedUpdate, error) {
-	return nil, nil
+	return i.staged, nil
 }
 
-func (i *recordingInstaller) prepare(*stagedUpdate, int) error {
+func (i *recordingInstaller) prepare(_ *stagedUpdate, _ int, relaunch bool) error {
 	i.prepared = true
+	i.relaunch = relaunch
 	return nil
 }
 
 func (i *recordingInstaller) cleanup(*stagedUpdate) error {
 	i.cleaned = true
 	return nil
+}
+
+func TestManagerPublishesReadyExperimentalUpdate(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `[{
+			"tag_name":"1.2.0",
+			"draft":false,
+			"prerelease":true,
+			"assets":[{
+				"name":"ssh-man.dmg",
+				"size":42,
+				"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"browser_download_url":%q
+			}]
+		}]`, server.URL+"/ssh-man.dmg")
+	}))
+	t.Cleanup(server.Close)
+
+	installer := &recordingInstaller{
+		staged: &stagedUpdate{Version: "1.2.0", RootPath: "/tmp/update"},
+	}
+	manager := &Manager{
+		currentVersion: "1.0.0",
+		client: &Client{
+			httpClient:       server.Client(),
+			latestReleaseURL: server.URL + "/latest",
+			releasesURL:      server.URL,
+			allowDownloadURL: func(rawURL string) bool { return strings.HasPrefix(rawURL, server.URL) },
+		},
+		installer: installer,
+	}
+	statuses := make(chan Status, 8)
+	manager.SetStatusObserver(func(status Status) {
+		statuses <- status
+	})
+
+	manager.Configure(true, true)
+
+	var ready Status
+	for ready.State != StateReady {
+		select {
+		case ready = <-statuses:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for a ready update")
+		}
+	}
+	if ready.Version != "1.2.0" || ready.Channel != ChannelExperimental {
+		t.Fatalf("ready status = %#v", ready)
+	}
+	if err := manager.Install(); err != nil {
+		t.Fatalf("install ready update: %v", err)
+	}
+	if err := manager.StopAndPrepare(true, 123); err != nil {
+		t.Fatalf("prepare ready update: %v", err)
+	}
+	if !installer.prepared {
+		t.Fatal("one-click update did not prepare the ready update")
+	}
+	if !installer.relaunch {
+		t.Fatal("one-click update did not request an application relaunch")
+	}
 }
 
 func TestStopAndPrepareHonorsAutomaticUpdateOptOut(t *testing.T) {
@@ -126,6 +195,9 @@ func TestStopAndPrepareLaunchesEnabledAutomaticUpdate(t *testing.T) {
 	}
 	if installer.cleaned {
 		t.Fatal("enabled updater cleaned the staged update before installation")
+	}
+	if installer.relaunch {
+		t.Fatal("normal quit requested an application relaunch")
 	}
 }
 
