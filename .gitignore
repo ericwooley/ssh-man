@@ -56,4 +56,7 @@ build/*
 !build/windows/
 build/windows/*
 !build/windows/info.json
+!build/windows/installer/
+build/windows/installer/*
+!build/windows/installer/project.nsi
 frontend/package.json.md5

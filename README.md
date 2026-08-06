@@ -286,15 +286,16 @@ Server and tunnel deletion require `--yes`; `app quit` requires it when tunnels 
 
 ## Windows
 
-Download `ssh-man-windows-amd64.exe` from the
-[GitHub Releases](https://github.com/ericwooley/ssh-man/releases) page. It is a
-portable executable, so you can move it to a folder of your choice and run it
-directly without an installer. To upgrade, download the executable from the
-new release and replace the previous copy after quitting SSH Man.
+Download `ssh-man-windows-amd64-installer.exe` from the
+[GitHub Releases](https://github.com/ericwooley/ssh-man/releases) page. The
+installer adds SSH Man to the Start menu and desktop. It also installs the
+Microsoft Edge WebView2 Evergreen Runtime when required. Quit SSH Man before
+you run an installer upgrade.
 
-The portable build requires the Microsoft Edge WebView2 Evergreen Runtime. If
-it is not already available on the computer, install it before launching SSH
-Man.
+Each release also includes `ssh-man-windows-amd64.exe` as a portable
+executable. Move it to a folder of your choice and run it directly. The
+portable executable requires the Microsoft Edge WebView2 Evergreen Runtime.
+To upgrade it, quit SSH Man and replace the previous executable.
 
 Launching SSH Man adds its icon to the Windows notification area and keeps the
 control window hidden. Select the icon or use **Open SSH Man** from its context

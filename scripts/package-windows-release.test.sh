@@ -4,11 +4,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGER="$ROOT_DIR/scripts/package-windows-release.sh"
+INSTALLER_TEMPLATE="$ROOT_DIR/build/windows/installer/project.nsi"
 RELEASE_WORKFLOW="$ROOT_DIR/.github/workflows/release.yml"
 PROMOTION_WORKFLOW="$ROOT_DIR/.github/workflows/promote-release.yml"
 VALIDATION_SCRIPT="$ROOT_DIR/scripts/validate.sh"
 ARTIFACT_VALIDATOR="$ROOT_DIR/scripts/test-windows-release-artifact.ps1"
+INSTALLER_VALIDATOR="$ROOT_DIR/scripts/test-windows-installer-lifecycle.ps1"
 WINDOWS_VERSION_INFO="$ROOT_DIR/build/windows/info.json"
+README_FILE="$ROOT_DIR/README.md"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ssh-man-windows-package-test.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -45,8 +48,14 @@ assert_not_contains_case_insensitive() {
 
 fixture_root="$TEST_ROOT/project"
 fake_bin="$TEST_ROOT/bin"
-mkdir -p "$fixture_root/scripts" "$fake_bin"
+[ -f "$INSTALLER_TEMPLATE" ] ||
+  fail "Windows installer template is missing: $INSTALLER_TEMPLATE"
+[ -f "$INSTALLER_VALIDATOR" ] ||
+  fail "Windows installer lifecycle validator is missing: $INSTALLER_VALIDATOR"
+
+mkdir -p "$fixture_root/scripts" "$fixture_root/build/windows/installer" "$fake_bin"
 cp "$PACKAGER" "$fixture_root/scripts/package-windows-release.sh"
+cp "$INSTALLER_TEMPLATE" "$fixture_root/build/windows/installer/project.nsi"
 cp "$ROOT_DIR/wails.json" "$fixture_root/wails.json"
 original_wails_config_sha="$(
   shasum -a 256 "$fixture_root/wails.json" | awk '{print $1}'
@@ -79,6 +88,11 @@ if [ "${TEST_WAILS_FAIL:-false}" = "true" ]; then
 fi
 mkdir -p "$TEST_PROJECT_ROOT/build/bin"
 printf 'windows executable\n' >"$TEST_PROJECT_ROOT/build/bin/ssh-man.exe"
+case "$*" in
+  *"-nsis"*)
+    printf 'windows installer\n' >"$TEST_PROJECT_ROOT/build/bin/ssh-man-windows-amd64-installer.exe"
+    ;;
+esac
 FAKE_WAILS
     chmod +x "$GOBIN/wails"
     ;;
@@ -94,7 +108,12 @@ cat >"$fake_bin/x86_64-w64-mingw32-gcc" <<'FAKE_GCC'
 exit 0
 FAKE_GCC
 
-chmod +x "$fake_bin/go" "$fake_bin/x86_64-w64-mingw32-gcc"
+cat >"$fake_bin/makensis" <<'FAKE_MAKENSIS'
+#!/usr/bin/env bash
+exit 0
+FAKE_MAKENSIS
+
+chmod +x "$fake_bin/go" "$fake_bin/makensis" "$fake_bin/x86_64-w64-mingw32-gcc"
 
 command_log="$TEST_ROOT/commands.log"
 (
@@ -108,13 +127,16 @@ command_log="$TEST_ROOT/commands.log"
 release_executable="$fixture_root/dist/ssh-man-windows-amd64.exe"
 [ "$(cat "$release_executable")" = "windows executable" ] ||
   fail "Windows executable was not copied to dist"
+release_installer="$fixture_root/dist/ssh-man-windows-amd64-installer.exe"
+[ "$(cat "$release_installer")" = "windows installer" ] ||
+  fail "Windows installer was not copied to dist"
 
 assert_contains "$command_log" 'args=install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0'
 assert_contains "$command_log" 'cgo=1 cc=x86_64-w64-mingw32-gcc productVersion=2.3.4 args=build'
 assert_contains "$command_log" '-platform windows/amd64'
 assert_contains "$command_log" '-clean'
+assert_contains "$command_log" '-nsis'
 assert_contains "$command_log" '-ldflags -X ssh-man/internal/buildinfo.Version=2.3.4'
-assert_not_contains "$command_log" '-nsis'
 
 restored_product_version="$(
   node -e '
@@ -167,10 +189,14 @@ assert_contains "$invalid_log" 'Version must be a plain semantic version'
 assert_contains "$RELEASE_WORKFLOW" 'build-windows:'
 assert_contains "$RELEASE_WORKFLOW" 'bash ./scripts/package-windows-release.sh'
 assert_contains "$RELEASE_WORKFLOW" 'dist/ssh-man-windows-amd64.exe'
+assert_contains "$RELEASE_WORKFLOW" 'dist/ssh-man-windows-amd64-installer.exe'
 assert_contains "$RELEASE_WORKFLOW" 'test-windows-release-artifact:'
 assert_contains "$RELEASE_WORKFLOW" 'pwsh ./scripts/test-windows-release-artifact.ps1'
 assert_contains "$RELEASE_WORKFLOW" '- test-windows-release-artifact'
-assert_not_contains "$RELEASE_WORKFLOW" 'installer.exe'
+assert_contains "$RELEASE_WORKFLOW" 'test-windows-installer:'
+assert_contains "$RELEASE_WORKFLOW" 'pwsh ./scripts/test-windows-installer-lifecycle.ps1'
+assert_contains "$RELEASE_WORKFLOW" '- test-windows-installer'
+assert_contains "$RELEASE_WORKFLOW" 'sudo apt-get install --yes gcc-mingw-w64-x86-64 nsis'
 assert_not_contains_case_insensitive "$RELEASE_WORKFLOW" 'winget'
 assert_not_contains "$RELEASE_WORKFLOW" 'WINGET_CREATE_GITHUB_TOKEN'
 
@@ -183,6 +209,8 @@ publish_step="$(
 )"
 grep -Fq 'dist/ssh-man-windows-amd64.exe' <<<"$publish_step" ||
   fail "release publishing step does not attach the Windows executable"
+grep -Fq 'dist/ssh-man-windows-amd64-installer.exe' <<<"$publish_step" ||
+  fail "release publishing step does not attach the Windows installer"
 
 assert_contains "$ARTIFACT_VALIDATOR" '[System.Diagnostics.FileVersionInfo]::GetVersionInfo'
 assert_contains "$ARTIFACT_VALIDATOR" '$versionInfo.FileMajorPart'
@@ -200,6 +228,12 @@ assert_contains "$ARTIFACT_VALIDATOR" 'DesktopStartupSeconds'
 assert_contains "$ARTIFACT_VALIDATOR" 'desktop application exited during its startup smoke check'
 assert_contains "$ARTIFACT_VALIDATOR" 'Windows release artifact validation passed.'
 
+assert_contains "$INSTALLER_VALIDATOR" '[string]$InstallerPath'
+assert_contains "$INSTALLER_VALIDATOR" 'Installing SSH Man'
+assert_contains "$INSTALLER_VALIDATOR" 'Retrying silent upgrade after closing SSH Man'
+assert_contains "$INSTALLER_VALIDATOR" 'Uninstalling SSH Man'
+assert_contains "$INSTALLER_VALIDATOR" 'Windows installer lifecycle tests passed.'
+
 assert_contains "$WINDOWS_VERSION_INFO" '"file_version": "{{.Info.ProductVersion}}"'
 assert_contains "$WINDOWS_VERSION_INFO" '"product_version": "{{.Info.ProductVersion}}"'
 assert_contains "$WINDOWS_VERSION_INFO" '"0000": {'
@@ -208,10 +242,14 @@ assert_contains "$WINDOWS_VERSION_INFO" '"FileVersion": "{{.Info.ProductVersion}
 assert_contains "$WINDOWS_VERSION_INFO" '"ProductVersion": "{{.Info.ProductVersion}}"'
 
 assert_contains "$PROMOTION_WORKFLOW" 'ssh-man-windows-amd64.exe'
-assert_not_contains "$PROMOTION_WORKFLOW" 'installer.exe'
+assert_contains "$PROMOTION_WORKFLOW" 'ssh-man-windows-amd64-installer.exe'
 assert_not_contains_case_insensitive "$PROMOTION_WORKFLOW" 'winget'
 assert_not_contains "$PROMOTION_WORKFLOW" 'WINGET_CREATE_GITHUB_TOKEN'
 
 assert_not_contains "$VALIDATION_SCRIPT" 'render-winget-manifests.test.sh'
+
+assert_contains "$README_FILE" 'ssh-man-windows-amd64-installer.exe'
+assert_contains "$README_FILE" 'Start menu'
+assert_contains "$README_FILE" 'portable executable'
 
 printf 'Windows release packaging tests passed.\n'
