@@ -18,6 +18,8 @@ import (
 	"time"
 
 	serverdomain "ssh-man/internal/domain/server"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type RemoteClient interface {
@@ -159,7 +161,7 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	remoteConnection, err := client.Dial("tcp", net.JoinHostPort(forward.RemoteHost, strconv.Itoa(forward.RemotePort)))
 	if err != nil {
 		_ = localConnection.Close()
-		forwarder.invalidatePersistentClient(clientGeneration)
+		forwarder.handlePersistentDialFailure(clientGeneration, err)
 		return
 	}
 	if _, err := remoteConnection.Write(preamble); err != nil {
@@ -179,6 +181,14 @@ func (forwarder *Forwarder) proxy(localConnection net.Conn, forward Forward) {
 	_ = localConnection.Close()
 	_ = remoteConnection.Close()
 	<-done
+}
+
+func (forwarder *Forwarder) handlePersistentDialFailure(clientGeneration uint64, err error) {
+	var channelError *ssh.OpenChannelError
+	if errors.As(err, &channelError) {
+		return
+	}
+	forwarder.invalidatePersistentClient(clientGeneration)
 }
 
 func (forwarder *Forwarder) invalidatePersistentClient(clientGeneration uint64) {

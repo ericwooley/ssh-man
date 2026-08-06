@@ -15,6 +15,8 @@ import (
 	"time"
 
 	serverdomain "ssh-man/internal/domain/server"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type echoRemoteClient struct{}
@@ -112,12 +114,17 @@ func TestForwarderRecreatesForwardWhenRemoteHostChanges(t *testing.T) {
 
 type failingRemoteClient struct {
 	dialed     chan struct{}
+	closed     chan struct{}
 	dialOnce   sync.Once
+	closeOnce  sync.Once
 	closeCount atomic.Int32
 }
 
 func newFailingRemoteClient() *failingRemoteClient {
-	return &failingRemoteClient{dialed: make(chan struct{})}
+	return &failingRemoteClient{
+		dialed: make(chan struct{}),
+		closed: make(chan struct{}),
+	}
 }
 
 func (client *failingRemoteClient) Dial(string, string) (net.Conn, error) {
@@ -128,7 +135,10 @@ func (client *failingRemoteClient) Dial(string, string) (net.Conn, error) {
 }
 
 func (client *failingRemoteClient) Close() error {
-	client.closeCount.Add(1)
+	client.closeOnce.Do(func() {
+		client.closeCount.Add(1)
+		close(client.closed)
+	})
 	return nil
 }
 
@@ -192,6 +202,11 @@ func TestForwarderRecreatesForwardsAfterPersistentClientFailure(t *testing.T) {
 	if dialCount.Load() != 2 {
 		t.Fatalf("SSH dial count = %d, want 2", dialCount.Load())
 	}
+	select {
+	case <-failedClient.closed:
+	case <-time.After(time.Second):
+		t.Fatal("failed client did not close")
+	}
 	if failedClient.closeCount.Load() != 1 {
 		t.Fatalf("failed client close count = %d, want 1", failedClient.closeCount.Load())
 	}
@@ -215,6 +230,57 @@ func (client *countingRemoteClient) Dial(string, string) (net.Conn, error) {
 func (client *countingRemoteClient) Close() error {
 	client.closeCount.Add(1)
 	return nil
+}
+
+func TestForwarderKeepsOtherForwardsAfterRemoteTargetRejection(t *testing.T) {
+	remote := &countingRemoteClient{}
+	forwarder := NewForwarderWithDialer(
+		serverdomain.Server{ID: "server-1"},
+		func(context.Context, serverdomain.Server, string) (RemoteClient, error) {
+			return remote, nil
+		},
+	)
+	t.Cleanup(func() {
+		_ = forwarder.Close()
+	})
+
+	first, err := forwarder.Open(context.Background(), "", 3000, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := forwarder.Open(context.Background(), "", 8080, []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forwarder.mu.Lock()
+	clientGeneration := forwarder.clientGeneration
+	forwarder.mu.Unlock()
+
+	forwarder.handlePersistentDialFailure(clientGeneration, &ssh.OpenChannelError{
+		Reason:  ssh.ConnectionFailed,
+		Message: "remote target rejected the connection",
+	})
+
+	forwarder.mu.Lock()
+	gotClient := forwarder.client
+	gotForwardCount := len(forwarder.forwards)
+	forwarder.mu.Unlock()
+	if gotClient != remote {
+		t.Fatal("remote target rejection closed the shared SSH client")
+	}
+	if gotForwardCount != 2 {
+		t.Fatalf("forward count = %d, want 2", gotForwardCount)
+	}
+	if remote.closeCount.Load() != 0 {
+		t.Fatalf("client close count = %d, want 0", remote.closeCount.Load())
+	}
+	for _, item := range []Forward{first, second} {
+		connection, dialErr := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(item.LocalPort)))
+		if dialErr != nil {
+			t.Fatalf("connect to retained forward %d: %v", item.RemotePort, dialErr)
+		}
+		_ = connection.Close()
+	}
 }
 
 func TestForwarderRejectsRequestsWithoutItsAccessHost(t *testing.T) {
