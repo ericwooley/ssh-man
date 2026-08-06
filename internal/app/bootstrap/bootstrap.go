@@ -7,6 +7,7 @@ import (
 
 	commandhistorydomain "ssh-man/internal/domain/commandhistory"
 	configdomain "ssh-man/internal/domain/config"
+	portlinkdomain "ssh-man/internal/domain/portlink"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
 	sessiondomain "ssh-man/internal/domain/session"
@@ -23,6 +24,7 @@ type Application struct {
 	DB                    *sql.DB
 	ServerService         *serverdomain.Service
 	ConfigService         *configdomain.Service
+	PortLinkService       *portlinkdomain.Service
 	PreferencesService    *preferencesdomain.Service
 	SessionService        *sessiondomain.Service
 	BrowserService        *browser.Service
@@ -43,6 +45,7 @@ func New(context.Context) (*Application, error) {
 
 	serverStore := sqlite.NewServerStore(db)
 	configStore := sqlite.NewConfigStore(db)
+	portLinkStore := sqlite.NewPortLinkStore(db)
 	prefStore := sqlite.NewPreferencesStore(db)
 	historyStore := sqlite.NewSessionHistoryStore(db)
 	commandHistoryStore := sqlite.NewCommandHistoryStore(db)
@@ -50,6 +53,7 @@ func New(context.Context) (*Application, error) {
 
 	serverService := serverdomain.NewService(serverStore)
 	configService := configdomain.NewService(configStore)
+	portLinkService := portlinkdomain.NewService(portLinkStore)
 	serverService.SetSOCKSPortAvailabilityCheck(configService.ValidateManagedSOCKSPort)
 	if err := serverService.EnsureSOCKSPorts(context.Background()); err != nil {
 		_ = db.Close()
@@ -85,6 +89,7 @@ func New(context.Context) (*Application, error) {
 		DB:                    db,
 		ServerService:         serverService,
 		ConfigService:         configService,
+		PortLinkService:       portLinkService,
 		PreferencesService:    preferencesService,
 		SessionService:        sessionService,
 		BrowserService:        browserService,

@@ -33,6 +33,7 @@ export function ServersScreen({
   pending = {},
   onAdd,
   onOpen,
+  onManage,
   onOpenBrowser,
   onOpenExplorer,
   onOpenCommand,
@@ -60,7 +61,7 @@ export function ServersScreen({
         <div>
           <span className="eyebrow">Saved connections</span>
           <h2>{servers.length} server{servers.length === 1 ? '' : 's'}</h2>
-          <p>Choose a server to manage its tunnels.</p>
+          <p>Open a server to view its ports. Open details to manage tunnels.</p>
         </div>
         <IconButton label="Add server" className="icon-button--accent" onClick={onAdd}>
           <Plus aria-hidden="true" />
@@ -78,12 +79,14 @@ export function ServersScreen({
           const browserPending = Boolean(pending[`browser:${item.server.id}`])
           const explorerPending = Boolean(pending[`explore-server:${item.server.id}`])
           const commandPending = Boolean(pending[`command-server:${item.server.id}`])
+          const opening = Boolean(pending[`open-host:${item.server.id}`])
           return (
             <li key={item.server.id} className="server-row">
               <button
                 className="row-main server-row__main"
                 type="button"
-                aria-label={`Open ${item.server.name} details`}
+                aria-label={`Open ${item.server.name} host details`}
+                disabled={opening}
                 onClick={() => onOpen(item.server.id)}
               >
                 <span className="server-avatar" aria-hidden="true">{item.server.name.slice(0, 2).toUpperCase()}</span>
@@ -95,6 +98,7 @@ export function ServersScreen({
                     {liveCount ? <span className="live-inline"> · {liveCount} active</span> : null}
                   </span>
                 </span>
+                {opening ? <LoaderCircle className="spin" aria-hidden="true" /> : null}
               </button>
               <div className="server-row__actions">
                 <IconButton
@@ -130,7 +134,7 @@ export function ServersScreen({
                 <IconButton
                   label={`Show ${item.server.name} details`}
                   className="server-row__details"
-                  onClick={() => onOpen(item.server.id)}
+                  onClick={() => onManage(item.server.id)}
                 >
                   <ArrowRight aria-hidden="true" />
                 </IconButton>
