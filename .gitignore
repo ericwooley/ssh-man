@@ -48,6 +48,7 @@ go.work
 
 # End of https://www.toptal.com/developers/gitignore/api/go
 build/*
+!build/assets.go
 !build/appicon.png
 !build/darwin/
 !build/darwin/Info.plist
@@ -55,4 +56,7 @@ build/*
 !build/windows/
 build/windows/*
 !build/windows/info.json
+!build/windows/installer/
+build/windows/installer/*
+!build/windows/installer/project.nsi
 frontend/package.json.md5

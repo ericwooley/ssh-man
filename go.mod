@@ -3,6 +3,7 @@ module ssh-man
 go 1.26.5
 
 require (
+	fyne.io/systray v1.12.2
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/mattn/go-sqlite3 v1.14.48
 	github.com/pkg/sftp v1.13.11
@@ -41,3 +42,5 @@ require (
 	github.com/wailsapp/mimetype v1.4.1 // indirect
 	golang.org/x/text v0.40.0 // indirect
 )
+
+replace fyne.io/systray => ./third_party/fyne-systray

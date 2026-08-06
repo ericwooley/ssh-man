@@ -62,7 +62,8 @@ jobs:
           )"
           for required_asset in \
             ssh-man.dmg \
-            ssh-man-windows-amd64.exe; do
+            ssh-man-windows-amd64.exe \
+            ssh-man-windows-amd64-installer.exe; do
             if ! grep -Fxq "$required_asset" <<<"$RELEASE_ASSETS"; then
               printf 'Release %s is missing required asset: %s\n' \
                 "$VERSION" \

@@ -863,6 +863,9 @@ func classifyPreview(remotePath string) (string, string) {
 	if mimeType == "" {
 		mimeType = "text/plain; charset=utf-8"
 	}
+	if videoType := videoMIMEType(extension); videoType != "" {
+		return "video", videoType
+	}
 	switch extension {
 	case ".md", ".markdown", ".mdown", ".mkd":
 		return "markdown", "text/markdown; charset=utf-8"
@@ -870,8 +873,6 @@ func classifyPreview(remotePath string) (string, string) {
 		return "browser", mimeType
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif":
 		return "image", mimeType
-	case ".mp4", ".webm":
-		return "video", mimeType
 	case ".pdf", ".mp3", ".wav", ".ogg":
 		return "browser", mimeType
 	case ".7z", ".bz2", ".dmg", ".gz", ".iso", ".rar", ".tar", ".tgz", ".xz", ".zip":
@@ -1225,8 +1226,23 @@ func (r *contextReader) Read(buffer []byte) (int, error) {
 }
 
 func contentTypeFor(remotePath string, sample []byte) string {
-	if value := mime.TypeByExtension(strings.ToLower(path.Ext(remotePath))); value != "" {
+	extension := strings.ToLower(path.Ext(remotePath))
+	if videoType := videoMIMEType(extension); videoType != "" {
+		return videoType
+	}
+	if value := mime.TypeByExtension(extension); value != "" {
 		return value
 	}
 	return http.DetectContentType(sample)
+}
+
+func videoMIMEType(extension string) string {
+	switch extension {
+	case ".mp4":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	default:
+		return ""
+	}
 }

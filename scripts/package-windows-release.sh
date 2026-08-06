@@ -6,7 +6,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-}"
 WAILS_VERSION="v2.13.0"
 WINDOWS_BINARY="$ROOT_DIR/build/bin/ssh-man.exe"
+WINDOWS_INSTALLER="$ROOT_DIR/build/bin/ssh-man-windows-amd64-installer.exe"
 DIST_EXECUTABLE="$ROOT_DIR/dist/ssh-man-windows-amd64.exe"
+DIST_INSTALLER="$ROOT_DIR/dist/ssh-man-windows-amd64-installer.exe"
+INSTALLER_TEMPLATE="$ROOT_DIR/build/windows/installer/project.nsi"
 WAILS_CONFIG="$ROOT_DIR/wails.json"
 WAILS_CONFIG_BACKUP=""
 WAILS_TOOL_DIR=""
@@ -48,6 +51,7 @@ if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; th
 fi
 
 require_command go
+require_command makensis
 require_command node
 require_command x86_64-w64-mingw32-gcc
 
@@ -56,9 +60,14 @@ if [ ! -f "$WAILS_CONFIG" ]; then
   exit 1
 fi
 
+if [ ! -f "$INSTALLER_TEMPLATE" ]; then
+  printf 'Missing Windows installer template: %s\n' "$INSTALLER_TEMPLATE" >&2
+  exit 1
+fi
+
 cd "$ROOT_DIR"
 mkdir -p "$ROOT_DIR/dist"
-rm -f "$DIST_EXECUTABLE"
+rm -f "$DIST_EXECUTABLE" "$DIST_INSTALLER"
 
 WAILS_TOOL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ssh-man-wails-tool.XXXXXX")"
 printf '==> Building host-side Wails tool\n'
@@ -78,12 +87,13 @@ config.info.productVersion = version;
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 NODE
 
-printf '==> Building Windows release executable\n'
+printf '==> Building Windows release executable and installer\n'
 CGO_ENABLED=1 \
   CC=x86_64-w64-mingw32-gcc \
   "$WAILS_TOOL_DIR/wails" build \
     -platform windows/amd64 \
     -clean \
+    -nsis \
     -ldflags "-X ssh-man/internal/buildinfo.Version=$VERSION"
 
 restore_wails_config
@@ -93,7 +103,14 @@ if [ ! -s "$WINDOWS_BINARY" ]; then
   exit 1
 fi
 
-cp "$WINDOWS_BINARY" "$DIST_EXECUTABLE"
+if [ ! -s "$WINDOWS_INSTALLER" ]; then
+  printf 'Expected Windows installer was not created: %s\n' "$WINDOWS_INSTALLER" >&2
+  exit 1
+fi
 
-printf '==> Windows release executable ready\n'
+cp "$WINDOWS_BINARY" "$DIST_EXECUTABLE"
+cp "$WINDOWS_INSTALLER" "$DIST_INSTALLER"
+
+printf '==> Windows release artifacts ready\n'
 printf '    %s\n' "$DIST_EXECUTABLE"
+printf '    %s\n' "$DIST_INSTALLER"

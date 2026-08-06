@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -945,6 +946,63 @@ func TestContentMiddlewareStreamsRemoteFilesAndSandboxesHTML(t *testing.T) {
 	}
 	if value := response.Header().Get("Content-Security-Policy"); value == "" {
 		t.Fatal("HTML previews must be sandboxed")
+	}
+}
+
+func TestContentMiddlewareUsesStableVideoContentTypes(t *testing.T) {
+	service := connectedTestService(t)
+	modTime := time.Now()
+	service.fs.(*memoryFS).nodes["/home/eric/capture.mp4"] = memoryNode{
+		name: "capture.mp4", mode: 0o644, content: []byte("mp4"), modTime: modTime,
+	}
+	service.fs.(*memoryFS).nodes["/home/eric/capture.webm"] = memoryNode{
+		name: "capture.webm", mode: 0o644, content: []byte("webm"), modTime: modTime,
+	}
+
+	platformTypes := map[string]string{
+		".mp4":  "audio/mp4",
+		".webm": "audio/webm",
+	}
+	for extension, platformType := range platformTypes {
+		originalType := mime.TypeByExtension(extension)
+		if err := mime.AddExtensionType(extension, platformType); err != nil {
+			t.Fatalf("override %s MIME type: %v", extension, err)
+		}
+		t.Cleanup(func() {
+			if originalType != "" {
+				if err := mime.AddExtensionType(extension, originalType); err != nil {
+					t.Errorf("restore %s MIME type: %v", extension, err)
+				}
+			}
+		})
+	}
+
+	handler := service.ContentMiddleware(http.NotFoundHandler())
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{name: "capture.mp4", contentType: "video/mp4"},
+		{name: "capture.webm", contentType: "video/webm"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, ContentPathPrefix+"/home/eric/"+test.name, nil)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("response status = %d, want %d", response.Code, http.StatusOK)
+			}
+			if contentType := response.Header().Get("Content-Type"); contentType != test.contentType {
+				t.Fatalf("Content-Type = %q, want %q", contentType, test.contentType)
+			}
+			if value := response.Header().Get("X-Content-Type-Options"); value != "nosniff" {
+				t.Fatalf("X-Content-Type-Options = %q, want nosniff", value)
+			}
+		})
 	}
 }
 

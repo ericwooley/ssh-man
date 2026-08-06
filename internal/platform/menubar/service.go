@@ -8,6 +8,7 @@ type Service interface {
 	ShowBrowserSwitcher() bool
 	CancelBrowserSwitchSession()
 	SetBrowserShortcuts(forward string, backward string) error
+	ShouldHideWindowOnClose() bool
 	Stop()
 }
 
@@ -19,6 +20,7 @@ const (
 )
 
 type Callbacks struct {
+	Show                func()
 	Quit                func()
 	SwitchBrowsers      func(BrowserSwitchDirection, uint64)
 	CommitBrowserSwitch func(uint64)

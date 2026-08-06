@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -353,16 +354,30 @@ func TestPreferencesStorePreservesNewBrowserDataAcrossPreviousVersionSave(t *tes
 		t.Fatalf("save preferences: %v", err)
 	}
 
+	legacyBrowsersJSON, err := json.Marshal([]map[string]string{
+		{
+			"id":              "legacy-kagi",
+			"displayName":     "Kagi Browser",
+			"launchReference": filepath.Join(t.TempDir(), "Kagi Browser.app"),
+			"engine":          "chromium",
+		},
+		{
+			"id":              "command-work",
+			"displayName":     "Old Work Browser",
+			"launchReference": filepath.Join(t.TempDir(), "Safari.app"),
+			"engine":          "regular",
+		},
+	})
+	if err != nil {
+		t.Fatalf("encode previous-version browsers: %v", err)
+	}
 	if _, err := db.Exec(`
 		UPDATE user_preferences
 		SET custom_browsers_json = ?,
 		    theme = 'light',
 		    updated_at = '2026-07-29T12:00:00Z'
 		WHERE id = 1
-	`, `[
-		{"id":"legacy-kagi","displayName":"Kagi Browser","launchReference":"/Applications/Kagi Browser.app","engine":"chromium"},
-		{"id":"command-work","displayName":"Old Work Browser","launchReference":"/Applications/Safari.app","engine":"regular"}
-	]`); err != nil {
+	`, string(legacyBrowsersJSON)); err != nil {
 		t.Fatalf("simulate previous-version save: %v", err)
 	}
 
