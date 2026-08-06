@@ -168,6 +168,9 @@ func supportsRequestProtocol(request Request) bool {
 	if request.ProtocolVersion == ProtocolVersion {
 		return true
 	}
+	if request.ProtocolVersion == 3 {
+		return request.Command != "browser.launch_url"
+	}
 	if request.ProtocolVersion == 2 {
 		return request.Command != "preferences.save"
 	}
@@ -255,7 +258,11 @@ func (s *Server) dispatch(ctx context.Context, request Request) (any, error) {
 		if s.backend.LaunchBrowserURL == nil {
 			return nil, fmt.Errorf("command is unavailable")
 		}
-		return nil, s.backend.LaunchBrowserURL(ctx, request.ConfigurationID, request.BrowserID, request.URL)
+		rawURL := request.URL
+		if rawURL == "" {
+			rawURL = request.Secret
+		}
+		return nil, s.backend.LaunchBrowserURL(ctx, request.ConfigurationID, request.BrowserID, rawURL)
 	case "preferences.save":
 		if request.Preferences == nil {
 			return nil, fmt.Errorf("preferences payload is required")

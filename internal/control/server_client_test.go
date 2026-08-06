@@ -169,7 +169,7 @@ func TestServerRejectsProtocolV2PreferenceWritesWithoutAutomaticUpdates(t *testi
 func TestServerAcceptsLegacyProtocolStateRequests(t *testing.T) {
 	t.Parallel()
 
-	for _, protocolVersion := range []int{1, 2} {
+	for _, protocolVersion := range []int{1, 2, 3} {
 		t.Run(fmt.Sprintf("protocol %d", protocolVersion), func(t *testing.T) {
 			stateCalled := false
 			server := NewServer("", Backend{
@@ -421,6 +421,53 @@ func TestClientReturnsStructuredRemoteError(t *testing.T) {
 	}
 	if containsSecret(remoteError.Message, "do-not-echo") {
 		t.Fatalf("remote error leaked request secret: %q", remoteError.Message)
+	}
+}
+
+func TestClientBrowserURLRequestUsesProtocol3CompatibleFields(t *testing.T) {
+	type protocol3Request struct {
+		ProtocolVersion int    `json:"protocolVersion"`
+		Command         string `json:"command"`
+		ConfigurationID string `json:"configurationId,omitempty"`
+		BrowserID       string `json:"browserId,omitempty"`
+		Secret          string `json:"secret,omitempty"`
+	}
+
+	var decoded protocol3Request
+	client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		decoder := json.NewDecoder(request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&decoded); err != nil {
+			return nil, err
+		}
+		body, err := json.Marshal(Response{ProtocolVersion: ProtocolVersion})
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(string(body))),
+			Header:     make(http.Header),
+		}, nil
+	})}}
+
+	err := client.LaunchBrowserURL(
+		context.Background(),
+		"server-socks:server-1",
+		"firefox",
+		"http://localhost:4321",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ProtocolVersion <= 3 {
+		t.Fatalf("protocol version = %d, want newer than 3", decoded.ProtocolVersion)
+	}
+	if decoded.Command != "browser.launch_url" ||
+		decoded.ConfigurationID != "server-socks:server-1" ||
+		decoded.BrowserID != "firefox" ||
+		decoded.Secret != "http://localhost:4321" {
+		t.Fatalf("request = %#v", decoded)
 	}
 }
 

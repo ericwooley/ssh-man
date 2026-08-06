@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 
 	appwindow "ssh-man/internal/app/window"
+	"ssh-man/internal/control"
 	configdomain "ssh-man/internal/domain/config"
 	portlinkdomain "ssh-man/internal/domain/portlink"
 	preferencesdomain "ssh-man/internal/domain/preferences"
@@ -169,6 +171,31 @@ func TestBrowserIDForHostPortUsesProxyDefaultWithoutMatchingAssignment(t *testin
 	}
 	if got := browserIDForHostPort(preference, "server-1", 3000); got != "google-chrome" {
 		t.Fatalf("browser id = %q, want google-chrome", got)
+	}
+}
+
+func TestHostBindingsRequestsRestartForControlProtocolMismatch(t *testing.T) {
+	binding := newHostBindingsWithDependencies(
+		serverdomain.Server{ID: "server-1"},
+		appwindow.New(),
+		&fakePortLinkService{},
+		fakePortDiscoverer{ports: []remoteport.ListeningPort{{Port: 4321}}},
+		&fakePortForwarder{},
+		nil,
+	)
+	binding.preferences = fakeHostPreferences{preference: preferencesdomain.UserPreference{
+		ProxyBrowserID: "firefox",
+	}}
+	binding.openProxyURL = func(context.Context, string, string, string) error {
+		return &control.ProtocolMismatchError{AppVersion: 3, CLIVersion: 4}
+	}
+	if _, err := binding.DiscoverPorts(""); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := binding.OpenPort(4321, "http")
+	if err == nil || !strings.Contains(err.Error(), "restart SSH Man") {
+		t.Fatalf("OpenPort() error = %v, want restart guidance", err)
 	}
 }
 

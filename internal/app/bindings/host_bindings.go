@@ -96,12 +96,7 @@ func NewHostBindings(app *bootstrap.Application, server serverdomain.Server, win
 	bindings.preferences = app.PreferencesService
 	controlClient := control.NewClient(paths.ControlSocketPath(app.ConfigDir), hostOpenTimeout)
 	bindings.openProxyURL = func(ctx context.Context, configurationID, browserID, rawURL string) error {
-		return controlClient.Call(ctx, control.Request{
-			Command:         "browser.launch_url",
-			ConfigurationID: configurationID,
-			BrowserID:       browserID,
-			URL:             rawURL,
-		}, nil)
+		return controlClient.LaunchBrowserURL(ctx, configurationID, browserID, rawURL)
 	}
 	return bindings
 }
@@ -233,6 +228,10 @@ func (bindings *HostBindings) OpenPort(port int, scheme string) (HostOpenPortRes
 		browserIDForHostPort(preference, bindings.server.ID, port),
 		target.String(),
 	); err != nil {
+		var protocolMismatch *control.ProtocolMismatchError
+		if errors.As(err, &protocolMismatch) {
+			return HostOpenPortResult{}, fmt.Errorf("restart SSH Man to use saved port links after this update")
+		}
 		return HostOpenPortResult{}, fmt.Errorf("open port through SOCKS browser: %w", err)
 	}
 	return HostOpenPortResult{URL: target.String()}, nil

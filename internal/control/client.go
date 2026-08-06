@@ -49,6 +49,17 @@ func (c *Client) Ping(ctx context.Context) error {
 	return c.Call(ctx, Request{Command: "ping"}, nil)
 }
 
+func (c *Client) LaunchBrowserURL(ctx context.Context, configurationID, browserID, rawURL string) error {
+	return c.Call(ctx, Request{
+		Command:         "browser.launch_url",
+		ConfigurationID: configurationID,
+		BrowserID:       browserID,
+		// Protocol 3 rejects unknown JSON fields before it can report a
+		// version mismatch. Use its existing opaque field during upgrades.
+		Secret: rawURL,
+	}, nil)
+}
+
 func (c *Client) Wait(ctx context.Context) error {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
