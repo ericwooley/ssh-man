@@ -135,8 +135,8 @@ func (client *failingRemoteClient) Dial(string, string) (net.Conn, error) {
 }
 
 func (client *failingRemoteClient) Close() error {
+	client.closeCount.Add(1)
 	client.closeOnce.Do(func() {
-		client.closeCount.Add(1)
 		close(client.closed)
 	})
 	return nil
