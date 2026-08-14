@@ -60,10 +60,16 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/releases/tags/$VERSION" \
               --jq '.assets[].name'
           )"
-          for required_asset in \
-            ssh-man.dmg \
-            ssh-man-windows-amd64.exe \
-            ssh-man-windows-amd64-installer.exe; do
+          REQUIRED_ASSETS=(
+            ssh-man.dmg
+            ssh-man-windows-amd64.exe
+          )
+          if git show "${VERSION}^{commit}:.github/workflows/release.yml" \
+            | grep -Fq 'dist/ssh-man-windows-amd64-installer.exe'; then
+            REQUIRED_ASSETS+=(ssh-man-windows-amd64-installer.exe)
+          fi
+
+          for required_asset in "${REQUIRED_ASSETS[@]}"; do
             if ! grep -Fxq "$required_asset" <<<"$RELEASE_ASSETS"; then
               printf 'Release %s is missing required asset: %s\n' \
                 "$VERSION" \
