@@ -139,7 +139,7 @@ export function ServersScreen({
   )
 }
 
-export function TunnelRow({ configuration, session, pending, runtimeFresh = true, onOpen, onStart, onStop }) {
+export function TunnelRow({ configuration, session, pending, runtimeFresh = true, openButtonRef, onOpen, onStart, onStop }) {
   const capabilities = sessionCapabilities(session)
   const isWorking = Boolean(pending)
   const actionLabel = !runtimeFresh
@@ -148,7 +148,7 @@ export function TunnelRow({ configuration, session, pending, runtimeFresh = true
 
   return (
     <li className="tunnel-row">
-      <button className="row-main tunnel-row__main" type="button" onClick={() => onOpen(configuration.id)}>
+      <button ref={openButtonRef} className="row-main tunnel-row__main" type="button" onClick={() => onOpen(configuration.id)}>
         <span className="row-copy">
           <span className="row-heading">
             <strong>{configuration.label}</strong>
@@ -184,6 +184,9 @@ export function ServerDetailScreen({
   onStopTunnel,
   onStartAll,
   onRefreshRuntime,
+  addTunnelButtonRef,
+  editServerButtonRef,
+  onTunnelButtonRef,
 }) {
   const { server, configurations } = record
   const tunnels = userConfigurations(configurations)
@@ -210,7 +213,7 @@ export function ServerDetailScreen({
               <strong>{server.username}@{server.host}:{server.port}</strong>
               <span><KeyRound aria-hidden="true" /> {server.authMode === 'private_key' ? 'Private key' : 'SSH agent'}</span>
             </div>
-            <IconButton label={`Edit ${server.name}`} onClick={() => onEditServer(server)}>
+            <IconButton ref={editServerButtonRef} label={`Edit ${server.name}`} onClick={() => onEditServer(server)}>
               <Pencil aria-hidden="true" />
             </IconButton>
           </div>
@@ -268,7 +271,7 @@ export function ServerDetailScreen({
               <span className="eyebrow">This server</span>
               <h2 id="tunnels-heading">Tunnels</h2>
             </div>
-            <IconButton label="Add tunnel" className="icon-button--accent" onClick={onAddTunnel}>
+            <IconButton ref={addTunnelButtonRef} label="Add tunnel" className="icon-button--accent" onClick={onAddTunnel}>
               <Plus aria-hidden="true" />
             </IconButton>
           </div>
@@ -282,6 +285,7 @@ export function ServerDetailScreen({
                   session={sessions.find((session) => session.configurationId === configuration.id)}
                   pending={pending[`session:${configuration.id}`] || bulkPending}
                   runtimeFresh={runtimeFresh}
+                  openButtonRef={(node) => onTunnelButtonRef?.(configuration.id, node)}
                   onOpen={onOpenTunnel}
                   onStart={onStartTunnel}
                   onStop={onStopTunnel}
@@ -294,7 +298,7 @@ export function ServerDetailScreen({
               title="No tunnels yet"
               description="Add a local forward or SOCKS proxy for this server."
               action={(
-                <button className="primary-button" type="button" onClick={onAddTunnel}>
+                <button ref={addTunnelButtonRef} className="primary-button" type="button" onClick={onAddTunnel}>
                   <Plus aria-hidden="true" /> Add tunnel
                 </button>
               )}

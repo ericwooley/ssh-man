@@ -157,6 +157,7 @@ export function TunnelDetailScreen({
   onLaunchBrowser,
   onUnlock,
   onRefreshRuntime,
+  editButtonRef,
 }) {
   const capabilities = sessionCapabilities(session)
   const status = session?.status || 'stopped'
@@ -181,7 +182,7 @@ export function TunnelDetailScreen({
         <section className={`runtime-hero tone-${status === 'connected' ? 'positive' : status === 'failed' ? 'danger' : status === 'needs_attention' || status === 'reconnecting' ? 'warning' : 'neutral'}`}>
           <div className="runtime-hero__topline">
             <StatusPill status={status} />
-            <IconButton label={`Edit ${configuration.label}`} onClick={() => onEdit(configuration)}>
+            <IconButton ref={editButtonRef} label={`Edit ${configuration.label}`} onClick={() => onEdit(configuration)}>
               <Pencil aria-hidden="true" />
             </IconButton>
           </div>

@@ -141,6 +141,43 @@ describe('HostApp', () => {
     await waitFor(() => expect(api.startConfiguration).toHaveBeenCalledWith('tunnel-1'))
   })
 
+  test('moves focus into tunnel views and restores each opener', async () => {
+    const user = userEvent.setup()
+    const api = createApi()
+    render(<HostApp api={api} />)
+
+    await screen.findByRole('heading', { name: 'Production' })
+    await user.click(screen.getByRole('button', { name: 'Tunnels' }))
+
+    const tunnelRow = (await screen.findByText('Admin tunnel')).closest('button')
+    await user.click(tunnelRow)
+    const detailHeading = await screen.findByRole('heading', { name: 'Admin tunnel', level: 1 })
+    await waitFor(() => expect(document.activeElement).toBe(detailHeading))
+
+    await user.click(screen.getByRole('button', { name: 'Back to tunnels' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByText('Admin tunnel').closest('button')))
+
+    const addTunnel = screen.getByRole('button', { name: 'Add tunnel' })
+    await user.click(addTunnel)
+    await screen.findByRole('heading', { name: 'New tunnel' })
+    await user.click(screen.getByRole('button', { name: 'Cancel and go back' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add tunnel' })))
+
+    await user.click(screen.getByText('Admin tunnel').closest('button'))
+    const editTunnel = await screen.findByRole('button', { name: 'Edit Admin tunnel' })
+    await user.click(editTunnel)
+    await screen.findByRole('heading', { name: 'Edit tunnel' })
+    await user.click(screen.getByRole('button', { name: 'Cancel and go back' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Admin tunnel' })))
+
+    await user.click(screen.getByRole('button', { name: 'Back to tunnels' }))
+    const editServer = screen.getByRole('button', { name: 'Edit Production' })
+    await user.click(editServer)
+    await screen.findByRole('heading', { name: 'Edit server' })
+    await user.click(screen.getByRole('button', { name: 'Cancel and go back' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Production' })))
+  })
+
   test('shows host metrics, applications, favorites, and open ports', async () => {
     const api = createApi({
       links: [

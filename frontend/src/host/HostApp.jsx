@@ -125,6 +125,7 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
   const [tunnelRoute, setTunnelRoute] = useState('server')
   const [form, setForm] = useState(null)
   const [confirmation, setConfirmation] = useState(null)
+  const [focusRequest, setFocusRequest] = useState(null)
   const [server, setServer] = useState(null)
   const [links, setLinks] = useState([])
   const [ports, setPorts] = useState([])
@@ -140,6 +141,12 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
   const [findingFavicon, setFindingFavicon] = useState(false)
   const startedRef = useRef(false)
   const editButtonRefs = useRef(new Map())
+  const tunnelButtonRefs = useRef(new Map())
+  const tunnelTitleRef = useRef(null)
+  const addTunnelButtonRef = useRef(null)
+  const editServerButtonRef = useRef(null)
+  const editTunnelButtonRef = useRef(null)
+  const formReturnFocusRef = useRef(null)
 
   const discover = useCallback(async (secret = '') => {
     setPhase('discovering')
@@ -196,6 +203,33 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
     document.documentElement.style.colorScheme = theme
     document.title = `${currentServer.name} — SSH Man`
   }, [app.preferences.theme, currentServer])
+
+  useEffect(() => {
+    if (!focusRequest) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      const target = focusRequest.type === 'detail-title'
+        ? tunnelTitleRef.current
+        : focusRequest.type === 'tunnel-row'
+          ? tunnelButtonRefs.current.get(focusRequest.id)
+          : focusRequest.type === 'add-tunnel'
+            ? addTunnelButtonRef.current
+            : focusRequest.type === 'edit-server'
+              ? editServerButtonRef.current
+              : editTunnelButtonRef.current
+      if (!target) return
+      target.focus()
+      setFocusRequest(null)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activePage, app.selectedConfiguration?.id, app.selectedServerRecord, focusRequest, form, tunnelRoute])
+
+  const registerTunnelButton = useCallback((configurationId, node) => {
+    if (node) {
+      tunnelButtonRefs.current.set(configurationId, node)
+    } else {
+      tunnelButtonRefs.current.delete(configurationId)
+    }
+  }, [])
 
   const records = useMemo(() => portRecords(ports, links), [links, ports])
   const favoriteRecords = useMemo(() => records.filter((record) => record.link), [records])
@@ -297,10 +331,12 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
 
   function openNewTunnel() {
     if (!app.selectedServer) return
+    formReturnFocusRef.current = { type: 'add-tunnel' }
     setForm({ type: 'tunnel', value: emptyTunnel(app.selectedServer.id) })
   }
 
   function openEditServer(selectedServer) {
+    formReturnFocusRef.current = { type: 'edit-server' }
     setForm({
       type: 'server',
       value: {
@@ -312,25 +348,39 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
   }
 
   function openEditTunnel(configuration) {
+    formReturnFocusRef.current = { type: 'edit-tunnel' }
     setForm({ type: 'tunnel', value: { ...configuration } })
   }
 
   function openTunnel(configurationId) {
     if (!app.selectConfiguration(configurationId)) return
     setTunnelRoute('tunnel')
+    setFocusRequest({ type: 'detail-title' })
   }
 
   function closeForm(saved) {
     const formType = form?.type
+    const returnFocus = formReturnFocusRef.current
+    formReturnFocusRef.current = null
     setForm(null)
-    if (!saved) return
+    if (!saved) {
+      if (returnFocus) setFocusRequest(returnFocus)
+      return
+    }
     if (formType === 'server') {
       setServer(saved)
-      void start()
       setTunnelRoute('server')
+      void start().finally(() => setFocusRequest({ type: 'edit-server' }))
       return
     }
     setTunnelRoute('tunnel')
+    setFocusRequest({ type: 'detail-title' })
+  }
+
+  function closeTunnelDetails() {
+    const configurationId = app.selectedConfiguration?.id
+    setTunnelRoute('server')
+    if (configurationId) setFocusRequest({ type: 'tunnel-row', id: configurationId })
   }
 
   function requestDeleteServer(selectedServer) {
@@ -731,11 +781,11 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
                       className="text-button"
                       type="button"
                       aria-label="Back to tunnels"
-                      onClick={() => setTunnelRoute('server')}
+                      onClick={closeTunnelDetails}
                     >
                       <ChevronLeft aria-hidden="true" /> Tunnels
                     </button>
-                    <strong>{app.selectedConfiguration.label}</strong>
+                    <h1 ref={tunnelTitleRef} tabIndex="-1">{app.selectedConfiguration.label}</h1>
                   </header>
                   <TunnelDetailScreen
                     configuration={app.selectedConfiguration}
@@ -756,6 +806,7 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
                     onLaunchBrowser={app.launchBrowser}
                     onUnlock={app.openUnlock}
                     onRefreshRuntime={app.refreshRuntimeSessions}
+                    editButtonRef={editTunnelButtonRef}
                   />
                 </div>
               ) : app.selectedServerRecord ? (
@@ -780,6 +831,9 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
                     onStopTunnel={app.stopTunnel}
                     onStartAll={app.startAll}
                     onRefreshRuntime={app.refreshRuntimeSessions}
+                    addTunnelButtonRef={addTunnelButtonRef}
+                    editServerButtonRef={editServerButtonRef}
+                    onTunnelButtonRef={registerTunnelButton}
                   />
                 </div>
               ) : null}
