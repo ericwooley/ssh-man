@@ -6,8 +6,20 @@ export function Close() {
   return window['go']['bindings']['HostBindings']['Close']();
 }
 
+export function DeleteConnectionConfiguration(arg1) {
+  return window['go']['bindings']['HostBindings']['DeleteConnectionConfiguration'](arg1);
+}
+
 export function DeletePortLink(arg1) {
   return window['go']['bindings']['HostBindings']['DeletePortLink'](arg1);
+}
+
+export function DeleteServer(arg1) {
+  return window['go']['bindings']['HostBindings']['DeleteServer'](arg1);
+}
+
+export function DiscoverBrowsers() {
+  return window['go']['bindings']['HostBindings']['DiscoverBrowsers']();
 }
 
 export function DiscoverPorts(arg1) {
@@ -22,12 +34,44 @@ export function InitialState() {
   return window['go']['bindings']['HostBindings']['InitialState']();
 }
 
+export function LaunchBrowserThroughSocks(arg1, arg2) {
+  return window['go']['bindings']['HostBindings']['LaunchBrowserThroughSocks'](arg1, arg2);
+}
+
+export function ListRuntimeSessions() {
+  return window['go']['bindings']['HostBindings']['ListRuntimeSessions']();
+}
+
+export function ListSessionHistory(arg1) {
+  return window['go']['bindings']['HostBindings']['ListSessionHistory'](arg1);
+}
+
+export function LoadAppState() {
+  return window['go']['bindings']['HostBindings']['LoadAppState']();
+}
+
 export function OpenPort(arg1, arg2) {
   return window['go']['bindings']['HostBindings']['OpenPort'](arg1, arg2);
 }
 
+export function PreviewBrowserLaunchThroughSocks(arg1, arg2) {
+  return window['go']['bindings']['HostBindings']['PreviewBrowserLaunchThroughSocks'](arg1, arg2);
+}
+
+export function RetryConfiguration(arg1) {
+  return window['go']['bindings']['HostBindings']['RetryConfiguration'](arg1);
+}
+
+export function SaveConnectionConfiguration(arg1) {
+  return window['go']['bindings']['HostBindings']['SaveConnectionConfiguration'](arg1);
+}
+
 export function SavePortLink(arg1) {
   return window['go']['bindings']['HostBindings']['SavePortLink'](arg1);
+}
+
+export function SaveServer(arg1) {
+  return window['go']['bindings']['HostBindings']['SaveServer'](arg1);
 }
 
 export function SetContext(arg1) {
@@ -36,4 +80,20 @@ export function SetContext(arg1) {
 
 export function Shutdown(arg1) {
   return window['go']['bindings']['HostBindings']['Shutdown'](arg1);
+}
+
+export function StartConfiguration(arg1) {
+  return window['go']['bindings']['HostBindings']['StartConfiguration'](arg1);
+}
+
+export function StartServerConfigurations(arg1) {
+  return window['go']['bindings']['HostBindings']['StartServerConfigurations'](arg1);
+}
+
+export function StopConfiguration(arg1) {
+  return window['go']['bindings']['HostBindings']['StopConfiguration'](arg1);
+}
+
+export function SubmitKeyUnlock(arg1, arg2) {
+  return window['go']['bindings']['HostBindings']['SubmitKeyUnlock'](arg1, arg2);
 }

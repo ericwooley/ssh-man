@@ -35,12 +35,69 @@ function createApi({
   ],
   theme = 'dark',
 } = {}) {
+  const server = {
+    id: 'server-1',
+    name: 'Production',
+    host: 'prod.example.com',
+    port: 22,
+    socksPort: 41000,
+    username: 'deploy',
+    authMode: 'agent',
+    keyReference: '',
+  }
+  const managedProxy = {
+    id: 'server-socks:server-1',
+    serverId: 'server-1',
+    label: 'Browser proxy',
+    connectionType: 'socks_proxy',
+    socksPort: 41000,
+    autoReconnectEnabled: true,
+    startOnLaunch: false,
+  }
+  const tunnel = {
+    id: 'tunnel-1',
+    serverId: 'server-1',
+    label: 'Admin tunnel',
+    connectionType: 'local_forward',
+    localPort: 3000,
+    remoteHost: '127.0.0.1',
+    remotePort: 3000,
+    autoReconnectEnabled: true,
+    startOnLaunch: false,
+  }
+  const sessions = [
+    { configurationId: managedProxy.id, status: 'connected', boundPort: 41000 },
+    { configurationId: tunnel.id, status: 'stopped', boundPort: 0 },
+  ]
   return {
     initialState: vi.fn(async () => ({
-      server: { id: 'server-1', name: 'Production', host: 'prod.example.com', port: 22, username: 'deploy' },
+      server,
       links,
       theme,
     })),
+    loadInitialState: vi.fn(async () => ({
+      servers: [{ server, configurations: [managedProxy, tunnel] }],
+      preferences: { theme, proxyBrowserId: '' },
+      sessions,
+      sshKeys: [],
+      diagnostics: {},
+      currentUsername: 'deploy',
+    })),
+    listRuntimeSessions: vi.fn(async () => sessions),
+    listSessionHistory: vi.fn(async () => []),
+    savePreferences: vi.fn(async (preferences) => preferences),
+    saveServer: vi.fn(async (input) => input),
+    deleteServer: vi.fn(async () => undefined),
+    saveConnectionConfiguration: vi.fn(async (input) => ({ ...input, id: input.id || 'tunnel-new' })),
+    deleteConnectionConfiguration: vi.fn(async () => undefined),
+    startConfiguration: vi.fn(async (configurationId) => ({ configurationId, status: 'connected' })),
+    startServerConfigurations: vi.fn(async () => []),
+    stopConfiguration: vi.fn(async (configurationId) => ({ configurationId, status: 'stopped' })),
+    retryConfiguration: vi.fn(async (configurationId) => ({ configurationId, status: 'connected' })),
+    submitKeyUnlock: vi.fn(async (configurationId) => ({ configurationId, status: 'connected' })),
+    discoverBrowsers: vi.fn(async () => []),
+    previewBrowserLaunchThroughSocks: vi.fn(async () => ({ command: '' })),
+    launchBrowserThroughSocks: vi.fn(async () => undefined),
     discoverPorts: vi.fn(async () => discovery),
     savePortLink: vi.fn(async (link) => ({ ...link, id: link.id || 'link-new', serverId: 'server-1' })),
     deletePortLink: vi.fn(async () => undefined),
@@ -57,6 +114,33 @@ afterEach(() => {
 })
 
 describe('HostApp', () => {
+  test('shows overview and tunnels as pages in the host window', async () => {
+    const user = userEvent.setup()
+    const api = createApi()
+    render(<HostApp api={api} />)
+
+    expect(await screen.findByRole('heading', { name: 'Production' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('aria-current')).toBe('page')
+
+    await user.click(screen.getByRole('button', { name: 'Tunnels' }))
+
+    expect(await screen.findByRole('heading', { name: 'Tunnels' })).toBeTruthy()
+    expect(screen.getByText('Admin tunnel')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Tunnels' }).getAttribute('aria-current')).toBe('page')
+  })
+
+  test('controls a tunnel from the host window', async () => {
+    const user = userEvent.setup()
+    const api = createApi()
+    render(<HostApp api={api} />)
+
+    await screen.findByRole('heading', { name: 'Production' })
+    await user.click(screen.getByRole('button', { name: 'Tunnels' }))
+    await user.click(await screen.findByRole('button', { name: 'Start Admin tunnel' }))
+
+    await waitFor(() => expect(api.startConfiguration).toHaveBeenCalledWith('tunnel-1'))
+  })
+
   test('shows host metrics, applications, favorites, and open ports', async () => {
     const api = createApi({
       links: [

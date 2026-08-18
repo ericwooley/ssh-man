@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AppWindow,
   ArrowUpRight,
+  ChevronLeft,
   Clock3,
   CircleAlert,
   Gauge,
@@ -18,8 +19,19 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { IconButton } from '../components/AppChrome'
+import { EmptyState, IconButton, ToastRegion } from '../components/AppChrome'
+import { ConfirmDialog, UnlockDialog } from '../components/Dialogs'
+import { ServerFormScreen, TunnelFormScreen } from '../screens/FormScreens'
+import { ServerDetailScreen } from '../screens/ServersScreens'
+import { TunnelDetailScreen } from '../screens/TunnelScreen'
+import { emptyTunnel } from '../model/appModel'
+import { useSshMan } from '../app/useSshMan'
 import * as defaultApi from '../lib/hostApi'
+
+const hostPages = [
+  { id: 'overview', label: 'Overview', Icon: Gauge },
+  { id: 'tunnels', label: 'Tunnels', Icon: Network },
+]
 
 function portRecords(ports, links) {
   const byPort = new Map()
@@ -78,7 +90,41 @@ function applicationForPort(applications, port) {
   return applications.find((application) => application.ports?.includes(port))
 }
 
+function HostSidebar({ activePage, serverName, onChange, onClose }) {
+  return (
+    <aside className="settings-sidebar host-sidebar">
+      <nav aria-label="Host pages">
+        {hostPages.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            className={activePage === id ? 'is-active' : ''}
+            aria-label={label}
+            aria-current={activePage === id ? 'page' : undefined}
+            onClick={() => onChange(id)}
+          >
+            <Icon aria-hidden="true" />
+            <span className="settings-nav-label">{label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="settings-sidebar__footer">
+        <span>{serverName}</span>
+        <button type="button" aria-label="Close host window" onClick={onClose}>
+          <X aria-hidden="true" />
+          <span>Close</span>
+        </button>
+      </div>
+    </aside>
+  )
+}
+
 export default function HostApp({ api = defaultApi }) {
+  const app = useSshMan(api)
+  const [activePage, setActivePage] = useState('overview')
+  const [tunnelRoute, setTunnelRoute] = useState('server')
+  const [form, setForm] = useState(null)
+  const [confirmation, setConfirmation] = useState(null)
   const [server, setServer] = useState(null)
   const [links, setLinks] = useState([])
   const [ports, setPorts] = useState([])
@@ -141,6 +187,16 @@ export default function HostApp({ api = defaultApi }) {
     void start()
   }, [start])
 
+  const currentServer = app.selectedServer || server
+
+  useEffect(() => {
+    if (!currentServer) return
+    const theme = app.preferences.theme === 'light' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.colorScheme = theme
+    document.title = `${currentServer.name} — SSH Man`
+  }, [app.preferences.theme, currentServer])
+
   const records = useMemo(() => portRecords(ports, links), [links, ports])
   const favoriteRecords = useMemo(() => records.filter((record) => record.link), [records])
   const openRecords = useMemo(() => records.filter((record) => record.available), [records])
@@ -148,10 +204,14 @@ export default function HostApp({ api = defaultApi }) {
   const memoryPercent = metrics.memoryTotalBytes
     ? Math.min(100, Math.round((memoryUsed / metrics.memoryTotalBytes) * 100))
     : 0
+  const confirmationPending = useMemo(() => {
+    if (!confirmation) return false
+    return Boolean(app.pending[`${confirmation.kind === 'server' ? 'delete-server' : 'delete-tunnel'}:${confirmation.id}`])
+  }, [app.pending, confirmation])
 
   async function openRecord(record) {
     if (!record.available || pendingPort) return
-    const link = defaultLink(record, server.id)
+    const link = defaultLink(record, currentServer.id)
     setPendingPort(record.port)
     setError('')
     setNotice('')
@@ -166,7 +226,7 @@ export default function HostApp({ api = defaultApi }) {
   }
 
   function editRecord(record) {
-    setEditing(defaultLink(record, server.id))
+    setEditing(defaultLink(record, currentServer.id))
     setError('')
     setNotice('')
   }
@@ -235,6 +295,76 @@ export default function HostApp({ api = defaultApi }) {
     }
   }
 
+  function openNewTunnel() {
+    if (!app.selectedServer) return
+    setForm({ type: 'tunnel', value: emptyTunnel(app.selectedServer.id) })
+  }
+
+  function openEditServer(selectedServer) {
+    setForm({
+      type: 'server',
+      value: {
+        ...selectedServer,
+        port: String(selectedServer.port),
+        socksPort: selectedServer.socksPort ? String(selectedServer.socksPort) : '',
+      },
+    })
+  }
+
+  function openEditTunnel(configuration) {
+    setForm({ type: 'tunnel', value: { ...configuration } })
+  }
+
+  function openTunnel(configurationId) {
+    if (!app.selectConfiguration(configurationId)) return
+    setTunnelRoute('tunnel')
+  }
+
+  function closeForm(saved) {
+    const formType = form?.type
+    setForm(null)
+    if (!saved) return
+    if (formType === 'server') {
+      setServer(saved)
+      void start()
+      setTunnelRoute('server')
+      return
+    }
+    setTunnelRoute('tunnel')
+  }
+
+  function requestDeleteServer(selectedServer) {
+    setConfirmation({
+      kind: 'server',
+      id: selectedServer.id,
+      title: `Delete ${selectedServer.name}?`,
+      description: 'This removes the server and every saved tunnel under it. Stop its running tunnels first.',
+      confirmLabel: 'Delete server',
+    })
+  }
+
+  function requestDeleteTunnel(configuration) {
+    setConfirmation({
+      kind: 'tunnel',
+      id: configuration.id,
+      title: `Delete ${configuration.label}?`,
+      description: 'This removes the saved tunnel and its connection history. This action cannot be undone.',
+      confirmLabel: 'Delete tunnel',
+    })
+  }
+
+  async function confirmDeletion() {
+    if (!confirmation) return
+    const deleted = confirmation.kind === 'server'
+      ? await app.deleteServer(confirmation.id)
+      : await app.deleteTunnel(confirmation.id)
+    if (!deleted) return
+    const deletedServer = confirmation.kind === 'server'
+    setConfirmation(null)
+    setTunnelRoute('server')
+    if (deletedServer) await api.close()
+  }
+
   if (!server && phase !== 'error') {
     return (
       <div className="host-shell host-state" role="status">
@@ -246,32 +376,37 @@ export default function HostApp({ api = defaultApi }) {
 
   return (
     <div className="host-shell">
-      <header className="host-toolbar">
-        <span className="host-toolbar__mark" aria-hidden="true"><Server /></span>
-        <div>
-          <h1>{server?.name || 'Host details'}</h1>
-          {server ? <p>{server.username}@{server.host}:{server.port}</p> : null}
-        </div>
-        <div className="host-toolbar__actions">
-          <IconButton label="Refresh available ports" disabled={phase === 'discovering'} onClick={() => discover('')}>
-            <RefreshCw className={phase === 'discovering' ? 'spin' : ''} aria-hidden="true" />
-          </IconButton>
-          <IconButton label="Close host window" onClick={() => api.close()}>
-            <X aria-hidden="true" />
-          </IconButton>
-        </div>
-      </header>
+      <div className="host-window-layout">
+        <HostSidebar
+          activePage={activePage}
+          serverName={currentServer?.name || 'Host details'}
+          onChange={setActivePage}
+          onClose={() => api.close()}
+        />
+        <main className="host-window-main">
+          {activePage === 'overview' ? (
+            <div className="host-overview-page">
+              <header className="host-page-heading">
+                <div>
+                  <span className="eyebrow">Host dashboard</span>
+                  <h1>{currentServer?.name || 'Host details'}</h1>
+                  {currentServer ? <p>{currentServer.username}@{currentServer.host}:{currentServer.port}</p> : null}
+                </div>
+                <IconButton label="Refresh available ports" disabled={phase === 'discovering'} onClick={() => discover('')}>
+                  <RefreshCw className={phase === 'discovering' ? 'spin' : ''} aria-hidden="true" />
+                </IconButton>
+              </header>
 
-      {error ? (
-        <div className="host-alert" role="alert">
-          <CircleAlert aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      ) : null}
-      {notice ? <div className="host-notice" role="status">{notice}</div> : null}
+              {error ? (
+                <div className="host-alert" role="alert">
+                  <CircleAlert aria-hidden="true" />
+                  <span>{error}</span>
+                </div>
+              ) : null}
+              {notice ? <div className="host-notice" role="status">{notice}</div> : null}
 
-      {phase === 'locked' ? (
-        <main className="host-state">
+              {phase === 'locked' ? (
+                <div className="host-state">
           <span className="host-state__icon" aria-hidden="true"><KeyRound /></span>
           <h2>Unlock this host</h2>
           <p>Enter the SSH key passphrase to find listening ports.</p>
@@ -290,22 +425,22 @@ export default function HostApp({ api = defaultApi }) {
             </label>
             <button className="primary-button" type="submit">Unlock host</button>
           </form>
-        </main>
+                </div>
       ) : phase === 'loading' || phase === 'discovering' ? (
-        <main className="host-state" role="status">
+                <div className="host-state" role="status">
           <LoaderCircle className="spin" aria-hidden="true" />
           <strong>Finding listening ports</strong>
           <span>Checking services on this host…</span>
-        </main>
+                </div>
       ) : phase === 'error' ? (
-        <main className="host-state">
+                <div className="host-state">
           <span className="host-state__icon" aria-hidden="true"><CircleAlert /></span>
           <h2>Host details did not load</h2>
           <p>Check the SSH connection, then try again.</p>
           <button className="primary-button" type="button" onClick={() => void start()}>Try again</button>
-        </main>
+                </div>
       ) : (
-        <main className="host-content">
+                <div className="host-content">
           <section className="host-summary" aria-label="Host summary">
             <div className="host-metric">
               <span className="host-metric__icon" aria-hidden="true"><MemoryStick /></span>
@@ -433,7 +568,7 @@ export default function HostApp({ api = defaultApi }) {
             {favoriteRecords.length ? (
               <div className="host-favorite-grid">
                 {favoriteRecords.map((record) => {
-                  const link = defaultLink(record, server.id)
+                  const link = defaultLink(record, currentServer.id)
                   const opening = pendingPort === record.port
                   return (
                     <button
@@ -504,7 +639,7 @@ export default function HostApp({ api = defaultApi }) {
               {openRecords.length ? (
                 <ul className="host-port-list" aria-label="Host ports">
                   {openRecords.map((record) => {
-                const link = defaultLink(record, server.id)
+                const link = defaultLink(record, currentServer.id)
                 const opening = pendingPort === record.port
                 const application = applicationForPort(applications, record.port)
                 return (
@@ -552,9 +687,114 @@ export default function HostApp({ api = defaultApi }) {
                 </div>
               )}
             </section>
-          </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {activePage === 'tunnels' ? (
+            <div className="host-tunnels-page">
+              {app.phase === 'loading' ? (
+                <div className="host-state" role="status">
+                  <LoaderCircle className="spin" aria-hidden="true" />
+                  <strong>Loading tunnels</strong>
+                </div>
+              ) : app.phase === 'error' ? (
+                <EmptyState
+                  icon={CircleAlert}
+                  title="Tunnels did not load"
+                  description={app.storageIssue || 'Check the main SSH Man window, then try again.'}
+                  action={<button className="primary-button" type="button" onClick={() => app.hydrate()}>Try again</button>}
+                />
+              ) : form?.type === 'server' ? (
+                <ServerFormScreen
+                  initialValue={form.value}
+                  currentUsername={app.currentUsername}
+                  sshKeys={app.sshKeys}
+                  pending={Boolean(app.pending[`save-server:${form.value.id || 'new'}`])}
+                  onCancel={closeForm}
+                  onSave={app.saveServer}
+                />
+              ) : form?.type === 'tunnel' && app.selectedServer ? (
+                <TunnelFormScreen
+                  server={app.selectedServer}
+                  initialValue={form.value}
+                  pending={Boolean(app.pending[`save-tunnel:${form.value.id || 'new'}`])}
+                  onCancel={closeForm}
+                  onSave={app.saveTunnel}
+                />
+              ) : tunnelRoute === 'tunnel' && app.selectedConfiguration ? (
+                <div className="host-tunnel-detail">
+                  <header className="host-subpage-header">
+                    <button className="text-button" type="button" onClick={() => setTunnelRoute('server')}>
+                      <ChevronLeft aria-hidden="true" /> Tunnels
+                    </button>
+                    <strong>{app.selectedConfiguration.label}</strong>
+                  </header>
+                  <TunnelDetailScreen
+                    configuration={app.selectedConfiguration}
+                    session={app.selectedSession}
+                    history={app.selectedHistory}
+                    historyLoading={app.historyLoading}
+                    runtimeFresh={app.runtimeFresh}
+                    browserState={app.browserState}
+                    pending={app.pending}
+                    onStart={app.startTunnel}
+                    onStop={app.stopTunnel}
+                    onRetry={app.retryTunnel}
+                    onEdit={openEditTunnel}
+                    onDelete={requestDeleteTunnel}
+                    onCopyHistory={app.copyHistory}
+                    onRefreshBrowsers={app.refreshBrowsers}
+                    onSelectBrowser={app.selectBrowser}
+                    onLaunchBrowser={app.launchBrowser}
+                    onUnlock={app.openUnlock}
+                    onRefreshRuntime={app.refreshRuntimeSessions}
+                  />
+                </div>
+              ) : app.selectedServerRecord ? (
+                <div className="host-tunnels-overview">
+                  <header className="host-page-heading">
+                    <div>
+                      <span className="eyebrow">Server management</span>
+                      <h1>{app.selectedServer.name}</h1>
+                      <p>{app.selectedServer.username}@{app.selectedServer.host}:{app.selectedServer.port}</p>
+                    </div>
+                  </header>
+                  <ServerDetailScreen
+                    record={app.selectedServerRecord}
+                    sessions={app.runtimeSessions}
+                    pending={app.pending}
+                    runtimeFresh={app.runtimeFresh}
+                    onAddTunnel={openNewTunnel}
+                    onEditServer={openEditServer}
+                    onDeleteServer={requestDeleteServer}
+                    onOpenTunnel={openTunnel}
+                    onStartTunnel={app.startTunnel}
+                    onStopTunnel={app.stopTunnel}
+                    onStartAll={app.startAll}
+                    onRefreshRuntime={app.refreshRuntimeSessions}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </main>
-      )}
+      </div>
+      <ToastRegion notification={app.notification} onDismiss={app.dismissNotification} />
+      <ConfirmDialog
+        request={confirmation}
+        pending={confirmationPending}
+        onClose={() => setConfirmation(null)}
+        onConfirm={confirmDeletion}
+      />
+      <UnlockDialog
+        request={app.unlockRequest}
+        pending={Boolean(app.pending.unlock)}
+        onClose={app.closeUnlock}
+        onSubmit={app.submitUnlock}
+      />
     </div>
   )
 }

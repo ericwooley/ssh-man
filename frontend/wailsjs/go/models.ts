@@ -339,6 +339,55 @@ export namespace bindings {
 
 }
 
+export namespace browser {
+
+	export class BrowserOption {
+	    id: string;
+	    displayName: string;
+	    icon?: string;
+	    engine: string;
+	    supportsProxyLaunch: boolean;
+	    custom: boolean;
+	    enabled: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new BrowserOption(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.icon = source["icon"];
+	        this.engine = source["engine"];
+	        this.supportsProxyLaunch = source["supportsProxyLaunch"];
+	        this.custom = source["custom"];
+	        this.enabled = source["enabled"];
+	    }
+	}
+	export class LaunchPreview {
+	    browserId: string;
+	    browserName: string;
+	    command: string;
+	    supported: boolean;
+	    configurationId: string;
+
+	    static createFrom(source: any = {}) {
+	        return new LaunchPreview(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.browserId = source["browserId"];
+	        this.browserName = source["browserName"];
+	        this.command = source["command"];
+	        this.supported = source["supported"];
+	        this.configurationId = source["configurationId"];
+	    }
+	}
+
+}
+
 export namespace commandhistory {
 
 	export class Entry {
@@ -988,6 +1037,101 @@ export namespace server {
 	        this.keyReference = source["keyReference"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace session {
+
+	export class RuntimeSession {
+	    configurationId: string;
+	    status: string;
+	    boundPort?: number;
+	    statusDetail?: string;
+	    // Go type: time
+	    startedAt?: any;
+	    // Go type: time
+	    lastStateChangeAt: any;
+	    reconnectAttemptCount?: number;
+	    lastError?: string;
+	    needsUserInput?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new RuntimeSession(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.configurationId = source["configurationId"];
+	        this.status = source["status"];
+	        this.boundPort = source["boundPort"];
+	        this.statusDetail = source["statusDetail"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.lastStateChangeAt = this.convertValues(source["lastStateChangeAt"], null);
+	        this.reconnectAttemptCount = source["reconnectAttemptCount"];
+	        this.lastError = source["lastError"];
+	        this.needsUserInput = source["needsUserInput"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SessionHistoryEntry {
+	    id: string;
+	    configurationId: string;
+	    // Go type: time
+	    startedAt: any;
+	    // Go type: time
+	    endedAt: any;
+	    outcome: string;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SessionHistoryEntry(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.configurationId = source["configurationId"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.endedAt = this.convertValues(source["endedAt"], null);
+	        this.outcome = source["outcome"];
+	        this.message = source["message"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

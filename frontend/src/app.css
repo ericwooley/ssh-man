@@ -5794,6 +5794,109 @@ kbd {
   color: var(--text);
 }
 
+.host-window-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.host-window-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.host-sidebar {
+  min-width: 0;
+}
+
+.host-sidebar nav {
+  grid-template-columns: 1fr;
+}
+
+.host-overview-page,
+.host-tunnels-page,
+.host-tunnels-overview,
+.host-tunnel-detail {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.host-page-heading {
+  display: flex;
+  min-height: 94px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+}
+
+.host-page-heading > div {
+  min-width: 0;
+}
+
+.host-page-heading h1 {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-page-heading p {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-subpage-header {
+  display: grid;
+  min-height: 54px;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(110px, 1fr) minmax(0, auto) minmax(110px, 1fr);
+  align-items: center;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.host-subpage-header .text-button {
+  justify-self: start;
+}
+
+.host-subpage-header strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-tunnels-overview > .detail-layout,
+.host-tunnel-detail > .detail-layout,
+.host-tunnels-page > .form-screen {
+  flex: 1;
+  min-height: 0;
+}
+
 .host-toolbar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -6424,6 +6527,26 @@ kbd {
   width: 30px;
   height: 30px;
   color: var(--text-subtle);
+}
+
+@media (max-width: 700px) {
+  .host-window-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .host-sidebar nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .host-page-heading {
+    min-height: 82px;
+    padding: 14px 16px;
+  }
+
+  .host-page-heading h1 {
+    font-size: 21px;
+  }
 }
 
 @media (max-width: 620px) {
