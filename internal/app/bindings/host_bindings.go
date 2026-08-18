@@ -75,9 +75,11 @@ type HostBindings struct {
 	mu           sync.Mutex
 	server       serverdomain.Server
 	window       *appwindow.Controller
+	control      hostControlClient
 	links        portLinkService
 	discoverer   portDiscoverer
 	forwarder    portForwarder
+	remoteFor    func(serverdomain.Server) (portDiscoverer, portForwarder)
 	findFavicon  faviconFinder
 	openProxyURL proxyURLLauncher
 	preferences  hostPreferenceService
@@ -87,16 +89,22 @@ type HostBindings struct {
 }
 
 func NewHostBindings(app *bootstrap.Application, server serverdomain.Server, window *appwindow.Controller) *HostBindings {
+	remoteFor := func(server serverdomain.Server) (portDiscoverer, portForwarder) {
+		return remoteport.NewService(server), remoteport.NewForwarder(server)
+	}
+	discoverer, forwarder := remoteFor(server)
 	bindings := newHostBindingsWithDependencies(
 		server,
 		window,
 		app.PortLinkService,
-		remoteport.NewService(server),
-		remoteport.NewForwarder(server),
+		discoverer,
+		forwarder,
 		app.Shutdown,
 	)
 	bindings.preferences = app.PreferencesService
 	controlClient := control.NewClient(paths.ControlSocketPath(app.ConfigDir), hostOpenTimeout)
+	bindings.control = controlClient
+	bindings.remoteFor = remoteFor
 	bindings.openProxyURL = func(ctx context.Context, configurationID, browserID, rawURL string) error {
 		return controlClient.LaunchBrowserURL(ctx, configurationID, browserID, rawURL)
 	}
@@ -136,7 +144,10 @@ func (bindings *HostBindings) SetContext(ctx context.Context) {
 }
 
 func (bindings *HostBindings) InitialState() (HostInitialState, error) {
-	items, err := bindings.links.ListByServer(context.Background(), bindings.server.ID)
+	bindings.mu.Lock()
+	server := bindings.server
+	bindings.mu.Unlock()
+	items, err := bindings.links.ListByServer(context.Background(), server.ID)
 	if err != nil {
 		return HostInitialState{}, fmt.Errorf("load saved port links: %w", err)
 	}
@@ -150,7 +161,7 @@ func (bindings *HostBindings) InitialState() (HostInitialState, error) {
 			theme = preference.Theme
 		}
 	}
-	return HostInitialState{Server: bindings.server, Links: items, Theme: theme}, nil
+	return HostInitialState{Server: server, Links: items, Theme: theme}, nil
 }
 
 func (bindings *HostBindings) DiscoverPorts(passphrase string) (HostPortDiscoveryResult, error) {
@@ -195,12 +206,17 @@ func (bindings *HostBindings) DiscoverPorts(passphrase string) (HostPortDiscover
 }
 
 func (bindings *HostBindings) SavePortLink(link portlinkdomain.Link) (portlinkdomain.Link, error) {
+	bindings.mu.Lock()
 	link.ServerID = bindings.server.ID
+	bindings.mu.Unlock()
 	return bindings.links.Save(context.Background(), link)
 }
 
 func (bindings *HostBindings) DeletePortLink(id string) error {
-	items, err := bindings.links.ListByServer(context.Background(), bindings.server.ID)
+	bindings.mu.Lock()
+	serverID := bindings.server.ID
+	bindings.mu.Unlock()
+	items, err := bindings.links.ListByServer(context.Background(), serverID)
 	if err != nil {
 		return fmt.Errorf("load saved port links before deletion: %w", err)
 	}
@@ -237,8 +253,8 @@ func (bindings *HostBindings) OpenPort(port int, scheme string) (HostOpenPortRes
 	}
 	if err := bindings.openProxyURL(
 		ctx,
-		configdomain.ManagedSOCKSConfigurationID(bindings.server.ID),
-		browserIDForHostPort(preference, bindings.server.ID, port),
+		configdomain.ManagedSOCKSConfigurationID(bindings.currentServerID()),
+		browserIDForHostPort(preference, bindings.currentServerID(), port),
 		target.String(),
 	); err != nil {
 		var protocolMismatch *control.ProtocolMismatchError
@@ -248,6 +264,12 @@ func (bindings *HostBindings) OpenPort(port int, scheme string) (HostOpenPortRes
 		return HostOpenPortResult{}, fmt.Errorf("open port through SOCKS browser: %w", err)
 	}
 	return HostOpenPortResult{URL: target.String()}, nil
+}
+
+func (bindings *HostBindings) currentServerID() string {
+	bindings.mu.Lock()
+	defer bindings.mu.Unlock()
+	return bindings.server.ID
 }
 
 func browserIDForHostPort(preference preferencesdomain.UserPreference, serverID string, port int) string {
@@ -266,9 +288,12 @@ func (bindings *HostBindings) FindPortFavicon(port int, scheme string) (HostFavi
 	if err != nil {
 		return HostFaviconResult{}, err
 	}
+	bindings.mu.Lock()
+	server := bindings.server
+	bindings.mu.Unlock()
 	target := &url.URL{
 		Scheme: scheme,
-		Host:   net.JoinHostPort(bindings.server.Host, strconv.Itoa(port)),
+		Host:   net.JoinHostPort(server.Host, strconv.Itoa(port)),
 	}
 	dialContext := func(dialCtx context.Context, _, _ string) (net.Conn, error) {
 		return bindings.forwarder.DialRemote(dialCtx, passphrase, port, addresses)

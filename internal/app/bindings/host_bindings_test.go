@@ -14,6 +14,7 @@ import (
 	portlinkdomain "ssh-man/internal/domain/portlink"
 	preferencesdomain "ssh-man/internal/domain/preferences"
 	serverdomain "ssh-man/internal/domain/server"
+	sessiondomain "ssh-man/internal/domain/session"
 	"ssh-man/internal/ssh/auth"
 	"ssh-man/internal/ssh/remoteport"
 )
@@ -72,6 +73,14 @@ type fakePortForwarder struct {
 type fakeHostPreferences struct {
 	preference preferencesdomain.UserPreference
 	err        error
+}
+
+type fakeHostControlClient struct {
+	call func(context.Context, control.Request, any) error
+}
+
+func (fake fakeHostControlClient) Call(ctx context.Context, request control.Request, output any) error {
+	return fake.call(ctx, request, output)
 }
 
 func (fake fakeHostPreferences) Load(context.Context) (preferencesdomain.UserPreference, error) {
@@ -454,5 +463,113 @@ func TestHostBindingsDoesNotDeleteAnotherServersLink(t *testing.T) {
 	}
 	if links.deletedID != "link-1" {
 		t.Fatalf("deleted link = %q", links.deletedID)
+	}
+}
+
+func TestHostBindingsLoadsControllerStateForOnlyItsServer(t *testing.T) {
+	binding := newHostBindingsWithDependencies(
+		serverdomain.Server{ID: "server-1"},
+		appwindow.New(),
+		&fakePortLinkService{},
+		fakePortDiscoverer{},
+		&fakePortForwarder{},
+		nil,
+	)
+	binding.control = fakeHostControlClient{call: func(_ context.Context, request control.Request, output any) error {
+		if request.Command != "state" {
+			t.Fatalf("control command = %q, want state", request.Command)
+		}
+		state := output.(*control.State)
+		*state = control.State{
+			Servers: []control.ServerRecord{
+				{
+					Server: serverdomain.Server{ID: "server-1", Name: "Production", SocksPort: 41000},
+					Configurations: []configdomain.ConnectionConfiguration{{
+						ID: "tunnel-1", ServerID: "server-1", Label: "Admin",
+					}},
+				},
+				{
+					Server: serverdomain.Server{ID: "server-2", Name: "Staging"},
+					Configurations: []configdomain.ConnectionConfiguration{{
+						ID: "tunnel-2", ServerID: "server-2", Label: "Preview",
+					}},
+				},
+			},
+			Preferences: preferencesdomain.UserPreference{Theme: preferencesdomain.ThemeLight},
+			Sessions: []sessiondomain.RuntimeSession{
+				{ConfigurationID: "tunnel-1", Status: sessiondomain.StatusConnected},
+				{ConfigurationID: configdomain.ManagedSOCKSConfigurationID("server-1"), Status: sessiondomain.StatusConnected},
+				{ConfigurationID: "tunnel-2", Status: sessiondomain.StatusConnected},
+			},
+		}
+		return nil
+	}}
+
+	state, err := binding.LoadAppState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Servers) != 1 || state.Servers[0].Server.ID != "server-1" {
+		t.Fatalf("servers = %#v, want only server-1", state.Servers)
+	}
+	configurations := state.Servers[0].Configurations
+	if len(configurations) != 2 ||
+		configurations[0].ID != configdomain.ManagedSOCKSConfigurationID("server-1") ||
+		configurations[1].ID != "tunnel-1" {
+		t.Fatalf("configurations = %#v", configurations)
+	}
+	if len(state.Sessions) != 2 {
+		t.Fatalf("sessions = %#v, want only server-1 sessions", state.Sessions)
+	}
+	if state.Preferences.Theme != preferencesdomain.ThemeLight {
+		t.Fatalf("theme = %q, want light", state.Preferences.Theme)
+	}
+}
+
+func TestHostBindingsScopesTunnelActionsToItsServer(t *testing.T) {
+	var actionRequests []control.Request
+	binding := newHostBindingsWithDependencies(
+		serverdomain.Server{ID: "server-1"},
+		appwindow.New(),
+		&fakePortLinkService{},
+		fakePortDiscoverer{},
+		&fakePortForwarder{},
+		nil,
+	)
+	binding.control = fakeHostControlClient{call: func(_ context.Context, request control.Request, output any) error {
+		switch request.Command {
+		case "state":
+			state := output.(*control.State)
+			*state = control.State{Servers: []control.ServerRecord{{
+				Server: serverdomain.Server{ID: "server-1"},
+				Configurations: []configdomain.ConnectionConfiguration{{
+					ID: "tunnel-1", ServerID: "server-1", Label: "Admin",
+				}},
+			}}}
+		case "session.start":
+			actionRequests = append(actionRequests, request)
+			session := output.(*sessiondomain.RuntimeSession)
+			*session = sessiondomain.RuntimeSession{
+				ConfigurationID: request.ConfigurationID,
+				Status:          sessiondomain.StatusConnected,
+			}
+		default:
+			t.Fatalf("unexpected control command %q", request.Command)
+		}
+		return nil
+	}}
+
+	session, err := binding.StartConfiguration("tunnel-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.ConfigurationID != "tunnel-1" || len(actionRequests) != 1 {
+		t.Fatalf("session = %#v, action requests = %#v", session, actionRequests)
+	}
+	if _, err := binding.StartConfiguration("tunnel-2"); err == nil {
+		t.Fatal("expected another server's tunnel to be rejected")
+	}
+	if len(actionRequests) != 1 {
+		t.Fatalf("action requests = %#v, want no unscoped action", actionRequests)
 	}
 }
