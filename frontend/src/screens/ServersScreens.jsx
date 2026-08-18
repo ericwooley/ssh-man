@@ -184,7 +184,8 @@ export function ServerDetailScreen({
   onStopTunnel,
   onStartAll,
   onRefreshRuntime,
-  addTunnelButtonRef,
+  addTunnelHeadingButtonRef,
+  addTunnelEmptyButtonRef,
   editServerButtonRef,
   onTunnelButtonRef,
 }) {
@@ -271,7 +272,12 @@ export function ServerDetailScreen({
               <span className="eyebrow">This server</span>
               <h2 id="tunnels-heading">Tunnels</h2>
             </div>
-            <IconButton ref={addTunnelButtonRef} label="Add tunnel" className="icon-button--accent" onClick={onAddTunnel}>
+            <IconButton
+              ref={addTunnelHeadingButtonRef}
+              label="Add tunnel"
+              className="icon-button--accent"
+              onClick={() => onAddTunnel('add-tunnel-heading')}
+            >
               <Plus aria-hidden="true" />
             </IconButton>
           </div>
@@ -298,7 +304,12 @@ export function ServerDetailScreen({
               title="No tunnels yet"
               description="Add a local forward or SOCKS proxy for this server."
               action={(
-                <button ref={addTunnelButtonRef} className="primary-button" type="button" onClick={onAddTunnel}>
+                <button
+                  ref={addTunnelEmptyButtonRef}
+                  className="primary-button"
+                  type="button"
+                  onClick={() => onAddTunnel('add-tunnel-empty')}
+                >
                   <Plus aria-hidden="true" /> Add tunnel
                 </button>
               )}

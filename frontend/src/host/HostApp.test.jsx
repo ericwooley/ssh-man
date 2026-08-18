@@ -34,6 +34,7 @@ function createApi({
     { id: 'link-1', serverId: 'server-1', port: 3000, name: 'Admin', scheme: 'http', faviconDataUrl: '' },
   ],
   theme = 'dark',
+  hasTunnel = true,
 } = {}) {
   const server = {
     id: 'server-1',
@@ -76,7 +77,7 @@ function createApi({
       theme,
     })),
     loadInitialState: vi.fn(async () => ({
-      servers: [{ server, configurations: [managedProxy, tunnel] }],
+      servers: [{ server, configurations: hasTunnel ? [managedProxy, tunnel] : [managedProxy] }],
       preferences: { theme, proxyBrowserId: '' },
       sessions,
       sshKeys: [],
@@ -176,6 +177,25 @@ describe('HostApp', () => {
     await screen.findByRole('heading', { name: 'Edit server' })
     await user.click(screen.getByRole('button', { name: 'Cancel and go back' }))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Production' })))
+  })
+
+  test('restores each Add tunnel opener when the server has no tunnels', async () => {
+    const user = userEvent.setup()
+    const api = createApi({ hasTunnel: false })
+    render(<HostApp api={api} />)
+
+    await screen.findByRole('heading', { name: 'Production' })
+    await user.click(screen.getByRole('button', { name: 'Tunnels' }))
+
+    for (const openerIndex of [0, 1]) {
+      const opener = screen.getAllByRole('button', { name: 'Add tunnel' })[openerIndex]
+      await user.click(opener)
+      await screen.findByRole('heading', { name: 'New tunnel' })
+      await user.click(screen.getByRole('button', { name: 'Cancel and go back' }))
+      await waitFor(() => {
+        expect(document.activeElement).toBe(screen.getAllByRole('button', { name: 'Add tunnel' })[openerIndex])
+      })
+    }
   })
 
   test('shows host metrics, applications, favorites, and open ports', async () => {

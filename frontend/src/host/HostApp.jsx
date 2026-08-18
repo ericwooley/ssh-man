@@ -143,7 +143,8 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
   const editButtonRefs = useRef(new Map())
   const tunnelButtonRefs = useRef(new Map())
   const tunnelTitleRef = useRef(null)
-  const addTunnelButtonRef = useRef(null)
+  const addTunnelHeadingButtonRef = useRef(null)
+  const addTunnelEmptyButtonRef = useRef(null)
   const editServerButtonRef = useRef(null)
   const editTunnelButtonRef = useRef(null)
   const formReturnFocusRef = useRef(null)
@@ -211,8 +212,10 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
         ? tunnelTitleRef.current
         : focusRequest.type === 'tunnel-row'
           ? tunnelButtonRefs.current.get(focusRequest.id)
-          : focusRequest.type === 'add-tunnel'
-            ? addTunnelButtonRef.current
+          : focusRequest.type === 'add-tunnel-heading'
+            ? addTunnelHeadingButtonRef.current
+            : focusRequest.type === 'add-tunnel-empty'
+              ? addTunnelEmptyButtonRef.current
             : focusRequest.type === 'edit-server'
               ? editServerButtonRef.current
               : editTunnelButtonRef.current
@@ -329,9 +332,9 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
     }
   }
 
-  function openNewTunnel() {
+  function openNewTunnel(returnFocusType = 'add-tunnel-heading') {
     if (!app.selectedServer) return
-    formReturnFocusRef.current = { type: 'add-tunnel' }
+    formReturnFocusRef.current = { type: returnFocusType }
     setForm({ type: 'tunnel', value: emptyTunnel(app.selectedServer.id) })
   }
 
@@ -831,7 +834,8 @@ export default function HostApp({ api = defaultApi, controllerOptions }) {
                     onStopTunnel={app.stopTunnel}
                     onStartAll={app.startAll}
                     onRefreshRuntime={app.refreshRuntimeSessions}
-                    addTunnelButtonRef={addTunnelButtonRef}
+                    addTunnelHeadingButtonRef={addTunnelHeadingButtonRef}
+                    addTunnelEmptyButtonRef={addTunnelEmptyButtonRef}
                     editServerButtonRef={editServerButtonRef}
                     onTunnelButtonRef={registerTunnelButton}
                   />
