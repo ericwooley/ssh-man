@@ -33,7 +33,6 @@ export function ServersScreen({
   pending = {},
   onAdd,
   onOpen,
-  onManage,
   onOpenBrowser,
   onOpenExplorer,
   onOpenCommand,
@@ -61,7 +60,7 @@ export function ServersScreen({
         <div>
           <span className="eyebrow">Saved connections</span>
           <h2>{servers.length} server{servers.length === 1 ? '' : 's'}</h2>
-          <p>Open a server to view its ports. Open details to manage tunnels.</p>
+          <p>Open a server to view its ports and manage tunnels.</p>
         </div>
         <IconButton label="Add server" className="icon-button--accent" onClick={onAdd}>
           <Plus aria-hidden="true" />
@@ -130,13 +129,6 @@ export function ServersScreen({
                   {commandPending
                     ? <LoaderCircle className="spin" aria-hidden="true" />
                     : <Terminal aria-hidden="true" />}
-                </IconButton>
-                <IconButton
-                  label={`Show ${item.server.name} details`}
-                  className="server-row__details"
-                  onClick={() => onManage(item.server.id)}
-                >
-                  <ArrowRight aria-hidden="true" />
                 </IconButton>
               </div>
             </li>

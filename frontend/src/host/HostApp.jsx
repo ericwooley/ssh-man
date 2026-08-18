@@ -119,8 +119,8 @@ function HostSidebar({ activePage, serverName, onChange, onClose }) {
   )
 }
 
-export default function HostApp({ api = defaultApi }) {
-  const app = useSshMan(api)
+export default function HostApp({ api = defaultApi, controllerOptions }) {
+  const app = useSshMan(api, controllerOptions)
   const [activePage, setActivePage] = useState('overview')
   const [tunnelRoute, setTunnelRoute] = useState('server')
   const [form, setForm] = useState(null)
@@ -727,7 +727,12 @@ export default function HostApp({ api = defaultApi }) {
               ) : tunnelRoute === 'tunnel' && app.selectedConfiguration ? (
                 <div className="host-tunnel-detail">
                   <header className="host-subpage-header">
-                    <button className="text-button" type="button" onClick={() => setTunnelRoute('server')}>
+                    <button
+                      className="text-button"
+                      type="button"
+                      aria-label="Back to tunnels"
+                      onClick={() => setTunnelRoute('server')}
+                    >
                       <ChevronLeft aria-hidden="true" /> Tunnels
                     </button>
                     <strong>{app.selectedConfiguration.label}</strong>

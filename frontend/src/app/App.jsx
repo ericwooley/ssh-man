@@ -388,11 +388,6 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
     return () => window.removeEventListener('keydown', handleEscape)
   }, [app, confirmation, form, route.type, settingsWindow])
 
-  function openServer(serverId) {
-    app.selectServer(serverId)
-    setRoute({ type: 'server' })
-  }
-
   function openTunnel(configurationId) {
     const record = app.selectConfiguration(configurationId)
     if (!record) return
@@ -662,7 +657,6 @@ export default function App({ api = defaultApi, controllerOptions, settingsWindo
               pending={app.pending}
               onAdd={openNewServer}
               onOpen={app.openHostWindow}
-              onManage={openServer}
               onOpenBrowser={app.openServerBrowser}
               onOpenExplorer={app.openServerExplorer}
               onOpenCommand={app.openServerCommand}

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
+import HostApp from '../host/HostApp'
 import App from './App'
 
 const savedServer = {
@@ -107,6 +108,22 @@ function createFakeApi({
   }
 
   const api = {
+    initialState: vi.fn(async () => ({
+      server: clone(state.servers[0]?.server || savedServer),
+      links: [],
+      theme: state.preferences.theme,
+    })),
+    discoverPorts: vi.fn(async () => ({
+      needsPassphrase: false,
+      metrics: {},
+      applications: [],
+      ports: [],
+    })),
+    savePortLink: vi.fn(async (link) => clone(link)),
+    deletePortLink: vi.fn(async () => undefined),
+    findPortFavicon: vi.fn(async () => ({ faviconDataUrl: '' })),
+    openPort: vi.fn(async () => undefined),
+    close: vi.fn(async () => undefined),
     loadInitialState: vi.fn(async () => ({
       servers: clone(state.servers),
       sessions: clone(state.sessions),
@@ -261,9 +278,13 @@ function renderSettingsApp(api, controllerOptions = {}) {
   return render(<App api={api} settingsWindow controllerOptions={{ pollMs: 60_000, copyText: vi.fn(), ...controllerOptions }} />)
 }
 
+async function renderHostTunnels(user, api, controllerOptions = {}) {
+  render(<HostApp api={api} controllerOptions={{ pollMs: 60_000, copyText: vi.fn(), ...controllerOptions }} />)
+  await user.click(await screen.findByRole('button', { name: 'Tunnels' }))
+}
+
 async function openSavedTunnel(user, api) {
-  renderApp(api)
-  await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+  await renderHostTunnels(user, api)
   const tunnelLabel = await screen.findByText('Admin database')
   await user.click(tunnelLabel.closest('button'))
   await screen.findByRole('button', { name: 'Start tunnel' })
@@ -283,6 +304,8 @@ describe('React application flows', () => {
 
     await waitFor(() => expect(api.openHostWindow).toHaveBeenCalledWith(savedServer.id))
     expect(await screen.findByText('Host details opened in a new window.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Show Production bastion details' })).toBeNull()
+    expect(screen.getByText('Open a server to view its ports and manage tunnels.')).toBeTruthy()
   })
 
   test('validates and saves the first server through the full-screen flow', async () => {
@@ -335,9 +358,7 @@ describe('React application flows', () => {
     const { api } = createFakeApi({
       servers: [{ server: savedServer, configurations: [managedBrowserProxy] }],
     })
-    renderApp(api)
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api)
     await user.click(screen.getByRole('button', { name: 'Edit Production bastion' }))
     const socksPort = screen.getByLabelText(/^Browser SOCKS port/)
     expect(socksPort.value).toBe('55123')
@@ -372,9 +393,7 @@ describe('React application flows', () => {
   test('validates and saves a tunnel beneath its selected server', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi({ servers: [{ server: savedServer, configurations: [] }] })
-    renderApp(api)
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api)
     await user.click(screen.getAllByRole('button', { name: 'Add tunnel' })[0])
     const label = screen.getByLabelText('Label')
     await user.click(screen.getByRole('button', { name: 'Save tunnel' }))
@@ -394,7 +413,7 @@ describe('React application flows', () => {
     await user.click(screen.getByRole('checkbox', { name: /Connect when SSH Man starts/ }))
     await user.click(screen.getByRole('button', { name: 'Save tunnel' }))
 
-    await screen.findByRole('heading', { name: 'Redis admin', level: 1 })
+    await screen.findByRole('heading', { name: 'Redis admin', level: 2 })
     expect(api.saveConnectionConfiguration).toHaveBeenCalledTimes(1)
     expect(api.saveConnectionConfiguration.mock.calls[0][0]).toMatchObject({
       serverId: savedServer.id,
@@ -613,7 +632,7 @@ describe('React application flows', () => {
     expect(screen.queryByRole('checkbox', { name: 'Install updates automatically' })).toBeNull()
   })
 
-  test('keeps a stopped tunnel actionable with settings and history, then exposes it in Active after starting', async () => {
+  test('keeps a stopped tunnel actionable with settings and history in the host window', async () => {
     const user = userEvent.setup()
     const { api } = createFakeApi({
       servers: [{ server: savedServer, configurations: [savedTunnel] }],
@@ -634,13 +653,8 @@ describe('React application flows', () => {
     expect(screen.getByLabelText('Tunnel status: Connected')).toBeTruthy()
     expect(api.startConfiguration).toHaveBeenCalledWith(savedTunnel.id)
 
-    await user.click(screen.getByRole('button', { name: 'Go back' }))
+    await user.click(screen.getByRole('button', { name: 'Back to tunnels' }))
     expect(screen.queryByRole('button', { name: /Start .*inactive tunnel/ })).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Go back' }))
-    await user.click(screen.getByRole('button', { name: /Active/ }))
-
-    expect(await screen.findByRole('heading', { name: '1 active tunnel' })).toBeTruthy()
-    expect(screen.getByText('Admin database').closest('button')).toBeTruthy()
     expect(screen.getByLabelText('Tunnel status: Connected')).toBeTruthy()
   })
 
@@ -657,9 +671,7 @@ describe('React application flows', () => {
       servers: [{ server: savedServer, configurations: [savedTunnel, secondTunnel] }],
       sessions: [connected, inactive],
     })
-    renderApp(api)
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api)
     await user.click(screen.getByRole('button', { name: 'Start inactive tunnel' }))
 
     await waitFor(() => expect(api.startServerConfigurations).toHaveBeenCalledWith(savedServer.id))
@@ -685,9 +697,7 @@ describe('React application flows', () => {
       }, secondStopped]
       throw new Error('Internal dashboard could not be started.')
     })
-    renderApp(api)
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api)
     await user.click(screen.getByRole('button', { name: 'Start all 2 inactive tunnels' }))
 
     expect(await screen.findByText('Starting inactive tunnels did not complete.')).toBeTruthy()
@@ -703,9 +713,7 @@ describe('React application flows', () => {
       sessions: [stoppedSession],
     })
     api.listRuntimeSessions.mockRejectedValue(new Error('runtime unavailable'))
-    renderApp(api, { pollMs: 5 })
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api, { pollMs: 5 })
     expect(await screen.findByRole('button', { name: 'Refresh live status' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Start inactive tunnel' })).toBeNull()
     expect(screen.getByRole('button', { name: /Refresh live status before controlling Admin database/ }).disabled).toBe(true)
@@ -773,9 +781,7 @@ describe('React application flows', () => {
     api.startConfiguration = vi.fn(async () => {
       throw new Error('SSH handshake timed out.')
     })
-    renderApp(api)
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api)
     await user.click(screen.getByRole('button', { name: 'Start Admin database' }))
 
     let alert = await screen.findByRole('alert')
@@ -2129,9 +2135,7 @@ describe('React application flows', () => {
     api.discoverBrowsers
       .mockResolvedValueOnce([chrome])
       .mockResolvedValueOnce([zen])
-    renderApp(api)
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api)
     await user.click((await screen.findByText('Team proxy')).closest('button'))
     expect(await screen.findByRole('option', { name: 'Google Chrome' })).toBeTruthy()
     await waitFor(() => expect(api.preferencesChangedListener).toBeTypeOf('function'))
@@ -2167,9 +2171,7 @@ describe('React application flows', () => {
     api.discoverBrowsers
       .mockImplementationOnce(() => staleBrowsers)
       .mockResolvedValueOnce([{ id: 'zen', displayName: 'Zen', supportsProxyLaunch: true }])
-    renderApp(api)
-
-    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await renderHostTunnels(user, api)
     await user.click((await screen.findByText('Race-safe proxy')).closest('button'))
     await waitFor(() => expect(api.discoverBrowsers).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(api.preferencesChangedListener).toBeTypeOf('function'))
