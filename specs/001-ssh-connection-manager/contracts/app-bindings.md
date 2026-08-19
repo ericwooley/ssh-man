@@ -164,14 +164,15 @@ lastSelectedServerId
 
 ### LaunchBrowserThroughSocks
 
-**Purpose**: Launch a selected installed browser through a running SOCKS configuration.
+**Purpose**: Launch a selected installed browser through a SOCKS configuration.
 
 **Input**
 - `configurationId`
 - `browserId`
 
 **Behavior**
-- Verifies the configuration is a running SOCKS session.
+- Verifies that the configuration is a SOCKS session.
+- Starts a stopped managed SOCKS session before browser launch.
 - Verifies the browser is still available.
 - Attempts launch through the proxy path supported for that browser and platform.
 - Returns success or a user-facing failure reason.

@@ -63,13 +63,14 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 
 **Why this priority**: Browser launch is a high-value convenience feature, but it depends on the saved configuration and session-management capabilities from the higher-priority stories.
 
-**Independent Test**: Can be fully tested by saving a SOCKS configuration, starting it, selecting an installed browser from the app, and confirming the browser launches through the proxy without needing port-forward workflows.
+**Independent Test**: Can be fully tested by saving a stopped SOCKS configuration, selecting an installed browser, and confirming one action starts the proxy and launches the browser.
 
 **Acceptance Scenarios**:
 
-1. **Given** a running SOCKS configuration and at least one supported browser installed, **When** the user opens the browser selector, **Then** the app lists the installed browser options available on that device.
-2. **Given** a running SOCKS configuration and a selected browser, **When** the user chooses the launch action, **Then** the app opens that browser using the SOCKS proxy settings from the selected configuration.
-3. **Given** the user changes the app theme preference, **When** they switch between dark and light modes, **Then** the interface remains readable, minimal, visually consistent, and operable through the supported platform accessibility features while preserving their saved connection data.
+1. **Given** a stopped SOCKS configuration and at least one supported browser installed, **When** the user opens the browser selector, **Then** the app lists the installed browser options available on that device.
+2. **Given** a stopped SOCKS configuration and a selected browser, **When** the user chooses the launch action, **Then** the app starts the proxy and opens that browser through it.
+3. **Given** a managed browser proxy, **When** SSH Man starts or becomes the default browser, **Then** the proxy remains stopped until a browser route uses it.
+4. **Given** the user changes the app theme preference, **When** they switch between dark and light modes, **Then** the interface remains readable, minimal, visually consistent, and operable through the supported platform accessibility features while preserving their saved connection data.
 
 ### Edge Cases
 
@@ -106,7 +107,8 @@ As an operator, I want to choose one of my installed browsers and launch it thro
 - **FR-008**: The system MUST support authentication using encrypted SSH keys and MUST provide a user flow for unlocking those keys when required.
 - **FR-009**: The system MUST preserve saved servers, connection configurations, and user theme preference between app launches in the standard application configuration location for the current operating system. Performance and stability must be maintained for any number of saved items supported within available platform resources; no hard limit will be imposed in software.
 - **FR-010**: When a SOCKS proxy configuration is available, the system MUST let the user choose from installed supported browsers on the device.
-- **FR-011**: The system MUST let the user launch a selected installed browser through a chosen running SOCKS proxy configuration with a single explicit launch action.
+- **FR-011**: The system MUST let the user launch a selected installed browser through a chosen SOCKS proxy with one explicit action. The action MUST start the proxy when it is stopped.
+- **FR-011A**: The system MUST keep managed browser proxies stopped when the app starts or default-browser integration is enabled. A browser route MUST start its selected proxy on demand.
 - **FR-012**: If browser launch is unavailable, the selected browser cannot be found, or the SOCKS session is not usable, the system MUST prevent or fail the action with a clear explanation.
 - **FR-013**: The system MUST prevent users from saving or starting connection configurations with invalid, incomplete, or conflicting connection details.
 - **FR-014**: The system MUST provide a minimal, clean interface that keeps server selection, connection status, start/stop actions, browser launch, and theme controls easy to discover without exposing unrelated advanced workflows.

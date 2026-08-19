@@ -43,7 +43,7 @@ That means you can develop on a remote machine while keeping a workflow that sti
 
 - Save servers and multiple tunnel configurations under each one
 - Run local forwards and SOCKS5 proxies from the same UI
-- Launch common or user-defined browsers through a running SOCKS5 tunnel
+- Launch common or user-defined browsers while SSH Man starts the required SOCKS5 tunnel on demand
 - Open one persistent native file-explorer window per saved server
 - Edit and safely save remote source in Monaco with optional Vim controls
 - Favorite per-server folders, render Markdown, and safely render HTML with relative assets
@@ -84,7 +84,7 @@ That is especially useful for:
 - reproducing production-like browser behavior without changing your whole system proxy
 - using a dedicated browser profile for one environment so its cookies, sessions, and extensions do not bleed into another
 
-`ssh-man` turns that into a repeatable workflow: start the SOCKS tunnel, pick a browser, click launch, and test.
+`ssh-man` turns that into a repeatable workflow: pick a browser, click launch, and test. SSH Man starts the SOCKS tunnel when needed.
 
 ## Lightweight by design
 
@@ -122,9 +122,9 @@ On your machine, that usually means `ssh-man` sits under roughly `150 MB` of RAM
 
 1. Add a server.
 2. Save one or more tunnel configurations under it.
-3. Start the tunnel you need.
-4. For local forwards, use the bound `localhost` port from your normal tools.
-5. For SOCKS5, launch a supported browser through the tunnel and browse from the remote server's network perspective.
+3. Start each local-forward tunnel you need.
+4. Use the bound `localhost` port from your normal tools.
+5. For SOCKS5, launch a supported browser. SSH Man starts the proxy before it opens the browser.
 6. To work with remote files, open a server and choose **Explore files**.
 
 The app persists your saved structure, browser profiles, theme preference, and connection history so the next session starts where you left off.
@@ -148,11 +148,12 @@ Save SOCKS5 tunnels with either:
 
 ### Browser launch through SOCKS5
 
-When a SOCKS tunnel is connected, `ssh-man` can:
+When a SOCKS tunnel is selected, `ssh-man` can:
 
 - detect installed browsers
 - show whether each browser supports proxy launch
 - preview the launch command
+- start the SOCKS tunnel when the browser launch needs it
 - launch the browser with SOCKS settings and an isolated per-server profile
 
 Chromium-based browsers are launched with a SOCKS5 proxy flag and dedicated user-data directory. Firefox-compatible browsers, including Zen, get a generated profile configured for the proxy. SSH Man detects common Chrome, Chromium, Brave, Edge, Arc, Vivaldi, Opera, Firefox, Zen, LibreWolf, Floorp, Waterfox, Safari, Orion, and DuckDuckGo installations where those apps are available.
@@ -185,7 +186,7 @@ Use **URL routing** to choose the regular fallback browser, choose the browser u
 
 By default, a matching rule preselects its route in the compact chooser and starts the five-second countdown. Enable **Open directly** on an individual rule to skip the chooser when its destination is available. If that destination is unavailable or disabled, SSH Man falls back to the normal chooser instead. Moving the pointer, clicking, scrolling, or pressing a key pauses the countdown; use the arrow keys, Enter, or the mouse to select another regular browser or browser-through-host destination.
 
-For every URL with an explicit port, SSH Man probes that host and port through each connected managed proxy. A saved port assignment selects its browser/host combination by default. Otherwise, the only reachable host is selected automatically; when several or no hosts answer, the regular fallback browser is selected. Rules remain the highest-priority default, and every available route remains selectable before the countdown completes.
+For every URL with an explicit port, SSH Man probes that host and port through each connected managed proxy. Stopped proxies remain available as routes. A saved port assignment can select a stopped proxy, which starts when SSH Man opens the browser. Otherwise, the only reachable host is selected automatically. The regular fallback browser is selected when several or no hosts answer. Rules remain the highest-priority default. Every available route remains selectable before the countdown completes.
 
 Only `http` and `https` URLs are accepted. URL credentials and non-web schemes are rejected.
 
@@ -616,7 +617,7 @@ launcher:
 - New servers default to `localhost`, your current OS username, and `SSH agent` auth.
 - If you want file-based auth instead, switch the server to `Private key` and choose a detected key from `~/.ssh` or enter a custom path.
 - Browser profiles are persisted per server under the app config directory so bookmarks, extensions, and other browser state survive restarts.
-- SOCKS browser launch only works for a running SOCKS tunnel, so start the tunnel first.
+- A SOCKS browser action starts its stopped tunnel before it opens the browser.
 
 ## Project layout
 

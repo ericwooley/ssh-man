@@ -75,11 +75,11 @@ If frontend type or accessibility checks are added during implementation, includ
 3. Add one local-forward configuration and one SOCKS configuration under that server.
 4. Restart the app and confirm the saved data reloads from the OS-appropriate location.
 5. Start the local-forward configuration and confirm the UI shows `Connected` only after the bind succeeds.
-6. Start the SOCKS configuration and confirm the UI shows the running proxy endpoint.
-7. Interrupt connectivity or suspend the connection source and confirm the UI transitions to `Reconnecting`, then back to `Connected` or to a clear failure state.
-8. Use an encrypted SSH key during manual start and confirm the app requests an unlock step without requiring an unencrypted key.
-9. Open the browser selector for the running SOCKS session and confirm installed supported browsers are listed.
-10. Launch a selected browser through the SOCKS session and confirm the action succeeds or returns a clear failure reason.
+6. Leave the SOCKS configuration stopped and confirm the browser selector lists installed supported browsers.
+7. Launch a selected browser and confirm the same action starts the SOCKS proxy before it opens the browser.
+8. Interrupt connectivity or suspend the connection source and confirm the UI transitions to `Reconnecting`, then back to `Connected` or to a clear failure state.
+9. Use an encrypted SSH key during browser launch and confirm the app requests an unlock step without requiring an unencrypted key.
+10. Confirm browser launch succeeds after unlock or returns a clear failure reason.
 11. Toggle between light and dark themes and verify readable text, visible focus states, and keyboard-complete access to primary actions.
 12. Open the recent connection history for the selected tunnel and confirm start, stop, reconnect, and failure events remain readable and can be copied for sharing without exposing key material.
 13. Trigger invalid inputs such as duplicate/conflicting local ports, missing browser availability, or unavailable config storage, and confirm the app provides actionable error feedback.

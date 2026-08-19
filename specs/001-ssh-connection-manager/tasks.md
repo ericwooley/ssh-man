@@ -111,9 +111,9 @@ description: "Task list for SSH Connection Manager MVP"
 
 ## Phase 5: User Story 3 - Launch a Browser Through a Saved SOCKS Proxy (Priority: P3)
 
-**Goal**: Let the user discover installed browsers, launch one through a running SOCKS session, and switch between readable dark and light themes without losing usability.
+**Goal**: Let the user discover installed browsers, start a stopped SOCKS session during browser launch, and switch between readable themes.
 
-**Independent Test**: Start a saved SOCKS configuration, verify installed supported browsers are listed, launch a selected browser through the proxy, then switch themes and confirm the UI remains readable and keyboard-operable.
+**Independent Test**: Leave a saved SOCKS configuration stopped, launch a selected browser, verify the proxy starts, then confirm both themes remain readable.
 
 ### Tests for User Story 3 ⚠️
 
@@ -155,7 +155,7 @@ description: "Task list for SSH Connection Manager MVP"
 - **Foundational (Phase 2)**: Depends on Setup; blocks all user story work
 - **User Story 1 (Phase 3)**: Depends on Foundational completion
 - **User Story 2 (Phase 4)**: Depends on User Story 1 saved configuration flows and Foundational completion
-- **User Story 3 (Phase 5)**: Depends on User Story 2 running SOCKS sessions and User Story 1 saved SOCKS configurations
+- **User Story 3 (Phase 5)**: Depends on User Story 2 session startup and User Story 1 saved SOCKS configurations
 - **Polish (Phase 6)**: Depends on all desired user stories being complete
 
 ### User Story Dependency Graph

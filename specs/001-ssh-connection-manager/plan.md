@@ -5,7 +5,7 @@
 
 ## Summary
 
-Build a greenfield Linux/macOS desktop SSH manager MVP using Go, Wails, plain Svelte, and a single shared CSS file. The MVP will let a single local user save SSH servers and nested connection configurations, start and stop local forward or SOCKS sessions, auto-reconnect after transient disconnects, unlock encrypted SSH keys during manual start, launch an installed browser through a running SOCKS proxy, persist app-managed data in a per-user SQLite database, and provide dark/light themes with platform-native baseline accessibility.
+Build a greenfield Linux/macOS desktop SSH manager MVP using Go, Wails, plain Svelte, and a single shared CSS file. The MVP will let a single local user save SSH servers and nested connection configurations, start and stop local forward or SOCKS sessions, auto-reconnect after transient disconnects, unlock encrypted SSH keys during manual start, start a stopped SOCKS proxy during browser launch, persist app-managed data in a per-user SQLite database, and provide dark/light themes with platform-native baseline accessibility.
 
 ## Technical Context
 
@@ -125,7 +125,7 @@ tests/
 - Model saved tunnel definitions separately from live connection sessions so the UI can show saved data even when nothing is running.
 - Treat each saved configuration as an independently startable unit; a given configuration may contain one SOCKS endpoint or one or more local forward rules, but a session only enters `Connected` when all requested binds succeed.
 - Use explicit platform adapters for config-path resolution and browser discovery/launch to contain Linux/macOS differences.
-- Keep the browser-launch feature behind validation that requires a running SOCKS session and an installed supported browser.
+- Require an installed supported browser. Start the selected SOCKS session as part of the explicit browser-launch action when needed.
 - Use one application shell with a server list, per-server configuration list, detail/editor panel, session status surface, browser-launch control, and theme toggle.
 
 ### Planned Verification

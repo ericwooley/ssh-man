@@ -66,9 +66,9 @@ Rationale: This is a realistic MVP standard for a desktop app while still creati
 
 Alternatives considered: A full WCAG audit target for the MVP was considered heavier than necessary; a vague best-effort baseline was too weak to test.
 
-Decision: Make proxied browser launch an explicit user action that requires a running SOCKS session and an installed supported browser discovered at launch time.
+Decision: Make proxied browser launch an explicit user action that starts a stopped SOCKS session and uses an installed supported browser.
 
-Rationale: Browser proxy behavior varies by OS and browser. Tying launch to an explicit action keeps the MVP scope narrow and predictable.
+Rationale: Browser proxy behavior varies by OS and browser. The explicit action gives the proxy a clear on-demand start boundary.
 
 Alternatives considered: Implicit browser launch, persistent browser inventory, or broader proxy configuration modes were rejected as out of scope for MVP.
 
