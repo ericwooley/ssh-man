@@ -527,7 +527,7 @@ func TestConfigurationsStartingOnLaunchSelectsOnlyEnabledConfigurations(t *testi
 		{ID: "config-1", StartOnLaunch: true},
 		{ID: "config-2", StartOnLaunch: false},
 		{ID: "config-3", StartOnLaunch: true},
-		{ID: configdomain.ManagedSOCKSConfigurationID("server-1"), StartOnLaunch: false},
+		{ID: configdomain.ManagedSOCKSConfigurationID("server-1"), StartOnLaunch: true},
 	}
 
 	selected := configurationsStartingOnLaunch(configurations)
