@@ -120,6 +120,51 @@ func TestLaunchThroughSOCKSStartsStoppedManagedProxy(t *testing.T) {
 	}
 }
 
+func TestLaunchThroughSOCKSDoesNotStartManagedProxyForUnavailableBrowser(t *testing.T) {
+	configurationID := configdomain.ManagedSOCKSConfigurationID("server-1")
+	sessions := &stubSessionController{
+		state: sessiondomain.RuntimeSession{
+			ConfigurationID: configurationID,
+			Status:          sessiondomain.StatusStopped,
+		},
+		ok: true,
+		startState: sessiondomain.RuntimeSession{
+			ConfigurationID: configurationID,
+			Status:          sessiondomain.StatusConnected,
+			BoundPort:       43123,
+		},
+	}
+	service := NewServiceWithSessions(
+		"/Users/test/Library/Application Support/ssh-man",
+		stubConfigLookup{item: configdomain.ConnectionConfiguration{
+			ID:             configurationID,
+			ServerID:       "server-1",
+			ConnectionType: configdomain.ConnectionTypeSOCKSProxy,
+			SocksPort:      43123,
+		}},
+		sessions,
+		nil,
+	)
+	service.discover = func(context.Context) ([]BrowserOption, error) {
+		return []BrowserOption{{
+			ID:                  "firefox",
+			DisplayName:         "Firefox",
+			SupportsProxyLaunch: true,
+		}}, nil
+	}
+
+	err := service.LaunchThroughSOCKS(context.Background(), configurationID, "google-chrome")
+	if err == nil {
+		t.Fatal("expected unavailable-browser error")
+	}
+	if !strings.Contains(err.Error(), "selected browser is no longer available") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions.startCalls) != 0 {
+		t.Fatalf("start calls = %#v, want none", sessions.startCalls)
+	}
+}
+
 func TestLaunchThroughSOCKSRejectsNonSOCKSConfiguration(t *testing.T) {
 	service := NewService(
 		"/Users/test/Library/Application Support/ssh-man",

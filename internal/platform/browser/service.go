@@ -293,6 +293,14 @@ func (s *Service) launchThroughSOCKS(ctx context.Context, configurationID string
 	if configuration.ConnectionType != configdomain.ConnectionTypeSOCKSProxy {
 		return fmt.Errorf("browser launch is only available for socks configurations")
 	}
+	browsers, err := s.Discover(ctx)
+	if err != nil {
+		return err
+	}
+	option, ok := selectBrowser(browsers, browserID, true)
+	if !ok {
+		return fmt.Errorf("the selected browser is no longer available")
+	}
 
 	runtimeState, ok := s.runtimes.Get(configurationID)
 	if !ok || runtimeState.Status != sessiondomain.StatusConnected {
@@ -312,22 +320,13 @@ func (s *Service) launchThroughSOCKS(ctx context.Context, configurationID string
 		}
 	}
 
-	browsers, err := s.Discover(ctx)
-	if err != nil {
+	if runtimeState.BoundPort < 1 {
+		return fmt.Errorf("the SOCKS tunnel is connected, but its local port is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	option, ok := selectBrowser(browsers, browserID, true)
-	if ok {
-		if runtimeState.BoundPort < 1 {
-			return fmt.Errorf("the SOCKS tunnel is connected, but its local port is unavailable")
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		return s.launchProxy(s.appDataDir, configuration.ServerID, option, runtimeState.BoundPort, rawURL)
-	}
-
-	return fmt.Errorf("the selected browser is no longer available")
+	return s.launchProxy(s.appDataDir, configuration.ServerID, option, runtimeState.BoundPort, rawURL)
 }
 
 func (s *Service) OpenURL(ctx context.Context, browserID string, rawURL string) error {
