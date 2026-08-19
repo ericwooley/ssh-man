@@ -748,6 +748,41 @@ func TestHandleKeepsProxyBrowsersWithoutProbingURLWithoutExplicitPort(t *testing
 	}
 }
 
+func TestHandleOffersStoppedManagedProxyAndUsesItsPortAssignment(t *testing.T) {
+	pref := preferencesdomain.Default()
+	pref.DefaultBrowserID = "safari"
+	pref.URLPortAssignments = []preferencesdomain.URLPortAssignment{{
+		ID:        "docs",
+		Port:      3000,
+		ServerID:  "staging",
+		BrowserID: "firefox",
+	}}
+	configs, servers, _ := routingFixtures()
+	service := NewService(
+		fakePreferences{value: pref},
+		fakeConfigurations{items: configs},
+		fakeServers{items: servers},
+		fakeRuntimes{},
+		routingBrowsers(),
+	)
+	service.probe = func(context.Context, int, string, int) error {
+		t.Fatal("a stopped proxy must not be probed")
+		return nil
+	}
+
+	result, err := service.Handle(context.Background(), "http://localhost:3000/")
+	if err != nil {
+		t.Fatalf("handle url: %v", err)
+	}
+	wantChoice := "proxy:server-socks:staging:firefox"
+	if result.Request == nil || !hasChoice(result.Request.Choices, wantChoice) {
+		t.Fatalf("choices = %#v, want stopped managed proxy %q", result.Request, wantChoice)
+	}
+	if result.Request.DefaultChoiceID != wantChoice {
+		t.Fatalf("default choice = %q, want %q", result.Request.DefaultChoiceID, wantChoice)
+	}
+}
+
 func TestResolveChoiceRejectsStaleOrUnlistedTargets(t *testing.T) {
 	pref := preferencesdomain.Default()
 	configs, servers, runtimes := routingFixtures()

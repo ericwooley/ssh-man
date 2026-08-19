@@ -51,6 +51,13 @@ const secondTunnel = {
   notes: '',
 }
 
+const savedSocksTunnel = {
+  ...managedBrowserProxy,
+  id: 'tunnel-socks',
+  label: 'Manual browser proxy',
+  startOnLaunch: false,
+}
+
 const stoppedSession = {
   configurationId: savedTunnel.id,
   status: 'stopped',
@@ -736,6 +743,29 @@ describe('React application flows', () => {
     expect(screen.queryByRole('dialog', { name: 'Unlock SSH key' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Unlock SSH key' }))
     expect(await screen.findByRole('dialog', { name: 'Unlock SSH key' })).toBeTruthy()
+  })
+
+  test('starts a stopped SOCKS tunnel when its browser launch action is used', async () => {
+    const user = userEvent.setup()
+    const stoppedSocks = {
+      ...stoppedSession,
+      configurationId: savedSocksTunnel.id,
+    }
+    const { api } = createFakeApi({
+      servers: [{ server: savedServer, configurations: [savedSocksTunnel] }],
+      sessions: [stoppedSocks],
+    })
+    api.discoverBrowsers.mockResolvedValue([
+      { id: 'google-chrome', displayName: 'Google Chrome', supportsProxyLaunch: true },
+    ])
+    renderApp(api)
+
+    await user.click(await screen.findByRole('button', { name: 'Show Production bastion details' }))
+    await user.click(screen.getByText(savedSocksTunnel.label).closest('button'))
+    await user.click(await screen.findByRole('button', { name: 'Launch through SOCKS' }))
+
+    await waitFor(() => expect(api.startConfiguration).toHaveBeenCalledWith(savedSocksTunnel.id))
+    await waitFor(() => expect(api.launchBrowserThroughSocks).toHaveBeenCalledWith(savedSocksTunnel.id, 'google-chrome'))
   })
 
   test('requires confirmation before deleting a tunnel and honors cancellation', async () => {

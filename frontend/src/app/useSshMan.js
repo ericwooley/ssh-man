@@ -583,9 +583,9 @@ export function useSshMan(api = defaultApi, options = {}) {
     }
   }), [api, applySessions, notify, refreshRuntimeSessions, requestUnlock, runPending])
 
-  const launchServerBrowser = useCallback(async (serverName, configurationId) => {
+  const launchServerBrowser = useCallback(async (serverName, configurationId, browserId = '') => {
     try {
-      await api.launchBrowserThroughSocks(configurationId, preferences.proxyBrowserId || '')
+      await api.launchBrowserThroughSocks(configurationId, browserId || preferences.proxyBrowserId || '')
       notify('success', `Browser is open through ${serverName}.`)
       return true
     } catch (error) {
@@ -609,7 +609,11 @@ export function useSshMan(api = defaultApi, options = {}) {
         applySessions([session])
       }
       if (session?.status === 'needs_attention') {
-        setBrowserAfterUnlock({ serverName: record.server.name, configurationId: managedProxy.id })
+        setBrowserAfterUnlock({
+          serverName: record.server.name,
+          configurationId: managedProxy.id,
+          browserId: preferences.proxyBrowserId || '',
+        })
         requestUnlock([session])
         return false
       }
@@ -626,7 +630,7 @@ export function useSshMan(api = defaultApi, options = {}) {
       notify('danger', `The browser could not be opened through ${record.server.name}.`, error.message || '')
       return false
     }
-  }), [api, applySessions, launchServerBrowser, notify, refreshRuntimeSessions, requestUnlock, runPending, runtimeSessions, servers])
+  }), [api, applySessions, launchServerBrowser, notify, preferences.proxyBrowserId, refreshRuntimeSessions, requestUnlock, runPending, runtimeSessions, servers])
 
   const submitUnlock = useCallback((secret) => {
     if (!unlockRequest) return Promise.resolve(null)
@@ -650,7 +654,7 @@ export function useSshMan(api = defaultApi, options = {}) {
           ) {
             const browser = browserAfterUnlock
             setBrowserAfterUnlock(null)
-            await launchServerBrowser(browser.serverName, browser.configurationId)
+            await launchServerBrowser(browser.serverName, browser.configurationId, browser.browserId)
           }
         }
         await refreshRuntimeSessions({ quiet: true })
@@ -878,14 +882,50 @@ export function useSshMan(api = defaultApi, options = {}) {
   const launchBrowser = useCallback(() => runPending('launch-browser', async () => {
     if (!selectedConfiguration || !browserState.selectedId) return false
     try {
-      await api.launchBrowserThroughSocks(selectedConfiguration.id, browserState.selectedId)
-      notify('success', 'Browser launch request sent.')
-      return true
+      let session = selectedSession
+      if (session?.status !== 'connected') {
+        session = await api.startConfiguration(selectedConfiguration.id)
+        applySessions([session])
+      }
+      if (session?.status === 'needs_attention') {
+        setBrowserAfterUnlock({
+          serverName: selectedServer?.name || 'the selected server',
+          configurationId: selectedConfiguration.id,
+          browserId: browserState.selectedId,
+        })
+        requestUnlock([session])
+        return false
+      }
+      if (session?.status !== 'connected') {
+        notify('danger', 'The browser could not be launched.', session?.statusDetail || 'The SOCKS proxy did not connect.')
+        return false
+      }
+
+      setBrowserAfterUnlock(null)
+      const opened = await launchServerBrowser(
+        selectedServer?.name || 'the selected server',
+        selectedConfiguration.id,
+        browserState.selectedId,
+      )
+      await refreshRuntimeSessions({ quiet: true })
+      return opened
     } catch (error) {
       notify('danger', 'The browser could not be launched.', error.message || '')
       return false
     }
-  }), [api, browserState.selectedId, notify, runPending, selectedConfiguration])
+  }), [
+    api,
+    applySessions,
+    browserState.selectedId,
+    launchServerBrowser,
+    notify,
+    refreshRuntimeSessions,
+    requestUnlock,
+    runPending,
+    selectedConfiguration,
+    selectedServer?.name,
+    selectedSession,
+  ])
 
   const copyHistory = useCallback(async (configurationId) => {
     const history = historyByConfiguration[configurationId] || []

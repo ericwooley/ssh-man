@@ -105,6 +105,7 @@ type proxyServer struct {
 	ServerName      string
 	ConfigurationID string
 	SOCKSPort       int
+	Connected       bool
 }
 
 type Service struct {
@@ -193,7 +194,7 @@ func (s *Service) Handle(ctx context.Context, rawURL string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	connected, err := s.connectedProxyServers(ctx)
+	configured, err := s.configuredProxyServers(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -203,15 +204,15 @@ func (s *Service) Handle(ctx context.Context, rawURL string) (Result, error) {
 		if isLoopbackHost(targetHost) {
 			targetHost = "127.0.0.1"
 		}
-		reachable = s.reachableServers(ctx, connected, targetHost, port)
+		reachable = s.reachableServers(ctx, configured, targetHost, port)
 	}
-	choices = append(choices, proxyBrowserChoices(prioritizeProxyServers(connected, reachable), destinations)...)
+	choices = append(choices, proxyBrowserChoices(prioritizeProxyServers(configured, reachable), destinations)...)
 
 	if defaultChoiceID == "" && hasExplicitPort {
 		defaultChoiceID = assignedPortChoice(
 			preferences.URLPortAssignments,
 			port,
-			proxyBrowserChoices(reachable, destinations),
+			proxyBrowserChoices(assignmentEligibleProxyServers(configured, reachable), destinations),
 		)
 	}
 	if defaultChoiceID == "" && len(reachable) == 1 {
@@ -544,7 +545,7 @@ func commandChoiceID(ruleID string) string {
 	return "command:" + ruleID
 }
 
-func (s *Service) connectedProxyServers(ctx context.Context) ([]proxyServer, error) {
+func (s *Service) configuredProxyServers(ctx context.Context) ([]proxyServer, error) {
 	configurations, err := s.configurations.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list browser proxies: %w", err)
@@ -562,33 +563,32 @@ func (s *Service) connectedProxyServers(ctx context.Context) ([]proxyServer, err
 		runtimeByConfiguration[runtimeState.ConfigurationID] = runtimeState
 	}
 
-	connected := make([]proxyServer, 0)
+	configured := make([]proxyServer, 0)
 	for _, configuration := range configurations {
 		if !configdomain.IsManagedSOCKSConfigurationID(configuration.ID) {
 			continue
 		}
 		runtimeState, exists := runtimeByConfiguration[configuration.ID]
-		if !exists || runtimeState.Status != sessiondomain.StatusConnected || runtimeState.BoundPort < 1 {
-			continue
-		}
+		connected := exists && runtimeState.Status == sessiondomain.StatusConnected && runtimeState.BoundPort > 0
 		name := serverNames[configuration.ServerID]
 		if name == "" {
 			name = configuration.ServerID
 		}
-		connected = append(connected, proxyServer{
+		configured = append(configured, proxyServer{
 			ServerID:        configuration.ServerID,
 			ServerName:      name,
 			ConfigurationID: configuration.ID,
 			SOCKSPort:       runtimeState.BoundPort,
+			Connected:       connected,
 		})
 	}
-	sort.Slice(connected, func(i, j int) bool {
-		if connected[i].ServerName == connected[j].ServerName {
-			return connected[i].ServerID < connected[j].ServerID
+	sort.Slice(configured, func(i, j int) bool {
+		if configured[i].ServerName == configured[j].ServerName {
+			return configured[i].ServerID < configured[j].ServerID
 		}
-		return connected[i].ServerName < connected[j].ServerName
+		return configured[i].ServerName < configured[j].ServerName
 	})
-	return connected, nil
+	return configured, nil
 }
 
 func (s *Service) reachableServers(
@@ -602,6 +602,9 @@ func (s *Service) reachableServers(
 	reachable := make([]proxyServer, 0, len(candidates))
 	for _, candidate := range candidates {
 		candidate := candidate
+		if !candidate.Connected || candidate.SOCKSPort < 1 {
+			continue
+		}
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
@@ -625,20 +628,38 @@ func (s *Service) reachableServers(
 	return reachable
 }
 
-func prioritizeProxyServers(connected, reachable []proxyServer) []proxyServer {
-	prioritized := make([]proxyServer, 0, len(connected))
-	included := make(map[string]struct{}, len(connected))
+func prioritizeProxyServers(configured, reachable []proxyServer) []proxyServer {
+	prioritized := make([]proxyServer, 0, len(configured))
+	included := make(map[string]struct{}, len(configured))
 	for _, server := range reachable {
 		prioritized = append(prioritized, server)
 		included[server.ConfigurationID] = struct{}{}
 	}
-	for _, server := range connected {
+	for _, server := range configured {
 		if _, exists := included[server.ConfigurationID]; exists {
 			continue
 		}
 		prioritized = append(prioritized, server)
 	}
 	return prioritized
+}
+
+func assignmentEligibleProxyServers(configured, reachable []proxyServer) []proxyServer {
+	eligible := append([]proxyServer(nil), reachable...)
+	included := make(map[string]struct{}, len(configured))
+	for _, server := range reachable {
+		included[server.ConfigurationID] = struct{}{}
+	}
+	for _, server := range configured {
+		if server.Connected {
+			continue
+		}
+		if _, exists := included[server.ConfigurationID]; exists {
+			continue
+		}
+		eligible = append(eligible, server)
+	}
+	return eligible
 }
 
 func parseWebURL(rawURL string) (*url.URL, error) {

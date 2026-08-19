@@ -74,7 +74,8 @@ function HistoryList({ history, loading, onCopy }) {
 function BrowserLauncher({ configuration, session, browserState, pending, onRefresh, onSelect, onLaunch }) {
   const selectedBrowser = browserState.items.find((browser) => browser.id === browserState.selectedId) || null
   const canUseTunnel = session?.status === 'connected'
-  const canLaunch = canUseTunnel && selectedBrowser?.supportsProxyLaunch
+  const canStartForLaunch = !session || ['stopped', 'failed', 'connected'].includes(session.status)
+  const canLaunch = canStartForLaunch && selectedBrowser?.supportsProxyLaunch
 
   return (
     <section className="section-block browser-section" aria-labelledby="browser-heading">
@@ -91,9 +92,11 @@ function BrowserLauncher({ configuration, session, browserState, pending, onRefr
       {!canUseTunnel ? (
         <div className="compact-empty compact-empty--warning">
           <WifiOff aria-hidden="true" />
-          <div><strong>Start the SOCKS tunnel first</strong><span>The launch controls will unlock when it connects.</span></div>
+          <div><strong>Starts with your browser</strong><span>SSH Man connects this proxy before it opens the browser.</span></div>
         </div>
-      ) : browserState.items.length ? (
+      ) : null}
+
+      {browserState.items.length ? (
         <div className="browser-controls">
           <label className="field-group" htmlFor="browser-select">
             <span>Browser destination</span>
