@@ -2,7 +2,6 @@ package bindings
 
 import (
 	"context"
-	"log"
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -58,16 +57,7 @@ func (a *AppBindings) SetAsDefaultBrowser() (any, error) {
 	if a.setDefaultBrowser != nil {
 		return a.setDefaultBrowser()
 	}
-	status, err := a.app.DefaultBrowser.SetAsDefault()
-	if err != nil {
-		return status, err
-	}
-	go func() {
-		if _, startErr := a.app.SessionService.StartManagedSOCKSProxies(context.Background()); startErr != nil {
-			log.Printf("start URL routing browser proxies: %v", startErr)
-		}
-	}()
-	return status, nil
+	return a.app.DefaultBrowser.SetAsDefault()
 }
 
 func (a *AppBindings) PendingURLRoute() any {

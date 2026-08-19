@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log"
 	"os/user"
 	"sort"
 
@@ -126,16 +125,7 @@ func newControlBackend(app *bootstrap.Application, window *appwindow.Controller,
 			return app.PreferencesService.Save(ctx, preferences)
 		},
 		SetDefaultBrowser: func(ctx context.Context) (defaultbrowser.Status, error) {
-			status, err := app.DefaultBrowser.SetAsDefault()
-			if err != nil {
-				return status, err
-			}
-			go func() {
-				if _, startErr := app.SessionService.StartManagedSOCKSProxies(context.Background()); startErr != nil {
-					log.Printf("start URL routing browser proxies: %v", startErr)
-				}
-			}()
-			return status, nil
+			return app.DefaultBrowser.SetAsDefault()
 		},
 		Show: show,
 		Hide: window.Hide,

@@ -72,7 +72,7 @@ func New(context.Context) (*Application, error) {
 	}
 	preferencesService := preferencesdomain.NewService(prefStore)
 	sessionService := sessiondomain.NewService(configStore, serverStore, historyStore, runtimeStore)
-	browserService := browser.NewService(configDir, configStore, runtimeStore, serverStore, preferencesService)
+	browserService := browser.NewServiceWithSessions(configDir, configStore, sessionService, serverStore, preferencesService)
 	urlRoutingService := urlroutingdomain.NewService(
 		preferencesService,
 		configService,

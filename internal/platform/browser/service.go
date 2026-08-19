@@ -62,6 +62,11 @@ type RuntimeLookup interface {
 	Get(id string) (sessiondomain.RuntimeSession, bool)
 }
 
+type SessionController interface {
+	RuntimeLookup
+	Start(ctx context.Context, configurationID string) (sessiondomain.RuntimeSession, error)
+}
+
 type ConfigLookup interface {
 	Get(ctx context.Context, id string) (configdomain.ConnectionConfiguration, error)
 }
@@ -78,6 +83,7 @@ type Service struct {
 	appDataDir     string
 	configs        ConfigLookup
 	runtimes       RuntimeLookup
+	sessions       SessionController
 	discover       func(context.Context) ([]BrowserOption, error)
 	discoverCustom func([]preferencesdomain.CustomBrowser) []BrowserOption
 	preferences    PreferenceLookup
@@ -89,6 +95,14 @@ type Service struct {
 }
 
 func NewService(appDataDir string, configs ConfigLookup, runtimes RuntimeLookup, servers ServerLookup, preferenceLookups ...PreferenceLookup) *Service {
+	return newService(appDataDir, configs, runtimes, nil, servers, preferenceLookups...)
+}
+
+func NewServiceWithSessions(appDataDir string, configs ConfigLookup, sessions SessionController, servers ServerLookup, preferenceLookups ...PreferenceLookup) *Service {
+	return newService(appDataDir, configs, sessions, sessions, servers, preferenceLookups...)
+}
+
+func newService(appDataDir string, configs ConfigLookup, runtimes RuntimeLookup, sessions SessionController, servers ServerLookup, preferenceLookups ...PreferenceLookup) *Service {
 	var preferences PreferenceLookup
 	if len(preferenceLookups) > 0 {
 		preferences = preferenceLookups[0]
@@ -97,6 +111,7 @@ func NewService(appDataDir string, configs ConfigLookup, runtimes RuntimeLookup,
 		appDataDir:     appDataDir,
 		configs:        configs,
 		runtimes:       runtimes,
+		sessions:       sessions,
 		servers:        servers,
 		preferences:    preferences,
 		discoverCustom: discoverCustomBrowsers,
@@ -271,17 +286,30 @@ func (s *Service) launchThroughSOCKS(ctx context.Context, configurationID string
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	runtimeState, ok := s.runtimes.Get(configurationID)
-	if !ok || runtimeState.Status != sessiondomain.StatusConnected {
-		return fmt.Errorf("start the socks configuration before launching a browser")
-	}
-
 	configuration, err := s.configs.Get(ctx, configurationID)
 	if err != nil {
 		return fmt.Errorf("load socks configuration: %w", err)
 	}
 	if configuration.ConnectionType != configdomain.ConnectionTypeSOCKSProxy {
 		return fmt.Errorf("browser launch is only available for socks configurations")
+	}
+
+	runtimeState, ok := s.runtimes.Get(configurationID)
+	if !ok || runtimeState.Status != sessiondomain.StatusConnected {
+		if !configdomain.IsManagedSOCKSConfigurationID(configurationID) || s.sessions == nil {
+			return fmt.Errorf("start the socks configuration before launching a browser")
+		}
+		runtimeState, err = s.sessions.Start(ctx, configurationID)
+		if err != nil {
+			return fmt.Errorf("start the browser proxy: %w", err)
+		}
+		if runtimeState.Status != sessiondomain.StatusConnected {
+			detail := strings.TrimSpace(runtimeState.StatusDetail)
+			if detail == "" {
+				detail = "the browser proxy did not connect"
+			}
+			return fmt.Errorf("start the browser proxy: %s", detail)
+		}
 	}
 
 	browsers, err := s.Discover(ctx)

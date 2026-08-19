@@ -20,6 +20,24 @@ func (s stubRuntimeLookup) Get(string) (sessiondomain.RuntimeSession, bool) {
 	return s.state, s.ok
 }
 
+type stubSessionController struct {
+	state      sessiondomain.RuntimeSession
+	ok         bool
+	startState sessiondomain.RuntimeSession
+	startCalls []string
+}
+
+func (s *stubSessionController) Get(string) (sessiondomain.RuntimeSession, bool) {
+	return s.state, s.ok
+}
+
+func (s *stubSessionController) Start(_ context.Context, configurationID string) (sessiondomain.RuntimeSession, error) {
+	s.startCalls = append(s.startCalls, configurationID)
+	s.state = s.startState
+	s.ok = true
+	return s.startState, nil
+}
+
 type stubConfigLookup struct {
 	item configdomain.ConnectionConfiguration
 }
@@ -50,6 +68,55 @@ func TestLaunchThroughSOCKSRequiresConnectedSession(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "start the socks configuration") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLaunchThroughSOCKSStartsStoppedManagedProxy(t *testing.T) {
+	configurationID := configdomain.ManagedSOCKSConfigurationID("server-1")
+	sessions := &stubSessionController{
+		state: sessiondomain.RuntimeSession{
+			ConfigurationID: configurationID,
+			Status:          sessiondomain.StatusStopped,
+		},
+		ok: true,
+		startState: sessiondomain.RuntimeSession{
+			ConfigurationID: configurationID,
+			Status:          sessiondomain.StatusConnected,
+			BoundPort:       43123,
+		},
+	}
+	service := NewServiceWithSessions(
+		"/Users/test/Library/Application Support/ssh-man",
+		stubConfigLookup{item: configdomain.ConnectionConfiguration{
+			ID:             configurationID,
+			ServerID:       "server-1",
+			ConnectionType: configdomain.ConnectionTypeSOCKSProxy,
+			SocksPort:      43123,
+		}},
+		sessions,
+		nil,
+	)
+	service.discover = func(context.Context) ([]BrowserOption, error) {
+		return []BrowserOption{{
+			ID:                  "google-chrome",
+			DisplayName:         "Google Chrome",
+			SupportsProxyLaunch: true,
+		}}, nil
+	}
+	launchedPort := 0
+	service.launchProxy = func(_ string, _ string, _ BrowserOption, socksPort int, _ string) error {
+		launchedPort = socksPort
+		return nil
+	}
+
+	if err := service.LaunchThroughSOCKS(context.Background(), configurationID, "google-chrome"); err != nil {
+		t.Fatalf("launch through stopped managed proxy: %v", err)
+	}
+	if len(sessions.startCalls) != 1 || sessions.startCalls[0] != configurationID {
+		t.Fatalf("start calls = %#v, want %q", sessions.startCalls, configurationID)
+	}
+	if launchedPort != 43123 {
+		t.Fatalf("launched SOCKS port = %d, want 43123", launchedPort)
 	}
 }
 
