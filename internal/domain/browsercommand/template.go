@@ -2,6 +2,7 @@ package browsercommand
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -34,7 +35,7 @@ func Arguments(template, rawURL string) ([]string, error) {
 
 	for index := 0; index < len(template); {
 		if strings.HasPrefix(template[index:], "<URL>") {
-			argument.WriteString(rawURL)
+			argument.WriteString(urlPlaceholderValue(argument.String(), rawURL))
 			wordStarted = true
 			replacedURL = true
 			index += len("<URL>")
@@ -115,6 +116,17 @@ func Arguments(template, rawURL string) ([]string, error) {
 		}
 	}
 	return arguments, nil
+}
+
+func urlPlaceholderValue(argumentPrefix, rawURL string) string {
+	queryDelimiter := strings.LastIndexAny(argumentPrefix, "?&")
+	if queryDelimiter < 0 {
+		return rawURL
+	}
+	if strings.Contains(argumentPrefix[queryDelimiter+1:], "=") {
+		return url.QueryEscape(rawURL)
+	}
+	return rawURL
 }
 
 // Validate checks the same grammar used at execution time.

@@ -1,6 +1,7 @@
 package urlrouting
 
 import (
+	"net/url"
 	"reflect"
 	"testing"
 )
@@ -29,6 +30,27 @@ func TestCommandTemplateArgumentsPreserveURLAsArgvData(t *testing.T) {
 				t.Fatalf("arguments = %#v, want %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCommandTemplateArgumentsEncodeURLWhenEmbeddedInQueryValue(t *testing.T) {
+	rawURL := "https://identity.example.test/oauth2/authorize?response_type=code&client_id=client.apps.example.test&redirect_uri=http%3A%2F%2Flocalhost%3A8086%2F&scope=openid+profile&state=test-state&access_type=offline&code_challenge=test-challenge&code_challenge_method=S256"
+
+	got, err := commandTemplateArguments(
+		`open -a "Work Browser" "ext+container:name=Work&url=<URL>"`,
+		rawURL,
+	)
+	if err != nil {
+		t.Fatalf("parse command template: %v", err)
+	}
+	want := []string{
+		"/usr/bin/open",
+		"-a",
+		"Work Browser",
+		"ext+container:name=Work&url=" + url.QueryEscape(rawURL),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("arguments = %#v, want %#v", got, want)
 	}
 }
 

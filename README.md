@@ -180,7 +180,7 @@ On macOS, hold `Alt` and press `X` by default to move forward through running br
 
 On macOS, Settings uses a left navigation for **General**, **Browsers**, and **URL routing**. Use **Browsers** to enable or disable detected browsers. Disabled browsers stay available in that catalog but are hidden from routing choices, browser switching, and the rest of the app.
 
-The Browsers page also supports custom browsers with a name, icon, and command template. A template must call macOS `open` or `/usr/bin/open` and contain a `<URL>` placeholder, for example `open -a "Zen" "ext+container:name=Work&url=<URL>"`. SSH Man substitutes the URL as argument data without invoking a shell. Shell operators, redirects, and child-process argument forwarding are rejected.
+The Browsers page also supports custom browsers with a name, icon, and command template. A template must call macOS `open` or `/usr/bin/open` and contain a `<URL>` placeholder, for example `open -a "Zen" "ext+container:name=Work&url=<URL>"`. SSH Man substitutes the URL as argument data without invoking a shell. When `<URL>` is inside an outer query value, SSH Man encodes it so the inner query stays complete. Shell operators, redirects, and child-process argument forwarding are rejected.
 
 Use **URL routing** to choose the regular fallback browser, choose the browser used for SOCKS5 launches, assign URL ports to a saved host/browser combination, and make SSH Man the HTTP/HTTPS handler. Rules are evaluated from top to bottom. Each rule can match with **Starts with**, **Ends with**, **Contains**, or **Regex**, then select an enabled browser or an `open` command template.
 
